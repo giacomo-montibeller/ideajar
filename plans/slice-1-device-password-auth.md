@@ -261,7 +261,9 @@ Feature: Device-level password authentication
 **Commit**: via skill `commit-message`.
 **Spec mapping**: prerequisito tecnico per tutti gli scenari.
 
-### Step 2: Boot-time configuration validation in runtime.exs
+### Step 2: Boot-time configuration validation in runtime.exs ✅ DONE 2026-04-27
+
+**Implementato:** `Ideajar.Config.validate!/1` (signature `/1` con opts esplicite, deviazione minore dal piano: evita race "Application.get_env mid-runtime.exs evaluation"). 7 unit test boundary-aware (12-char, 64-byte). Integration smoke verificata manualmente: `WORKSPACE_PASSWORD=short mix run --no-start -e ":ok"` → `** (RuntimeError) WORKSPACE_PASSWORD is too short` con stacktrace che termina in `runtime.exs:41`. Defaults dev/test in `config/dev.exs` e `config/test.exs` (test password = "correct horse battery staple" da BDD Background; `wrong_password_delay_ms: 0` in test). 11 tests, 0 failures; format + credo clean. Fix criteria gate flag O1: nessun `:econnrefused` test, sostituito da smoke run + composition trust (validate! is line 41 of runtime.exs, before `config :ideajar, IdeajarWeb.Endpoint, secret_key_base: ...`).
 
 **Complexity**: complex (security gate operativo)
 **RED**: `test/ideajar/config_test.exs`:

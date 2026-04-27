@@ -30,3 +30,12 @@ config :phoenix_live_view,
 # Sort query params output of verified routes for robust url comparisons
 config :phoenix,
   sort_verified_routes_query_params: true
+
+# Workspace password for BDD test fixtures — the value used in the Background
+# step of the device-password-auth feature.
+config :ideajar, :workspace_password, "correct horse battery staple"
+
+# Delay applied on wrong-password submissions. Default 500ms in dev/prod;
+# zero in tests to keep the suite fast. The login_timing_test.exs file
+# overrides this back to 500ms via Application.put_env (async: false).
+config :ideajar, :wrong_password_delay_ms, 0

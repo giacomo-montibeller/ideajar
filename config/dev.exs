@@ -82,3 +82,7 @@ config :phoenix_live_view,
   debug_attributes: true,
   # Enable helpful, but potentially expensive runtime checks
   enable_expensive_runtime_checks: true
+
+# Default workspace password for local development. Override with
+# WORKSPACE_PASSWORD env var when running `iex -S mix phx.server`.
+config :ideajar, :workspace_password, "dev-only-password-change-me"

@@ -23,6 +23,30 @@ end
 config :ideajar, IdeajarWeb.Endpoint,
   http: [port: String.to_integer(System.get_env("PORT", "4000"))]
 
+# ── Boot-time configuration validation ──────────────────────────────────
+# Resolve workspace_password and secret_key_base from env vars (production)
+# with fallback to compile-time config (dev/test). Validate before any
+# further endpoint config is set: a `raise` here aborts boot before the
+# HTTP listener binds, so misconfiguration cannot reach traffic.
+workspace_password =
+  System.get_env("WORKSPACE_PASSWORD") ||
+    Application.get_env(:ideajar, :workspace_password)
+
+secret_key_base =
+  System.get_env("SECRET_KEY_BASE") ||
+    :ideajar
+    |> Application.get_env(IdeajarWeb.Endpoint, [])
+    |> Keyword.get(:secret_key_base)
+
+Ideajar.Config.validate!(
+  workspace_password: workspace_password,
+  secret_key_base: secret_key_base
+)
+
+config :ideajar, :workspace_password, workspace_password
+
+config :ideajar, IdeajarWeb.Endpoint, secret_key_base: secret_key_base
+
 if config_env() == :prod do
   database_path =
     System.get_env("DATABASE_PATH") ||
@@ -34,18 +58,6 @@ if config_env() == :prod do
   config :ideajar, Ideajar.Repo,
     database: database_path,
     pool_size: String.to_integer(System.get_env("POOL_SIZE") || "5")
-
-  # The secret key base is used to sign/encrypt cookies and other secrets.
-  # A default value is used in config/dev.exs and config/test.exs but you
-  # want to use a different value for prod and you most likely don't want
-  # to check this value into version control, so we use an environment
-  # variable instead.
-  secret_key_base =
-    System.get_env("SECRET_KEY_BASE") ||
-      raise """
-      environment variable SECRET_KEY_BASE is missing.
-      You can generate one by calling: mix phx.gen.secret
-      """
 
   host = System.get_env("PHX_HOST") || "example.com"
 
@@ -59,8 +71,7 @@ if config_env() == :prod do
       # See the documentation on https://hexdocs.pm/bandit/Bandit.html#t:options/0
       # for details about using IPv6 vs IPv4 and loopback vs public addresses.
       ip: {0, 0, 0, 0, 0, 0, 0, 0}
-    ],
-    secret_key_base: secret_key_base
+    ]
 
   # ## SSL Support
   #
