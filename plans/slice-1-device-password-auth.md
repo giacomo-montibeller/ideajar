@@ -278,7 +278,9 @@ Feature: Device-level password authentication
 **Commit**: `feat: validate WORKSPACE_PASSWORD and SECRET_KEY_BASE in runtime.exs`
 **Spec mapping**: O1, O2, S3 + scenari "Boot fails on invalid …".
 
-### Step 3: Login form rendering (GET /login) — accessible HTML
+### Step 3: Login form rendering (GET /login) — accessible HTML ✅ DONE 2026-04-27
+
+**Implementato:** `IdeajarWeb.LoginController.new/2` + `IdeajarWeb.LoginHTML` + template `login_html/new.html.heex` minimale e a11y-completo (label associato, autocomplete=current-password, autofocus, required, aria-describedby, role=alert sul container errore, hidden CSRF + return_to). Pipeline `:require_auth` definita vuota in router (verrà popolata Step 5). 4 test ConnTest: rendering completo con regex per ogni attributo, preservazione return_to da query, redirect a `/` se già autenticato, P3 no-DB-hit verificato via `:telemetry.attach` su `[:ideajar, :repo, :query]` + `refute_received`. Layout root: `lang="en"` → `lang="it"`, suffix `" · Phoenix Framework"` rimosso (slice è IT-only, no framework branding). Inline JS submit-disable mai aggiunto (YAGNI per design review). 15 tests passing total; format + credo clean.
 
 **Complexity**: standard
 **RED**: `test/ideajar_web/controllers/login_controller_test.exs`:

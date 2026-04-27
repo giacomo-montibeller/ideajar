@@ -14,8 +14,16 @@ defmodule IdeajarWeb.Router do
     plug :accepts, ["json"]
   end
 
+  # Authentication gate. The plug is added in Step 5; this pipeline is defined
+  # now so public routes (login, PWA assets) and protected routes can already
+  # be wired with the right pipe_through chain.
+  pipeline :require_auth do
+  end
+
   scope "/", IdeajarWeb do
     pipe_through :browser
+
+    get "/login", LoginController, :new
   end
 
   # Other scopes may use custom stacks.

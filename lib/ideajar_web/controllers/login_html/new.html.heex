@@ -1,0 +1,24 @@
+<main>
+  <h1>ideajar</h1>
+  <p>Inserisci la password condivisa per questo dispositivo.</p>
+
+  <form method="post" action="/login">
+    <input type="hidden" name="_csrf_token" value={Phoenix.Controller.get_csrf_token()} />
+    <input type="hidden" name="return_to" value={@return_to} />
+
+    <label for="password">Password</label>
+    <input
+      id="password"
+      name="password"
+      type="password"
+      autocomplete="current-password"
+      autofocus
+      required
+      aria-describedby="login-error"
+    />
+
+    <div id="login-error" role="alert"></div>
+
+    <button type="submit">Entra</button>
+  </form>
+</main>
