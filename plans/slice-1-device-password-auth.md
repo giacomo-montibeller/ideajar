@@ -392,7 +392,11 @@ Feature: Device-level password authentication
 **Commit**: `feat: harden session cookie (HttpOnly, SameSite=Lax, Secure in prod, 10y) + redeploy survival test`
 **Spec mapping**: F3, O4, scenari "Session cookie has hardening attributes", "Existing sessions survive an endpoint restart".
 
-### Step 7: Public asset routing scaffold (no placeholder files)
+### Step 7: Public asset routing scaffold (no placeholder files) ✅ DONE 2026-04-27
+
+**Implementato:** estesa `IdeajarWeb.static_paths/0` aggiungendo `manifest.json`, `sw.js`, `icons` al keyword list. `Plug.Static` (in endpoint, già usa `IdeajarWeb.static_paths()`) cattura questi prefissi PRIMA del router → bypass automatico di `:require_auth` indipendentemente da future modifiche al routing. Commento esplicito sulla collision-risk in `lib/ideajar_web.ex` (per design review warning). 4 test: 1 strutturale (paths reservati), 3 behavioral (GET /manifest.json /sw.js /icons/icon.png con no session → 200 o 404, mai 302 a /login). Nessun file placeholder creato (per strategic review warning — i contenuti reali arrivano in slice 9).
+
+56 tests passing total; format + credo clean.
 
 **Complexity**: standard
 **RED**: `test/ideajar_web/asset_routing_test.exs`:

@@ -17,7 +17,14 @@ defmodule IdeajarWeb do
   those modules here.
   """
 
-  def static_paths, do: ~w(assets fonts images favicon.ico robots.txt)
+  # Paths served as static files by `Plug.Static` (configured in
+  # `IdeajarWeb.Endpoint`). Because `Plug.Static` runs **before** the router,
+  # any path matching one of these prefixes bypasses every router pipeline —
+  # including `:require_auth`. PWA assets (`manifest.json`, `sw.js`, `icons`)
+  # are reserved here even before slice 9 ships them, so a future router
+  # refactor cannot accidentally gate them behind authentication.
+  def static_paths,
+    do: ~w(assets fonts images favicon.ico robots.txt manifest.json sw.js icons)
 
   def router do
     quote do
