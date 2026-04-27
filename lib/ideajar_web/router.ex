@@ -24,6 +24,7 @@ defmodule IdeajarWeb.Router do
     pipe_through :browser
 
     get "/login", LoginController, :new
+    post "/login", LoginController, :create
   end
 
   # Other scopes may use custom stacks.

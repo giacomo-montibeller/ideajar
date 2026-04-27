@@ -302,7 +302,18 @@ Feature: Device-level password authentication
 **Commit**: `feat: render accessible login form with autofocus and password autocomplete`
 **Spec mapping**: scenari "First visit", "Already authenticated visit to /login redirects home", "Login form is accessible". Acceptance P3, V1a, V1b.
 
-### Step 4: Password verification on POST /login (constant-time, no leakage)
+### Step 4: Password verification on POST /login (constant-time, no leakage) ✅ DONE 2026-04-27
+
+**Implementato:**
+- `Ideajar.Auth.authenticate/2` (lib/ideajar/auth.ex): legge `Application.get_env(:ideajar, :workspace_password)` come single source of truth (la password non lascia mai il modulo); `Plug.Crypto.secure_compare/2`; opt `:wrong_password_delay_ms` (default da config, 500 prod / 0 test). 8 unit test su correttezza + timing parametrizzato.
+- `IdeajarWeb.SafeRedirect.normalize/1` (lib/ideajar_web/safe_redirect.ex): nel layer web (non `Ideajar.Auth` come da design review). 9 unit test su path locali, protocol-relative, https/http/javascript schemes, nil/empty.
+- `IdeajarWeb.LoginController.create/2`: chiama `Ideajar.Auth.authenticate`; on :ok → `put_session(:authenticated, true)` + redirect via `SafeRedirect.normalize`; on :error → render con `assign(:error, "Password errata")`.
+- Template aggiornato: `<div id="login-error" role="alert">{@error}</div>` (sempre presente, contenuto condizionale).
+- Route `post "/login", LoginController, :create` aggiunta.
+- 9 ConnTest su POST: redirect su corretto, return_to safe + evil, errore generico no-leak, password vuota, 10 wrong + 1 correct, ExUnit.CaptureLog su sentinel.
+- `test/ideajar_web/controllers/login_timing_test.exs` (`async: false`): override `wrong_password_delay_ms = 500`, misura `:timer.tc/1`, asserisce [500ms, 1500ms].
+
+39 tests passing, format + credo clean. CSRF: Plug.CSRFProtection nei test passa (token gestito dalla `:browser` pipeline).
 
 **Complexity**: complex (security-critical)
 **RED**: `test/ideajar/auth_test.exs` (puro):

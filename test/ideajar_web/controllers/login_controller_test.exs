@@ -84,4 +84,98 @@ defmodule IdeajarWeb.LoginControllerTest do
       refute_received :db_hit, 100
     end
   end
+
+  describe "POST /login (correct password)" do
+    # Scenario: Successful login grants access and persists across reloads
+    test "redirects to / and marks session :authenticated", %{conn: conn} do
+      conn = post(conn, "/login", %{"password" => "correct horse battery staple"})
+
+      assert redirected_to(conn) == "/"
+      assert get_session(conn, :authenticated) == true
+    end
+
+    # Scenario: Login preserves the originally requested path
+    test "honors a safe return_to and redirects there", %{conn: conn} do
+      conn =
+        post(conn, "/login", %{
+          "password" => "correct horse battery staple",
+          "return_to" => "/some/protected/path"
+        })
+
+      assert redirected_to(conn) == "/some/protected/path"
+      assert get_session(conn, :authenticated) == true
+    end
+
+    # Scenario Outline: return_to is rejected when it points outside the app
+    test "ignores an external return_to and redirects to /", _ do
+      for evil <- ["https://evil.com", "//evil.com", "http://evil.com", "javascript:alert(1)", ""] do
+        conn = build_conn()
+
+        conn =
+          post(conn, "/login", %{
+            "password" => "correct horse battery staple",
+            "return_to" => evil
+          })
+
+        assert redirected_to(conn) == "/", "expected '/' for return_to=#{inspect(evil)}"
+        assert get_session(conn, :authenticated) == true
+      end
+    end
+  end
+
+  describe "POST /login (wrong password)" do
+    # Scenario: Wrong password shows a generic error and does not authenticate
+    test "renders generic error and does not authenticate", %{conn: conn} do
+      conn = post(conn, "/login", %{"password" => "wrong"})
+
+      response = html_response(conn, 200)
+
+      # Generic IT error inside the role=alert region
+      assert response =~ "Password errata"
+      assert response =~ ~r/<[^>]+id="login-error"[^>]*role="alert"[^>]*>[^<]*Password errata/
+
+      # Form is still on the page, autofocus still on password
+      assert response =~ ~r/<input[^>]*\bautofocus[^>]*>/
+
+      # Password value MUST NOT be echoed back into the input
+      refute response =~ ~r/<input[^>]*type="password"[^>]*value="wrong"/
+
+      # No session set
+      assert get_session(conn, :authenticated) == nil
+    end
+
+    # Scenario: Empty password submission is treated as a wrong password
+    test "empty password is treated as wrong", %{conn: conn} do
+      conn = post(conn, "/login", %{"password" => ""})
+
+      response = html_response(conn, 200)
+      assert response =~ "Password errata"
+      assert get_session(conn, :authenticated) == nil
+    end
+
+    # Scenario: Repeated wrong passwords behave consistently
+    test "10 wrong then 1 correct — only the 11th authenticates", _ do
+      Enum.each(1..10, fn _ ->
+        conn = post(build_conn(), "/login", %{"password" => "wrong#{:rand.uniform(99)}"})
+        assert html_response(conn, 200) =~ "Password errata"
+        assert get_session(conn, :authenticated) == nil
+      end)
+
+      conn = post(build_conn(), "/login", %{"password" => "correct horse battery staple"})
+      assert redirected_to(conn) == "/"
+      assert get_session(conn, :authenticated) == true
+    end
+
+    # Scenario: Wrong password is never written to logs
+    test "submitted password is never written to logs", %{conn: conn} do
+      sentinel = "sentinel-leakage-canary-xyz"
+
+      log =
+        ExUnit.CaptureLog.capture_log(fn ->
+          post(conn, "/login", %{"password" => sentinel})
+        end)
+
+      refute log =~ sentinel
+    end
+  end
 end
