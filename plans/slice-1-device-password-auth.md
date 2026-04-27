@@ -370,7 +370,15 @@ Feature: Device-level password authentication
 **Commit**: `feat: add RequireAuth plug and protected home page`
 **Spec mapping**: scenari "Returning device", "Second device separate", "Unauthenticated POST 403", "Tampered cookie", "Successful login grants access", "Login preserves return_to". Acceptance F1, S4.
 
-### Step 6: Session cookie hardening + redeploy survival
+### Step 6: Session cookie hardening + redeploy survival ✅ DONE 2026-04-27
+
+**Implementato:**
+- `:session_options` spostato in `config/config.exs` (base con `http_only: true`, `same_site: "Lax"`, `max_age: 315_360_000`, store cookie, key `_ideajar_key`, signing_salt stabile).
+- `config/prod.exs` aggiunge `secure: true` (merge nel keyword list base — il cookie viaggia solo HTTPS in prod, non in dev su localhost).
+- `IdeajarWeb.Endpoint.session_options/0` esposto come funzione pubblica per test introspection; `@session_options Application.compile_env!(:ideajar, :session_options)`.
+- 8 test: 6 sui valori di hardening sempre attivi, 1 su `Config.Reader.read!("config/prod.exs", env: :prod)` (NON `Mix.Config.read!/1` deprecato — fix design review warning), 1 redeploy survival via cookie-layer round-trip (sign in process A → verify in fresh process B con stesso `secret_key_base`+signing_salt; evita OTP endpoint stop/restart fragile per design review warning).
+
+52 tests passing total; format + credo clean.
 
 **Complexity**: complex (configurazione di sicurezza con verifica multi-environment)
 **RED**:

@@ -51,6 +51,19 @@ config :logger, :default_formatter,
 # Use Jason for JSON parsing in Phoenix
 config :phoenix, :json_library, Jason
 
+# Session cookie hardening (base config — applied in all envs).
+# `secure: true` is added in config/prod.exs so the cookie is only sent over
+# HTTPS in production; in dev (HTTP localhost) we omit it so the cookie still
+# flows. `max_age` is 10 years — the device is treated as authenticated until
+# the user clears their cookies or the password is rotated (a redeploy).
+config :ideajar, :session_options,
+  store: :cookie,
+  key: "_ideajar_key",
+  signing_salt: "vmke3voV",
+  same_site: "Lax",
+  http_only: true,
+  max_age: 315_360_000
+
 # Import environment specific config. This must remain at the bottom
 # of this file so it overrides the configuration defined above.
 import_config "#{config_env()}.exs"

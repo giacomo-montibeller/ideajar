@@ -1,15 +1,16 @@
 defmodule IdeajarWeb.Endpoint do
   use Phoenix.Endpoint, otp_app: :ideajar
 
-  # The session will be stored in the cookie and signed,
-  # this means its contents can be read but not tampered with.
-  # Set :encryption_salt if you would also like to encrypt it.
-  @session_options [
-    store: :cookie,
-    key: "_ideajar_key",
-    signing_salt: "vmke3voV",
-    same_site: "Lax"
-  ]
+  # Session cookie configuration (signed cookie store, HttpOnly, SameSite=Lax,
+  # 10-year Max-Age, Secure in :prod). Resolved at compile time from
+  # `:session_options` app env so each Mix env contributes its own hardening.
+  @session_options Application.compile_env!(:ideajar, :session_options)
+
+  @doc """
+  Returns the session options used by `Plug.Session` and the LiveView socket.
+  Exposed for tests that need to verify hardening attributes.
+  """
+  def session_options, do: @session_options
 
   socket "/live", Phoenix.LiveView.Socket,
     websocket: [connect_info: [session: @session_options]],

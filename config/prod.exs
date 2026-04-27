@@ -22,5 +22,9 @@ config :ideajar, IdeajarWeb.Endpoint,
 # Do not print debug messages in production
 config :logger, level: :info
 
+# Send the session cookie only over HTTPS in production. Merges into the base
+# :session_options keyword list defined in config/config.exs.
+config :ideajar, :session_options, secure: true
+
 # Runtime production configuration, including reading
 # of environment variables, is done on config/runtime.exs.
