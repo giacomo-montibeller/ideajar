@@ -56,8 +56,37 @@ defmodule IdeajarWeb.IdeaLive.Index do
      |> assign_form()}
   end
 
+  def handle_event("save", %{"idea" => attrs}, socket) do
+    case Ideas.create_idea(attrs) do
+      {:ok, _idea} ->
+        {:noreply,
+         socket
+         |> assign(:ideas, Ideas.list_ideas())
+         |> assign(:form_visible?, false)
+         |> assign_form()
+         |> put_flash(:info, "Idea aggiunta")
+         |> push_event("ideajar:focus", %{to: "#add-idea-button"})}
+
+      {:error, %Ecto.Changeset{} = changeset} ->
+        {:noreply,
+         socket
+         |> assign(:form, to_form(changeset, as: "idea", action: :insert))
+         |> push_event("ideajar:focus", %{to: focus_first_invalid(changeset)})}
+    end
+  end
+
   defp assign_form(socket) do
     assign(socket, :form, to_form(Idea.changeset(%Idea{}, %{}), as: "idea"))
+  end
+
+  # First-invalid focus: priority follows the visual order of the form so
+  # screen-reader users land on the topmost field that needs attention.
+  defp focus_first_invalid(%Ecto.Changeset{errors: errors}) do
+    cond do
+      Keyword.has_key?(errors, :title) -> "#idea-title"
+      Keyword.has_key?(errors, :url) -> "#idea-url"
+      true -> "#idea-description"
+    end
   end
 
   defp redirect_to_login(socket) do

@@ -40,5 +40,25 @@
     <p :if={@ideas == []} class="text-base-content/70">
       Nessuna idea ancora. Aggiungine una qui sopra.
     </p>
+
+    <ul :if={@ideas != []} class="space-y-4">
+      <li :for={idea <- @ideas} class="rounded-box border border-base-300 p-4 space-y-2">
+        <h3 class="text-base font-semibold">{idea.title}</h3>
+        <p :if={idea.description not in [nil, ""]} class="whitespace-pre-wrap text-base-content/80">
+          {idea.description}
+        </p>
+        <p :if={idea.url not in [nil, ""]}>
+          <a
+            href={idea.url}
+            target="_blank"
+            rel="noopener noreferrer"
+            aria-label="Apri link in una nuova scheda"
+            class="link link-primary break-all"
+          >
+            {idea.url}
+          </a>
+        </p>
+      </li>
+    </ul>
   </section>
 </Layouts.app>
