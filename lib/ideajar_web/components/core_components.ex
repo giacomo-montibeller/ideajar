@@ -263,10 +263,14 @@ defmodule IdeajarWeb.CoreComponents do
             @class || "w-full textarea",
             @errors != [] && (@error_class || "textarea-error")
           ]}
+          aria-invalid={@errors != [] && "true"}
+          aria-describedby={@errors != [] && "#{@id}-error"}
           {@rest}
         >{Phoenix.HTML.Form.normalize_value("textarea", @value)}</textarea>
       </label>
-      <.error :for={msg <- @errors}>{msg}</.error>
+      <.error :if={@errors != []} id={"#{@id}-error"}>
+        <span :for={msg <- @errors}>{msg}</span>
+      </.error>
     </div>
     """
   end
@@ -286,18 +290,27 @@ defmodule IdeajarWeb.CoreComponents do
             @class || "w-full input",
             @errors != [] && (@error_class || "input-error")
           ]}
+          aria-invalid={@errors != [] && "true"}
+          aria-describedby={@errors != [] && "#{@id}-error"}
           {@rest}
         />
       </label>
-      <.error :for={msg <- @errors}>{msg}</.error>
+      <.error :if={@errors != []} id={"#{@id}-error"}>
+        <span :for={msg <- @errors}>{msg}</span>
+      </.error>
     </div>
     """
   end
 
-  # Helper used by inputs to generate form errors
+  # Helper used by inputs to generate form errors. Optional `id` lets the
+  # input wire `aria-describedby` to this element so screen readers announce
+  # the error message together with the field.
+  attr :id, :string, default: nil
+  slot :inner_block, required: true
+
   defp error(assigns) do
     ~H"""
-    <p class="mt-1.5 flex gap-2 items-center text-sm text-error">
+    <p id={@id} class="mt-1.5 flex gap-2 items-center text-sm text-error">
       <.icon name="hero-exclamation-circle" class="size-5" />
       {render_slot(@inner_block)}
     </p>

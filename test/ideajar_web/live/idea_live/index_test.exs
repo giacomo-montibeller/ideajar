@@ -273,6 +273,96 @@ defmodule IdeajarWeb.IdeaLive.IndexTest do
     end
   end
 
+  describe "save — validation errors" do
+    # Scenario: Submitting an empty title shows the validation error inline
+    test "empty title surfaces the canonical message and keeps the form open",
+         %{conn: conn} do
+      view = mount_authenticated(conn) |> open_form()
+
+      html = submit(view, %{title: ""})
+
+      assert html =~ "Il titolo è obbligatorio"
+      assert html =~ ~s(id="idea-title")
+      assert html =~ ~s(aria-invalid="true")
+      assert html =~ ~s(aria-describedby="idea-title-error")
+      assert html =~ ~s(id="idea-title-error")
+
+      assert_push_event(view, "ideajar:focus", %{to: "#idea-title"})
+
+      assigns = :sys.get_state(view.pid).socket.assigns
+      assert assigns.form_visible? == true
+      assert assigns.ideas == []
+    end
+
+    # F6 — whitespace-only title trimmed
+    test "whitespace-only title is rejected with the canonical message", %{conn: conn} do
+      view = mount_authenticated(conn) |> open_form()
+
+      html = submit(view, %{title: "   "})
+
+      assert html =~ "Il titolo è obbligatorio"
+    end
+
+    # Scenario: Submitting a title longer than 200 characters shows the validation error
+    test "title longer than 200 chars is rejected", %{conn: conn} do
+      view = mount_authenticated(conn) |> open_form()
+
+      html = submit(view, %{title: String.duplicate("a", 201)})
+
+      assert html =~ "Il titolo non può superare i 200 caratteri"
+    end
+
+    # Scenario: Submitting with both invalid title and invalid url shows both errors
+    test "both invalid title and invalid url surface together; focus lands on title",
+         %{conn: conn} do
+      view = mount_authenticated(conn) |> open_form()
+
+      html = submit(view, %{title: "", url: "ftp://x"})
+
+      assert html =~ "Il titolo è obbligatorio"
+      assert html =~ "Il link deve iniziare con http:// o https://"
+
+      assert_push_event(view, "ideajar:focus", %{to: "#idea-title"})
+    end
+
+    # url-only invalid → focus jumps to #idea-url
+    test "valid title + invalid url surfaces the link error and focuses #idea-url",
+         %{conn: conn} do
+      view = mount_authenticated(conn) |> open_form()
+
+      html = submit(view, %{title: "Test", url: "ftp://x"})
+
+      assert html =~ "Il link deve iniziare con http:// o https://"
+      assert html =~ ~s(id="idea-url")
+      assert html =~ ~s(aria-describedby="idea-url-error")
+
+      assert_push_event(view, "ideajar:focus", %{to: "#idea-url"})
+    end
+
+    test "url longer than 2000 chars surfaces the canonical too-long message",
+         %{conn: conn} do
+      view = mount_authenticated(conn) |> open_form()
+
+      html = submit(view, %{title: "Test", url: String.duplicate("h", 2001)})
+
+      assert html =~ "Il link non può superare i 2000 caratteri"
+    end
+
+    # Whitespace-only url is trimmed → empty → optional → idea created
+    test "whitespace-only url with a valid title is accepted", %{conn: conn} do
+      view = mount_authenticated(conn) |> open_form()
+
+      html = submit(view, %{title: "Test", url: "   "})
+
+      assert html =~ "Test"
+      refute html =~ "Il link deve iniziare"
+
+      assigns = :sys.get_state(view.pid).socket.assigns
+      assert length(assigns.ideas) == 1
+      assert hd(assigns.ideas).url in [nil, ""]
+    end
+  end
+
   describe "list rendering" do
     # Scenario: Ideas are rendered newest-first
     test "renders ideas with the newest at the top", %{conn: conn} do
