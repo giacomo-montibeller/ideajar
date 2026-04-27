@@ -1,0 +1,7 @@
+{
+  "database": "dolt",
+  "backend": "dolt",
+  "dolt_mode": "server",
+  "dolt_database": "ideajar",
+  "project_id": "75c0d642-23e4-4c86-a4b8-94ee57ed40b6"
+}
