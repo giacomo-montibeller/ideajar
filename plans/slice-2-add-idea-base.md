@@ -2,7 +2,7 @@
 
 **Created**: 2026-04-27
 **Branch**: main (trunk-based)
-**Status**: approved
+**Status**: implemented
 **Spec**: `docs/specs/add-idea-base.md`
 
 ## Build conventions (carried from slice 1)
