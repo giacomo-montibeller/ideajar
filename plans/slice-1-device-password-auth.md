@@ -345,7 +345,15 @@ Feature: Device-level password authentication
 **Commit**: `feat: authenticate login with constant-time compare, no leakage, configurable delay`
 **Spec mapping**: scenari "Successful login", "Wrong password", "Repeated wrong passwords", "Empty password", "Login preserves return_to", "return_to outside app", "Wrong password is never logged". Acceptance F1, F2, S1, S2, P1.
 
-### Step 5: RequireAuth plug + protected home page (merged)
+### Step 5: RequireAuth plug + protected home page (merged) ✅ DONE 2026-04-27
+
+**Implementato:**
+- `IdeajarWeb.RequireAuth` plug (lib/ideajar_web/plugs/require_auth.ex): legge `:authenticated` da session; su GET senza sessione redirect a `/login?return_to=<URI.encode_www_form(request_path[?query])>`; su altri verbi `send_resp(403, "")` + halt; cookie tampered → Plug.Session lo scarta silenziosamente → trattato come no-session.
+- `IdeajarWeb.PageController.home/2` + `IdeajarWeb.PageHTML` + template `home.html.heex` con heading "Workspace privato" (placeholder per slice 2+).
+- Pipeline `:require_auth` ora popolata in router; rotta `get "/", PageController, :home` sotto `pipe_through [:browser, :require_auth]`.
+- 5 test: GET / no session → redirect; GET / autenticato → 200; plug call con POST manualmente → 403 + halt + no leak; cookie tampered con last-4-chars flip → 302 to /login + body senza leak (refute response_body =~ /cookie|signature|invalid/); session persistence via `recycle/1` → cookie carries authentication into next request (chiude warning acceptance review iter 2).
+
+44 tests passing total; format + credo clean.
 
 **Complexity**: complex (security boundary + integration di pipeline reale)
 **RED**: `test/ideajar_web/controllers/page_controller_test.exs`:
