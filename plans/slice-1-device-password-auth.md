@@ -3,7 +3,9 @@
 **Created**: 2026-04-27
 **Approved**: 2026-04-27
 **Branch**: (no git repo yet — initialized in Step 1)
-**Status**: **approved**
+**Status**: **implemented**
+**Final test count**: 63 tests, 0 failures
+**Commits**: 8 (1 initial + 7 step commits, ognuno via skill `commit-message`)
 **Spec**: `docs/specs/device-password-auth.md`
 
 ## Build conventions (user-confirmed)
@@ -410,7 +412,11 @@ Feature: Device-level password authentication
 **Commit**: `feat: reserve PWA asset paths in Plug.Static, bypass auth pipeline`
 **Spec mapping**: scenario "PWA asset paths are not gated by authentication".
 
-### Step 8: Documentation handoff (with automated checks)
+### Step 8: Documentation handoff (with automated checks) ✅ DONE 2026-04-27
+
+**Implementato:** README.md riscritto da zero (sostituendo lo scaffold Phoenix di default) con sezioni Stack, Prerequisiti, Quick start, Variabili d'ambiente (tabella), Generazione SECRET_KEY_BASE, Rotazione password, Test, Deploy, Riferimenti. `docs/conventions.md` con sezione lingua UI (italiano, vincolo trasversale), tabella UI copy canonica (riusabile in slice 2+), architettura (`Ideajar.*` domain vs `IdeajarWeb.*` delivery), convenzioni TDD/quality gate, git/commit (commit-message skill), security (env vars, gitignore). 7 test automatici in `test/ideajar/docs_test.exs` che leggono i due file e verificano presenza di token chiave (`WORKSPACE_PASSWORD`, `SECRET_KEY_BASE`, `mix phx.gen.secret`, "rotazione password", "lingua UI", "Entra", "Password errata") — D1/D2 binary-verifiable.
+
+**63 tests passing total**; format + credo clean. **Slice 1 COMPLETE.**
 
 **Complexity**: standard (passa da trivial a standard per via dei test automatici)
 **RED**: `test/ideajar/docs_test.exs`:
