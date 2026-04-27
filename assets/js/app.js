@@ -37,6 +37,17 @@ topbar.config({barColors: {0: "#29d"}, shadowColor: "rgba(0, 0, 0, .3)"})
 window.addEventListener("phx:page-loading-start", _info => topbar.show(300))
 window.addEventListener("phx:page-loading-stop", _info => topbar.hide())
 
+// Move focus when the LiveView asks us to. The server emits
+// `push_event("ideajar:focus", %{to: "#some-id"})` and we deliver the focus
+// here, so the behaviour is testable from the server side and survives
+// re-renders that would defeat the HTML `autofocus` attribute.
+window.addEventListener("phx:ideajar:focus", e => {
+  const target = e.detail && e.detail.to
+  if (!target) return
+  const node = document.querySelector(target)
+  if (node) node.focus()
+})
+
 // connect if there are any LiveViews on the page
 liveSocket.connect()
 

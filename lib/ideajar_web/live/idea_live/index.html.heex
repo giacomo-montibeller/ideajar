@@ -9,6 +9,34 @@
       + Aggiungi idea
     </button>
 
+    <.form
+      :if={@form_visible?}
+      for={@form}
+      id="idea-form"
+      phx-submit="save"
+      class="space-y-4 rounded-box border border-base-300 p-4"
+    >
+      <div class="flex items-start justify-between gap-2">
+        <h2 class="text-base font-semibold">Aggiungi idea</h2>
+        <button
+          type="button"
+          aria-label="Chiudi"
+          phx-click="close_form"
+          class="btn btn-ghost btn-sm min-h-11 min-w-11 text-base-content/60"
+        >
+          ✕
+        </button>
+      </div>
+
+      <.input field={@form[:title]} id="idea-title" label="Titolo" required />
+      <.input field={@form[:description]} id="idea-description" label="Descrizione" type="textarea" />
+      <.input field={@form[:url]} id="idea-url" label="Link" type="url" />
+
+      <button type="submit" phx-disable-with="Salvataggio…" class="btn btn-primary">
+        Salva
+      </button>
+    </.form>
+
     <p :if={@ideas == []} class="text-base-content/70">
       Nessuna idea ancora. Aggiungine una qui sopra.
     </p>
