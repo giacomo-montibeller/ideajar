@@ -14,6 +14,13 @@ LiveView `mount/3` verifica `session["authenticated"] == true` defense-in-depth 
 
 ## User-Facing Behavior
 
+> Iter-2 sync: focus management is verified server-side via `push_event`
+> ("the title input receives focus when the form opens"); the HTML
+> `autofocus` attribute is inadequate across LiveView re-renders.
+> The add-idea form is not present in the rendered HTML when collapsed
+> (not merely CSS-hidden). Boundary, tie-break, mixed-error, double-click,
+> DB-failure and mixed-case-scheme scenarios are explicit below.
+
 ```gherkin
 Feature: Add a base idea (title + description + link) and see it in the list
 
@@ -31,15 +38,16 @@ Feature: Add a base idea (title + description + link) and see it in the list
   # ── Form expansion / collapse ───────────────────────────────────────
   Scenario: Add-idea form is collapsed by default
     When I visit "/"
-    Then the add-idea form is not visible in the rendered DOM
+    Then the add-idea form is not present in the rendered HTML
     And the "+ Aggiungi idea" button is enabled
 
-  Scenario: Clicking the add button expands the form
+  Scenario: Clicking the add button expands the form and focuses the title input
     Given I am on "/"
     When I click "+ Aggiungi idea"
     Then the add-idea form becomes visible
-    And the title input has autofocus
-    And I see a "Salva" button and a "✕" close icon
+    And the server emits a "ideajar:focus" event targeting "#idea-title"
+    And I see a "Salva" button with phx-disable-with "Salvataggio…"
+    And I see a "✕" close button with type="button" and aria-label "Chiudi"
 
   Scenario: Clicking the close icon collapses the form without saving
     Given the add-idea form is expanded
@@ -48,8 +56,17 @@ Feature: Add a base idea (title + description + link) and see it in the list
     Then the form is no longer visible
     And the workspace still has no ideas
 
+  Scenario: Reopening the form after close shows empty fields (F7)
+    Given the add-idea form is expanded
+    And I have typed "Mare a Sirolo" into the title field
+    When I click the "✕" close icon
+    And I click "+ Aggiungi idea"
+    Then the title field is empty
+    And the description field is empty
+    And the link field is empty
+
   # ── Successful creation ─────────────────────────────────────────────
-  Scenario: Submitting valid input creates the idea, collapses the form, and shows it in the list
+  Scenario: Submitting valid input creates the idea, collapses the form, returns focus, and shows a success flash
     Given the add-idea form is expanded
     When I fill in "Mare a Sirolo" as the title
     And I fill in "Spiaggia delle due Sorelle, partenza presto" as the description
@@ -57,10 +74,10 @@ Feature: Add a base idea (title + description + link) and see it in the list
     And I submit the form
     Then the idea "Mare a Sirolo" appears at the top of the list
     And I see its description "Spiaggia delle due Sorelle, partenza presto"
-    And I see its link rendered as <a href="https://www.parcodelconero.com/sirolo/" target="_blank" rel="noopener noreferrer">
+    And I see its link rendered as <a href="https://www.parcodelconero.com/sirolo/" target="_blank" rel="noopener noreferrer" aria-label="Apri link in una nuova scheda">
     And the form is no longer visible
-    And the form fields, when re-opened, are empty
-    And the focus has returned to the "+ Aggiungi idea" button
+    And the server emits a "ideajar:focus" event targeting "#add-idea-button"
+    And a flash "Idea aggiunta" is shown
 
   Scenario: Submitting with only the title creates a minimal idea
     Given the add-idea form is expanded
@@ -74,59 +91,102 @@ Feature: Add a base idea (title + description + link) and see it in the list
   Scenario: Title with surrounding whitespace is trimmed before validation
     Given the add-idea form is expanded
     When I fill in "   " as the title and submit
-    Then I see a validation error "Il titolo è obbligatorio"
+    Then I see a validation error "Il titolo è obbligatorio" associated with the title input via aria-describedby
+    And the title input has aria-invalid="true"
     And no idea is created
 
+  Scenario: Title at exactly 200 characters is accepted (boundary)
+    Given the add-idea form is expanded
+    When I submit the form with a title of exactly 200 characters
+    Then the idea is created
+
+  Scenario: URL at exactly 2000 characters with valid scheme is accepted (boundary)
+    Given the add-idea form is expanded
+    When I submit the form with a 2000-character https URL
+    Then the idea is created
+
   # ── Validation errors ───────────────────────────────────────────────
-  Scenario: Submitting an empty title shows the validation error
+  Scenario: Submitting an empty title shows the validation error inline
     Given the add-idea form is expanded
     When I submit the form with an empty title
-    Then I see a validation error "Il titolo è obbligatorio"
+    Then I see "Il titolo è obbligatorio" as an error associated with the title input
+    And the title input has aria-invalid="true"
     And the form remains expanded
+    And the server emits a "ideajar:focus" event targeting "#idea-title"
     And no idea is created
 
   Scenario: Submitting a title longer than 200 characters shows the validation error
     Given the add-idea form is expanded
     When I submit the form with a title of 201 characters
-    Then I see a validation error mentioning the 200-character limit
+    Then I see "Il titolo non può superare i 200 caratteri" associated with the title input
     And no idea is created
 
   Scenario Outline: Submitting an invalid link shows the validation error
     Given the add-idea form is expanded
     When I submit the form with title "Test" and link "<value>"
-    Then I see a validation error "Il link deve iniziare con http:// o https://"
+    Then I see "Il link deve iniziare con http:// o https://" associated with the link input
     And no idea is created
 
     Examples:
-      | value                |
-      | not-a-url            |
-      | ftp://example.com    |
-      | javascript:alert(1)  |
-      | mailto:foo@bar.com   |
-      | http:/missing-slash  |
+      | value                                       |
+      | not-a-url                                   |
+      | ftp://example.com                           |
+      | javascript:alert(1)                         |
+      | mailto:foo@bar.com                          |
+      | http:/missing-slash                         |
+      | data:text/html,<script>alert(1)</script>    |
+      | https://                                    |
+      | ://example.com                              |
 
-  Scenario Outline: Valid links are accepted
+  Scenario Outline: Valid links are accepted and case-insensitive in scheme (S5)
     Given the add-idea form is expanded
     When I submit the form with title "Test" and link "<value>"
     Then the idea is created
-    And its rendered link href equals "<value>"
+    And its rendered link href equals "<href>"
 
     Examples:
-      | value                                   |
-      | http://example.com                      |
-      | https://example.com                     |
-      | https://www.parcodelconero.com/sirolo/  |
+      | value                  | href                   |
+      | http://example.com     | http://example.com     |
+      | https://example.com    | https://example.com    |
+      | HTTPS://example.com    | HTTPS://example.com    |
+      | Http://Example.com     | Http://Example.com     |
+
+  Scenario: Submitting with both invalid title and invalid url shows both errors
+    Given the add-idea form is expanded
+    When I submit the form with empty title and link "ftp://x"
+    Then I see "Il titolo è obbligatorio" near the title input
+    And I see "Il link deve iniziare con http:// o https://" near the link input
+    And no idea is created
+
+  Scenario: A whitespace-only URL (after trim, empty) is accepted because url is optional
+    Given the add-idea form is expanded
+    When I submit the form with title "Test" and link "   "
+    Then the idea is created
+    And the rendered idea has no link block
+
+  # ── Concurrency / double-click protection ───────────────────────────
+  Scenario: The Salva button is disabled during submission (phx-disable-with)
+    Given the add-idea form is expanded with valid input
+    When the form is being submitted
+    Then the Salva button has the phx-disable-with attribute equal to "Salvataggio…"
+    And tapping it again before the response would be ignored client-side
 
   # ── List ordering and rendering ─────────────────────────────────────
   Scenario: Ideas are rendered newest-first
-    Given the workspace already has the idea "Vecchia" inserted 2 hours ago
+    Given the workspace already has the idea "Vecchia" with inserted_at 2 hours before "Recente"
     When I add a new idea "Recente"
-    Then "Recente" appears above "Vecchia" in the list
+    Then "Recente" appears above "Vecchia" in the rendered HTML
 
-  Scenario: Description newlines are preserved in rendering
-    Given the workspace already has an idea with description "riga 1\nriga 2"
+  Scenario: Tie-break — equal inserted_at, higher id first
+    Given two ideas with `inserted_at = 2026-04-27T10:00:00Z`, ids 1 ("First") and 2 ("Second")
     When I visit "/"
-    Then "riga 1" and "riga 2" are rendered on separate visual lines
+    Then "Second" appears above "First" in the rendered HTML
+
+  Scenario: Description newlines are preserved via CSS
+    Given the workspace already has an idea whose description is two lines joined by a single LF
+    When I visit "/"
+    Then the description element has CSS class "whitespace-pre-wrap"
+    And the rendered HTML contains both lines separated by the same LF character
 
   Scenario: User input in description is HTML-escaped
     Given the workspace already has an idea with description "<script>alert(1)</script>"
@@ -134,7 +194,16 @@ Feature: Add a base idea (title + description + link) and see it in the list
     Then the rendered HTML contains "&lt;script&gt;alert(1)&lt;/script&gt;"
     And the rendered HTML does not contain the literal "<script>alert(1)</script>"
 
-  # ── Persistence (validated manually as part of V1, not in the automated suite) ──
+  # ── DB error handling (S6) ──────────────────────────────────────────
+  Scenario: Repo write failure surfaces a generic flash without crashing
+    Given the add-idea form is expanded with valid input
+    And the persistence layer will fail with an unexpected error
+    When I submit the form
+    Then I see a flash "Salvataggio non riuscito, riprova" with role="alert"
+    And the form remains expanded with my input preserved
+    And the LiveView process did not crash
+
+  # ── Persistence (validated manually as part of V1c, not in the automated suite) ──
   Scenario: Ideas survive an app restart
     Given I have created the idea "Mare a Sirolo"
     When the application is restarted
@@ -144,14 +213,13 @@ Feature: Add a base idea (title + description + link) and see it in the list
   # ── LiveView mount auth (defense-in-depth, closes R3 of slice 1) ────
   Scenario: LiveView mount with no session redirects to /login
     Given my browser has no session cookie for this app
-    When the LiveView at "/" is mounted
-    Then the mount returns a redirect to "/login?return_to=%2F"
-    And no LiveView state is initialised
+    When I visit "/"
+    Then I am redirected to "/login?return_to=%2F"
 
   Scenario: LiveView mount with tampered session is treated as no session
     Given my browser presents a session cookie that does not validate
-    When the LiveView at "/" is mounted
-    Then the mount returns a redirect to "/login?return_to=%2F"
+    When I visit "/"
+    Then I am redirected to "/login?return_to=%2F"
 ```
 
 ## Architecture Specification
@@ -160,7 +228,7 @@ Feature: Add a base idea (title + description + link) and see it in the list
 
 | Componente | Tipo | Responsabilità |
 |---|---|---|
-| `Ideajar.Ideas` | Context module (`lib/ideajar/ideas.ex`) | API pubblica del dominio Ideas: `list_ideas/0`, `create_idea/1`, `change_idea/2`. Wrappa `Ideajar.Repo`. Pure domain — non importa nulla da `IdeajarWeb.*`. |
+| `Ideajar.Ideas` | Context module (`lib/ideajar/ideas.ex`) | API pubblica del dominio Ideas: `list_ideas/0`, `create_idea/1`. Wrappa `Ideajar.Repo`. Pure domain — non importa nulla da `IdeajarWeb.*`. |
 | `Ideajar.Ideas.Idea` | Ecto schema (`lib/ideajar/ideas/idea.ex`) | Schema della tabella `ideas`: `title`, `description`, `url`, `inserted_at`, `updated_at`. Changeset con `validate_required([:title])`, `validate_length(:title, min: 1, max: 200)`, `validate_length(:description, max: 5000)`, `validate_length(:url, max: 2000)`, `validate_url(:url)` (helper privato che usa `URI.parse/1` + check scheme http/https + host non vuoto). Trim su `title` e `url` prima delle validazioni. |
 | Migration | `priv/repo/migrations/<timestamp>_create_ideas.exs` | `CREATE TABLE ideas (id INTEGER PK, title TEXT NOT NULL, description TEXT, url TEXT, inserted_at, updated_at)` + index su `inserted_at DESC` per la list ordering. |
 | `IdeajarWeb.IdeaLive.Index` | LiveView (`lib/ideajar_web/live/idea_live/index.ex` + `index.html.heex`) | Mount: check `session["authenticated"]`, carica `Ideas.list_ideas/0`, init form non visibile. Eventi: `"toggle_form"`, `"close_form"`, `"save"`. Rerender ottimistico dopo `create_idea`. |
@@ -170,10 +238,12 @@ Feature: Add a base idea (title + description + link) and see it in the list
 
 - **Domain API** — `Ideajar.Ideas`:
   ```elixir
-  @spec list_ideas() :: [Idea.t()]              # ordered by inserted_at DESC
+  @spec list_ideas() :: [Idea.t()]              # ordered by inserted_at DESC, id DESC
   @spec create_idea(map()) :: {:ok, Idea.t()} | {:error, Ecto.Changeset.t()}
-  @spec change_idea(Idea.t() | nil, map()) :: Ecto.Changeset.t()
   ```
+  The LiveView builds its initial empty form straight from
+  `Ideajar.Ideas.Idea.changeset/2`; the context exposes only the operations
+  that perform I/O.
 
 - **Routes**:
   - `live "/", IdeaLive.Index` (under `:require_auth`)

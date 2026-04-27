@@ -26,7 +26,26 @@ Stringhe consolidate in slice 1 (device password auth), da riutilizzare consiste
 | Label campo password        | `Password`                                                |
 | Bottone submit login        | `Entra`                                                   |
 | Errore login generico       | `Password errata`                                         |
-| Heading home placeholder    | `Workspace privato`                                       |
+
+Stringhe aggiunte in slice 2 (add base idea):
+
+| Elemento                          | Testo IT                                              |
+|-----------------------------------|-------------------------------------------------------|
+| Bottone aggiungi idea             | `+ Aggiungi idea`                                     |
+| Bottone submit form               | `Salva`                                               |
+| Submit pending (phx-disable-with) | `Salvataggio…`                                        |
+| Aria close icon                   | `Chiudi`                                              |
+| Label campo titolo                | `Titolo`                                              |
+| Label campo descrizione           | `Descrizione`                                         |
+| Label campo link                  | `Link`                                                |
+| Errore titolo vuoto               | `Il titolo è obbligatorio`                            |
+| Errore titolo lungo               | `Il titolo non può superare i 200 caratteri`          |
+| Errore link invalido              | `Il link deve iniziare con http:// o https://`        |
+| Errore link lungo                 | `Il link non può superare i 2000 caratteri`           |
+| Aria link external                | `Apri link in una nuova scheda`                       |
+| Empty state                       | `Nessuna idea ancora. Aggiungine una qui sopra.`      |
+| Flash success                     | `Idea aggiunta`                                       |
+| Flash DB error                    | `Salvataggio non riuscito, riprova`                   |
 
 Nuova copy aggiunta da slice future va appesa qui per evitare drift.
 

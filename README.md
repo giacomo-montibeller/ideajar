@@ -23,6 +23,7 @@ Vedi `CONTEXT.md` per il quadro generale, `docs/specs/` per le specifiche per sl
 ```bash
 asdf install                   # installa le versioni in .tool-versions
 mix setup                      # deps.get + ecto.setup + assets.setup + assets.build
+mix ecto.migrate               # idempotente; necessario dopo un git pull che porta nuove migration
 mix phx.server                 # avvia su http://localhost:4000
 ```
 

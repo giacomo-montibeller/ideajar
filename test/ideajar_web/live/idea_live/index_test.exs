@@ -410,6 +410,56 @@ defmodule IdeajarWeb.IdeaLive.IndexTest do
     end
   end
 
+  describe "save — repo failure (S6)" do
+    # Scenario: Repo write failure surfaces a generic flash without crashing
+    test "an unexpected persistence failure shows a flash and keeps the form open",
+         %{conn: conn} do
+      view = mount_authenticated(conn) |> open_form()
+
+      # Inject a deterministic failure for create_idea/1 — the LiveView
+      # exposes a test seam via socket assigns that defaults to the real
+      # context call.
+      :sys.replace_state(view.pid, fn state ->
+        socket =
+          Phoenix.Component.assign(
+            state.socket,
+            :create_idea_fun,
+            fn _attrs -> {:error, :db_unavailable} end
+          )
+
+        %{state | socket: socket}
+      end)
+
+      html =
+        submit(view, %{
+          title: "Mare a Sirolo",
+          description: "Spiaggia",
+          url: "https://example.com"
+        })
+
+      assert html =~ "Salvataggio non riuscito, riprova"
+      # Phoenix scaffold renders error flashes with role="alert" — pinned
+      # explicitly so a future template tweak cannot quietly downgrade it.
+      assert html =~ ~s(role="alert")
+
+      # Form remains visible and pre-populated with the user's input.
+      assert html =~ ~s(id="idea-form")
+      assert html =~ ~s(value="Mare a Sirolo")
+
+      # And the LiveView is still alive.
+      assert Process.alive?(view.pid)
+    end
+
+    test "the success flash sits in an aria-live polite region (A12)", %{conn: conn} do
+      view = mount_authenticated(conn) |> open_form()
+
+      html = submit(view, %{title: "x"})
+
+      assert html =~ "Idea aggiunta"
+      assert html =~ ~s(aria-live="polite")
+    end
+  end
+
   describe "list rendering" do
     # Scenario: Ideas are rendered newest-first
     test "renders ideas with the newest at the top", %{conn: conn} do

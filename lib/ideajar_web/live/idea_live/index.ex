@@ -57,7 +57,7 @@ defmodule IdeajarWeb.IdeaLive.Index do
   end
 
   def handle_event("save", %{"idea" => attrs}, socket) do
-    case Ideas.create_idea(attrs) do
+    case create_idea_fun(socket).(attrs) do
       {:ok, _idea} ->
         {:noreply,
          socket
@@ -72,11 +72,27 @@ defmodule IdeajarWeb.IdeaLive.Index do
          socket
          |> assign(:form, to_form(changeset, as: "idea", action: :insert))
          |> push_event("ideajar:focus", %{to: focus_first_invalid(changeset)})}
+
+      {:error, _other} ->
+        # Persistence layer failed for a non-validation reason (DB locked,
+        # disk full, …). We surface a generic flash, keep the form open
+        # with the user's input, and leave the LV process alive.
+        {:noreply,
+         socket
+         |> assign(:form, to_form(Idea.changeset(%Idea{}, attrs), as: "idea"))
+         |> put_flash(:error, "Salvataggio non riuscito, riprova")}
     end
   end
 
   defp assign_form(socket) do
     assign(socket, :form, to_form(Idea.changeset(%Idea{}, %{}), as: "idea"))
+  end
+
+  # Test seam: tests assign `:create_idea_fun` to inject a deterministic
+  # failure without dragging in Mox for a single call site. In production
+  # the assign is absent and we fall back to the real context call.
+  defp create_idea_fun(socket) do
+    socket.assigns[:create_idea_fun] || (&Ideas.create_idea/1)
   end
 
   # First-invalid focus: priority follows the visual order of the form so
