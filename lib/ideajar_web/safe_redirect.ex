@@ -20,11 +20,16 @@ defmodule IdeajarWeb.SafeRedirect do
 
   @spec normalize(String.t() | nil) :: String.t()
   def normalize("/" <> rest = path) do
-    if String.starts_with?(rest, "/") do
+    cond do
       # Protocol-relative URL like "//evil.com"
-      @safe_default
-    else
-      path
+      String.starts_with?(rest, "/") -> @safe_default
+      # Some browsers historically parsed "/\evil.com" as protocol-relative;
+      # reject as defense-in-depth.
+      String.starts_with?(rest, "\\") -> @safe_default
+      # CRLF defends against header-injection at the redirect call site
+      # (Plug already strips, but cheap belt-and-braces).
+      String.contains?(path, ["\r", "\n"]) -> @safe_default
+      true -> path
     end
   end
 

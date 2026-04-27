@@ -86,6 +86,30 @@ defmodule IdeajarWeb.PageControllerTest do
     end
   end
 
+  describe "second device is a separate authentication" do
+    # Scenario: A second device is a separate authentication
+    test "device A authenticated does not authenticate device B", _ do
+      device_a =
+        build_conn()
+        |> Plug.Test.init_test_session(%{authenticated: true})
+        |> get("/")
+
+      assert html_response(device_a, 200) =~ "Workspace privato"
+
+      device_b = build_conn() |> get("/")
+
+      assert redirected_to(device_b) =~ ~r{^/login}
+
+      # Re-checking device A after device B's request: still authenticated
+      device_a_again =
+        build_conn()
+        |> Plug.Test.init_test_session(%{authenticated: true})
+        |> get("/")
+
+      assert html_response(device_a_again, 200) =~ "Workspace privato"
+    end
+  end
+
   describe "session persistence across requests" do
     test "after successful login the cookie carries authentication to the next request",
          %{conn: conn} do

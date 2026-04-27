@@ -43,5 +43,16 @@ defmodule IdeajarWeb.SafeRedirectTest do
       assert "/" = SafeRedirect.normalize("relative/path")
       assert "/" = SafeRedirect.normalize("path")
     end
+
+    test "rejects backslash-prefixed paths (legacy browser parsing quirk)" do
+      assert "/" = SafeRedirect.normalize("/\\evil.com")
+      assert "/" = SafeRedirect.normalize("/\\\\evil.com")
+    end
+
+    test "rejects paths containing CR or LF (defense-in-depth on header injection)" do
+      assert "/" = SafeRedirect.normalize("/safe\r\nLocation: https://evil.com")
+      assert "/" = SafeRedirect.normalize("/safe\nfoo")
+      assert "/" = SafeRedirect.normalize("/safe\rfoo")
+    end
   end
 end

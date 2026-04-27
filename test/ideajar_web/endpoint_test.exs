@@ -40,6 +40,21 @@ defmodule IdeajarWeb.EndpointTest do
       assert is_list(session_opts), "expected :session_options to be configured in prod"
       assert Keyword.get(session_opts, :secure) == true
     end
+
+    test "the FULL merged prod config (config.exs + prod.exs) keeps every hardening attribute" do
+      # `import_config "prod.exs"` in config/config.exs deep-merges keyword
+      # lists, so the resulting :session_options must contain the base
+      # hardening AND the prod-only secure flag — together, not separately.
+      merged = Config.Reader.read!("config/config.exs", env: :prod)
+      session_opts = get_in(merged, [:ideajar, :session_options])
+
+      assert Keyword.get(session_opts, :store) == :cookie
+      assert Keyword.get(session_opts, :key) == "_ideajar_key"
+      assert Keyword.get(session_opts, :http_only) == true
+      assert Keyword.get(session_opts, :same_site) == "Lax"
+      assert Keyword.get(session_opts, :max_age) == 315_360_000
+      assert Keyword.get(session_opts, :secure) == true
+    end
   end
 
   describe "redeploy survival (cookie-layer round-trip)" do
