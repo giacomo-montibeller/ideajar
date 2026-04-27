@@ -363,6 +363,53 @@ defmodule IdeajarWeb.IdeaLive.IndexTest do
     end
   end
 
+  describe "routed at /" do
+    # Scenario: First visit from a fresh device redirects to /login (no session)
+    test "redirects to /login when no session is present", %{conn: conn} do
+      conn = get(conn, "/")
+
+      assert redirected_to(conn) == "/login?return_to=%2F"
+    end
+
+    # Scenario: Returning device with a valid session lands on the workspace
+    test "renders the LiveView home for an authenticated session", %{conn: conn} do
+      {:ok, _view, html} =
+        conn
+        |> init_test_session(%{authenticated: true})
+        |> live("/")
+
+      assert html =~ "+ Aggiungi idea"
+      assert html =~ "Nessuna idea ancora. Aggiungine una qui sopra."
+    end
+
+    # Scenario: A tampered or invalid signed cookie is treated as no session
+    test "tampered signed cookie redirects to /login without leaking error info",
+         %{conn: conn} do
+      login_conn = post(conn, "/login", %{"password" => "correct horse battery staple"})
+      assert redirected_to(login_conn) == "/"
+
+      [valid_cookie] =
+        login_conn
+        |> Plug.Conn.get_resp_header("set-cookie")
+        |> Enum.filter(&String.starts_with?(&1, "_ideajar_key="))
+
+      [_, cookie_value | _] = Regex.run(~r/_ideajar_key=([^;]+)/, valid_cookie)
+
+      tampered_value =
+        cookie_value
+        |> String.slice(0, byte_size(cookie_value) - 4)
+        |> Kernel.<>("XXXX")
+
+      tampered_conn =
+        build_conn()
+        |> Plug.Test.put_req_cookie("_ideajar_key", tampered_value)
+        |> get("/")
+
+      assert redirected_to(tampered_conn) =~ ~r{^/login}
+      refute (tampered_conn.resp_body || "") =~ ~r/cookie|signature|invalid|tampered/i
+    end
+  end
+
   describe "list rendering" do
     # Scenario: Ideas are rendered newest-first
     test "renders ideas with the newest at the top", %{conn: conn} do

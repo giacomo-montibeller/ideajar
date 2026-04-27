@@ -29,7 +29,7 @@ defmodule IdeajarWeb.Router do
   scope "/", IdeajarWeb do
     pipe_through [:browser, :require_auth]
 
-    get "/", PageController, :home
+    live "/", IdeaLive.Index, :index
   end
 
   # Other scopes may use custom stacks.
