@@ -1,0 +1,16 @@
+<Layouts.app flash={@flash}>
+  <section class="space-y-6">
+    <button
+      id="add-idea-button"
+      type="button"
+      phx-click="toggle_form"
+      class="btn btn-primary"
+    >
+      + Aggiungi idea
+    </button>
+
+    <p :if={@ideas == []} class="text-base-content/70">
+      Nessuna idea ancora. Aggiungine una qui sopra.
+    </p>
+  </section>
+</Layouts.app>
