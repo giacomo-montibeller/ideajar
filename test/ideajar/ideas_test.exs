@@ -21,6 +21,113 @@ defmodule Ideajar.IdeasTest do
     message
   end
 
+  # ── Slice 4 fixture: 5 ideas across canonical categories ────────────
+  defp seed_5_ideas do
+    %{
+      sirolo:
+        insert_idea_with_categories!(
+          "Sirolo",
+          [by_name("mare"), by_name("viaggio")],
+          ~U[2026-04-27 10:00:00Z]
+        ),
+      uffizi:
+        insert_idea_with_categories!(
+          "Uffizi",
+          [by_name("museo"), by_name("cultura")],
+          ~U[2026-04-27 10:01:00Z]
+        ),
+      stadio:
+        insert_idea_with_categories!(
+          "Stadio",
+          [by_name("sport")],
+          ~U[2026-04-27 10:02:00Z]
+        ),
+      bagno:
+        insert_idea_with_categories!(
+          "Bagno",
+          [by_name("mare"), by_name("sport")],
+          ~U[2026-04-27 10:03:00Z]
+        ),
+      cinema:
+        insert_idea_with_categories!(
+          "Cinema",
+          [by_name("cinema"), by_name("cultura")],
+          ~U[2026-04-27 10:04:00Z]
+        )
+    }
+  end
+
+  describe "list_ideas/1 — required (AND clause, slice 4)" do
+    test "returns ideas tagged with the single required category" do
+      _ = seed_5_ideas()
+      mare = by_name("mare")
+
+      titles = Ideas.list_ideas(required: [mare.id]) |> Enum.map(& &1.title) |> Enum.sort()
+      assert titles == ["Bagno", "Sirolo"]
+    end
+
+    test "returns ideas tagged with all required categories (AND)" do
+      _ = seed_5_ideas()
+      mare = by_name("mare")
+      sport = by_name("sport")
+
+      titles =
+        Ideas.list_ideas(required: [mare.id, sport.id]) |> Enum.map(& &1.title)
+
+      assert titles == ["Bagno"]
+    end
+
+    test "returns [] when no idea has all required categories" do
+      _ = seed_5_ideas()
+      mare = by_name("mare")
+      museo = by_name("museo")
+
+      assert Ideas.list_ideas(required: [mare.id, museo.id]) == []
+    end
+
+    test "required: [] is a no-op (returns every idea)" do
+      _ = seed_5_ideas()
+      assert length(Ideas.list_ideas(required: [])) == 5
+    end
+
+    test "required: [non_existent_id] returns []" do
+      _ = seed_5_ideas()
+      assert Ideas.list_ideas(required: [999_999]) == []
+    end
+
+    test "duplicate ids in required are normalized via Enum.uniq" do
+      _ = seed_5_ideas()
+      mare = by_name("mare")
+
+      titles_dup =
+        Ideas.list_ideas(required: [mare.id, mare.id]) |> Enum.map(& &1.title) |> Enum.sort()
+
+      titles_uniq =
+        Ideas.list_ideas(required: [mare.id]) |> Enum.map(& &1.title) |> Enum.sort()
+
+      assert titles_dup == titles_uniq
+    end
+
+    test "SQL emission pin (O2): subquery emits HAVING COUNT(DISTINCT …)" do
+      mare = by_name("mare")
+      sport = by_name("sport")
+
+      query =
+        from i in Idea,
+          where:
+            i.id in subquery(
+              from ic in "idea_categories",
+                where: ic.category_id in ^[mare.id, sport.id],
+                group_by: ic.idea_id,
+                having: count(fragment("DISTINCT ?", ic.category_id)) == ^2,
+                select: ic.idea_id
+            )
+
+      {sql, _params} = Repo.to_sql(:all, query)
+      assert sql =~ ~r/having\s+\(?\s*count\s*\(\s*distinct/i
+    end
+  end
+
   describe "list_ideas/1 — signature and guard (slice 4)" do
     test "list_ideas() == list_ideas([]) (regression for slice 3 callers)" do
       mare = by_name("mare")

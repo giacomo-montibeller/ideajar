@@ -30,8 +30,34 @@ defmodule Ideajar.Ideas do
       raise ArgumentError,
             "list_ideas/1 expects a keyword list, got: #{inspect(opts)}"
 
-    Repo.all(from i in Idea, order_by: [desc: i.inserted_at, desc: i.id])
+    required = Keyword.get(opts, :required, [])
+
+    base_query = from i in Idea, order_by: [desc: i.inserted_at, desc: i.id]
+
+    base_query
+    |> apply_required(required)
+    |> Repo.all()
     |> Repo.preload(categories: Categories.preload_query())
+  end
+
+  # AND clause: an idea passes only if every required category id is
+  # present on it. Implemented via subquery with `HAVING COUNT(DISTINCT
+  # category_id)` equal to the unique-id count, which is the SQL-emission
+  # we pin via `Ecto.Adapters.SQL.to_sql/2` in tests.
+  defp apply_required(query, []), do: query
+
+  defp apply_required(query, ids) do
+    unique = Enum.uniq(ids)
+    count = length(unique)
+
+    subq =
+      from ic in "idea_categories",
+        where: ic.category_id in ^unique,
+        group_by: ic.idea_id,
+        having: count(fragment("DISTINCT ?", ic.category_id)) == ^count,
+        select: ic.idea_id
+
+    from i in query, where: i.id in subquery(subq)
   end
 
   @doc """
