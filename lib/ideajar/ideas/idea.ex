@@ -30,6 +30,8 @@ defmodule Ideajar.Ideas.Idea do
     field :description, :string
     field :url, :string
 
+    many_to_many :categories, Ideajar.Categories.Category, join_through: "idea_categories"
+
     timestamps(type: :utc_datetime)
   end
 

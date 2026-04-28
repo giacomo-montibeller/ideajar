@@ -53,6 +53,13 @@ defmodule Ideajar.MigrationsTest do
                      __DIR__
                    )
 
+  @idea_categories_migration Ideajar.Repo.Migrations.CreateIdeaCategories
+  @idea_categories_version 20_260_428_000_004
+  @idea_categories_path Path.expand(
+                          "../../priv/repo/migrations/20260428000004_create_idea_categories.exs",
+                          __DIR__
+                        )
+
   unless Code.ensure_loaded?(@ideas_migration), do: Code.require_file(@ideas_path)
   unless Code.ensure_loaded?(@categories_migration), do: Code.require_file(@categories_path)
 
@@ -60,6 +67,9 @@ defmodule Ideajar.MigrationsTest do
     do: Code.require_file(@seed_categories_path)
 
   unless Code.ensure_loaded?(@wipe_ideas_migration), do: Code.require_file(@wipe_ideas_path)
+
+  unless Code.ensure_loaded?(@idea_categories_migration),
+    do: Code.require_file(@idea_categories_path)
 
   @canonical_categories [
     {1, "passeggiata"},
@@ -76,18 +86,20 @@ defmodule Ideajar.MigrationsTest do
     Ecto.Adapters.SQL.Sandbox.checkout(Repo)
     Ecto.Adapters.SQL.Sandbox.mode(Repo, :auto)
 
+    drop_table("idea_categories")
     drop_table("ideas")
     drop_table("categories")
     delete_versions()
 
     on_exit(fn ->
+      drop_table("idea_categories")
       drop_table("ideas")
       drop_table("categories")
       delete_versions()
 
-      # Restore the production schema (categories table + 8 seed rows + ideas
-      # table + wipe migration recorded). Subsequent sandbox-aware tests
-      # depend on this state.
+      # Restore the production schema for subsequent sandbox-aware tests:
+      # ideas + categories tables, the 8 seed rows, the wipe migration
+      # recorded as run, and the idea_categories join table.
       Ecto.Migrator.up(Repo, @ideas_version, @ideas_migration, log: false)
       Ecto.Migrator.up(Repo, @categories_version, @categories_migration, log: false)
 
@@ -99,6 +111,13 @@ defmodule Ideajar.MigrationsTest do
       )
 
       Ecto.Migrator.up(Repo, @wipe_ideas_version, @wipe_ideas_migration, log: false)
+
+      Ecto.Migrator.up(
+        Repo,
+        @idea_categories_version,
+        @idea_categories_migration,
+        log: false
+      )
 
       Ecto.Adapters.SQL.Sandbox.mode(Repo, :manual)
     end)
@@ -223,6 +242,42 @@ defmodule Ideajar.MigrationsTest do
     assert cats_after == 8
   end
 
+  # ── Join migration: round-trip ─────────────────────────────────────
+
+  test "create_idea_categories migration is reversible" do
+    Ecto.Migrator.up(Repo, @ideas_version, @ideas_migration, log: false)
+    Ecto.Migrator.up(Repo, @categories_version, @categories_migration, log: false)
+
+    refute table_exists?("idea_categories")
+
+    Ecto.Migrator.up(
+      Repo,
+      @idea_categories_version,
+      @idea_categories_migration,
+      log: false
+    )
+
+    assert table_exists?("idea_categories")
+
+    Ecto.Migrator.down(
+      Repo,
+      @idea_categories_version,
+      @idea_categories_migration,
+      log: false
+    )
+
+    refute table_exists?("idea_categories")
+
+    Ecto.Migrator.up(
+      Repo,
+      @idea_categories_version,
+      @idea_categories_migration,
+      log: false
+    )
+
+    assert table_exists?("idea_categories")
+  end
+
   test "running wipe_slice2_dev_ideas up/0 a second time is a no-op" do
     Ecto.Migrator.up(Repo, @ideas_version, @ideas_migration, log: false)
     Ecto.Migrator.up(Repo, @wipe_ideas_version, @wipe_ideas_migration, log: false)
@@ -244,7 +299,8 @@ defmodule Ideajar.MigrationsTest do
       @ideas_version,
       @categories_version,
       @seed_categories_version,
-      @wipe_ideas_version
+      @wipe_ideas_version,
+      @idea_categories_version
     ]
 
     Enum.each(versions, fn v ->
