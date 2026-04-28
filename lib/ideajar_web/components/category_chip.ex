@@ -69,6 +69,7 @@ defmodule IdeajarWeb.Components.CategoryChip do
   attr :name, :string, required: true
   attr :state, :atom, required: true, values: [:off, :optional, :required]
   attr :aria_describedby, :string, default: nil
+  attr :tabindex, :integer, default: -1
 
   def filter_chip(assigns) do
     ~H"""
@@ -78,6 +79,7 @@ defmodule IdeajarWeb.Components.CategoryChip do
       aria-label={filter_chip_aria_label(@name, @state)}
       aria-describedby={@aria_describedby}
       data-filter-state={Atom.to_string(@state)}
+      tabindex={@tabindex}
       phx-click="cycle_filter"
       phx-value-id={@id}
       class={[chip_base_class(), filter_chip_state_class(@state)]}

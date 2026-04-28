@@ -79,13 +79,21 @@
       <p id="filter-helper" class="text-sm text-base-content/70">
         Tocca per filtrare: 1× opzionale · 2× obbligatoria · 3× rimuovi
       </p>
-      <div class="flex flex-wrap gap-2">
+      <div
+        id="filter-categories-group"
+        role="group"
+        aria-label="Filtra per categoria"
+        data-roving-tabindex-group="filter-categories"
+        phx-hook="RovingTabindex"
+        class="flex flex-wrap gap-2"
+      >
         <.filter_chip
-          :for={category <- @categories}
+          :for={{category, idx} <- Enum.with_index(@categories)}
           id={category.id}
           name={category.name}
           state={Map.get(@filter_state, category.id, :off)}
           aria_describedby="filter-helper"
+          tabindex={if idx == 0, do: 0, else: -1}
         />
       </div>
       <button

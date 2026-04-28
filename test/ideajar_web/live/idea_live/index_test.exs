@@ -1376,4 +1376,100 @@ defmodule IdeajarWeb.IdeaLive.IndexTest do
       assert Process.alive?(view.pid)
     end
   end
+
+  # ── Slice 5 Step 1: roving tabindex hook + filter row sub-grouping ──
+  describe "roving tabindex sub-group (slice 5 step 1)" do
+    # AA21: aria-label is "Filtra per categoria" not bare "Categorie" to
+    # avoid a future SR-collision with the form fieldset's <legend>Durata</legend>.
+    test "renders <div role=\"group\"> wrapper around filter chips, nested in filter <section>",
+         %{conn: conn} do
+      {:ok, _view, html} = live_isolated(conn, Index, session: @authenticated_session)
+
+      # Locate the role=group wrapper opening tag (attribute order is not
+      # part of the contract; we assert each attribute is present on the
+      # same opening <div> element).
+      [group_open] =
+        Regex.run(
+          ~r{<div[^>]*id="filter-categories-group"[^>]*>},
+          html
+        ) || [nil] |> List.wrap()
+
+      assert group_open, "Expected <div id=\"filter-categories-group\"> to be rendered"
+      assert group_open =~ ~s(role="group")
+      assert group_open =~ ~s(aria-label="Filtra per categoria")
+      assert group_open =~ ~s(data-roving-tabindex-group="filter-categories")
+      assert group_open =~ ~s(phx-hook="RovingTabindex")
+
+      # And the wrapper sits inside the <section aria-label="Filtra per:">
+      # block (AA21 + AA11: nested role=group under the section's label).
+      section_match =
+        Regex.run(
+          ~r{<section[^>]*aria-label="Filtra per:".*?</section>}s,
+          html
+        )
+
+      assert section_match,
+             "Expected the filter <section aria-label=\"Filtra per:\"> to be present"
+
+      [section_html] = section_match
+      assert section_html =~ ~s(id="filter-categories-group")
+      assert section_html =~ ~s(role="group")
+      assert section_html =~ ~s(aria-label="Filtra per categoria")
+    end
+
+    # AA10: server pre-paints the initial roving tabindex distribution so
+    # the first chip is the only Tab stop; the JS hook takes over arrow keys
+    # at the client. Exactly 1× tabindex="0" + 7× tabindex="-1" across the
+    # 8 filter-chip-N buttons.
+    test "filter chip buttons: only the first has tabindex=0, the other 7 have tabindex=-1",
+         %{conn: conn} do
+      {:ok, _view, html} = live_isolated(conn, Index, session: @authenticated_session)
+
+      filter_chip_buttons =
+        Regex.scan(~r{<button id="filter-chip-\d+"[^>]*>}, html) |> Enum.map(&hd/1)
+
+      assert length(filter_chip_buttons) == 8
+
+      tabindex_zero =
+        filter_chip_buttons |> Enum.filter(&(&1 =~ ~r/tabindex="0"/)) |> length()
+
+      tabindex_minus_one =
+        filter_chip_buttons |> Enum.filter(&(&1 =~ ~r/tabindex="-1"/)) |> length()
+
+      assert tabindex_zero == 1, "Expected exactly 1 filter chip with tabindex=\"0\""
+      assert tabindex_minus_one == 7, "Expected exactly 7 filter chips with tabindex=\"-1\""
+    end
+
+    # Slice-3 regression guard: the form-side category chips (<button id=
+    # "category-chip-N">) MUST NOT carry an explicit `tabindex` attribute —
+    # they keep the natural Tab order. Roving tabindex is filter-row-only.
+    test "form category chips have no explicit tabindex attribute (slice 3 regression)",
+         %{conn: conn} do
+      view = mount_authenticated(conn) |> open_form()
+      html = render(view)
+
+      offenders =
+        Regex.scan(~r{<button id="category-chip-\d+"[^>]*tabindex[^>]*>}, html)
+
+      assert offenders == []
+    end
+
+    # AA10: the JS hook must be wired into the LiveSocket hooks config.
+    # Static read of app.js — pinned as a hook-registration regression so a
+    # future refactor cannot quietly drop the import.
+    test "app.js registers the RovingTabindex hook on the LiveSocket" do
+      app_js = File.read!(Path.join(File.cwd!(), "assets/js/app.js"))
+      assert app_js =~ "RovingTabindex"
+    end
+
+    # R5-4 prevention: the visible sub-label `Categorie` is ADDED in step 6
+    # (when a second sub-block appears). In step 1 there is only an aria-label
+    # on the role=group; no visible <p class="text-xs">Categorie</p>.
+    test "step 1 does NOT render a visible 'Categorie' sub-label above the filter chips",
+         %{conn: conn} do
+      {:ok, _view, html} = live_isolated(conn, Index, session: @authenticated_session)
+
+      refute html =~ ~r{<p[^>]*class="[^"]*text-xs[^"]*"[^>]*>\s*Categorie\s*</p>}
+    end
+  end
 end
