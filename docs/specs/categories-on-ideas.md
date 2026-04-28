@@ -171,6 +171,14 @@ Feature: Tag ideas with one or more curated categories
     When Ideas.create_idea/1 is called with category_ids ["2", 2]
     Then the idea is created with exactly one category whose id == 2
 
+  Scenario: XSS — a category whose name contains HTML is escaped on render
+    Given a category exists whose name is "<script>alert(1)</script>" (inserted directly via Repo, bypassing the seed)
+    And an idea is tagged with that category
+    When the LiveView at "/" is rendered
+    Then the rendered HTML contains "&lt;script&gt;alert(1)&lt;/script&gt;"
+    And the rendered HTML does NOT contain the literal "<script>alert(1)</script>"
+    And the same escape applies to the chip render when the form is open
+
   # ── Auth boundary (S4) ─────────────────────────────────────────
   Scenario: Unauthenticated mount cannot reach the chip form
     Given my browser holds no session cookie
@@ -196,11 +204,12 @@ Feature: Tag ideas with one or more curated categories
 
 | Componente | Tipo | Responsabilità |
 |---|---|---|
-| `Ideajar.Categories` | Context (`lib/ideajar/categories.ex`) | API read-only del dominio: `list_categories/0` ritorna le categorie ordinate per `display_order`. |
+| `Ideajar.Categories` | Context (`lib/ideajar/categories.ex`) | API read-only del dominio: `list_categories/0` ordinate per `display_order`; `list_by_ids/1` con cast int safe + dedupe POST cast + all-or-nothing (boundary per Ideas); `preload_query/0` Ecto query ordinata. |
 | `Ideajar.Categories.Category` | Schema (`lib/ideajar/categories/category.ex`) | `name` (string, NOT NULL UNIQUE), `display_order` (int, NOT NULL UNIQUE), timestamps. |
-| `Ideajar.Ideas.Idea` (esteso) | Schema esistente | `many_to_many :categories, Category, join_through: "idea_categories", on_replace: :delete`. Changeset usa `put_assoc(:categories, …)` + `validate_length(:categories, min: 1, message: "Seleziona almeno una categoria")`. |
-| `Ideajar.Ideas` (esteso) | Context esistente | `create_idea/1` ora accetta `"category_ids" => [int]`: deduplica, valida che ogni id esista in DB (errore `Categoria non valida` altrimenti), risolve in `[%Category{}]`, applica via `put_assoc`. `list_ideas/0` preloada `:categories` ordinate per `display_order`. |
-| Migration `create_categories_and_idea_categories` | `priv/repo/migrations/<ts>_*.exs` | (1) `Repo.delete_all(Idea)` — wipe dei dati di test slice 2; (2) CREATE TABLE `categories`; (3) seed delle 8 categorie con upsert idempotente; (4) CREATE TABLE `idea_categories` con CASCADE su idea_id, RESTRICT su category_id; (5) `down/0` rimuove le tabelle nell'ordine inverso. |
+| `Ideajar.Ideas.Idea` (esteso) | Schema esistente | `many_to_many :categories, Category, join_through: "idea_categories"` (default `on_replace: :raise`). Changeset usa `put_assoc(:categories, …)` + helper privato `validate_at_least_one_category/1` (verifica `get_field(cs, :categories)` perché `validate_length` salta silenziosamente quando il put_assoc non è stato chiamato). |
+| `Ideajar.Ideas` (esteso) | Context esistente | `create_idea/1` ora accetta `"category_ids" => [int]`: la risoluzione passa per `Categories.list_by_ids/1`, su `:not_found` costruisce un changeset minimale con `add_error(:categories, Categories.invalid_message())` evitando il doppio errore. `list_ideas/0` preloada `:categories` via `Categories.preload_query/0`. |
+| Migration `wipe_slice2_dev_ideas` | `priv/repo/migrations/<ts>_*.exs` | One-shot `execute("DELETE FROM ideas")` come `up/0`, `down/0` no-op. Separato dalla DDL del join per essere auditable in cronologia git. |
+| Migration `create_categories_and_idea_categories` | `priv/repo/migrations/<ts>_*.exs` | (1) CREATE TABLE `categories` con UNIQUE indexes su `name` e `display_order`; (2) seed delle 8 categorie con `Repo.insert_all + on_conflict: :nothing, conflict_target: :name`; (3) CREATE TABLE `idea_categories` (composite PK, CASCADE su idea_id, RESTRICT su category_id); (4) `down/0` rimuove le tabelle nell'ordine inverso. |
 | `IdeajarWeb.IdeaLive.Index` (esteso) | Esistente | Mount preloada `@categories` (lista immutabile per la sessione). Nuovo state `@selected_category_ids :: MapSet.t(integer)`. Handler `toggle_category` con `phx-value-id`. `save` passa `category_ids` al context. Reset analogo a F7 di slice 2 su toggle/close/save. |
 | `IdeajarWeb.Components.CategoryChip` | Function component | `<button type="button" aria-pressed={…} phx-click="toggle_category" phx-value-id={id} class="…min-h-11 min-w-11">{name}</button>`. |
 
@@ -246,7 +255,7 @@ CREATE TABLE idea_categories (
 
 ### Constraints
 
-- **Validation** "almeno una categoria" è single source of truth a livello changeset (`validate_length(:categories, min: 1, message: "Seleziona almeno una categoria")`).
+- **Validation** "almeno una categoria" è single source of truth a livello changeset, enforced da `validate_at_least_one_category/1` (helper privato in `Idea.changeset/2`). `validate_length/3` non viene usato perché salta silenziosamente quando l'associazione `:categories` è `nil` (mai inizializzata via `put_assoc`); il helper controlla `get_field(cs, :categories)` esplicitamente e aggiunge l'errore `Seleziona almeno una categoria` su lista vuota o assente.
 - **Categories sono read-only** nel context: nessun `create_category/2`, `update_category/2`, `delete_category/1`. Modifica solo via migration.
 - **Display order** è un'invariante: ogni seed ha `display_order` unico in 1..N. Render sempre per `display_order`.
 - **Cascade**: `ON DELETE CASCADE` su `idea_categories.idea_id`; `ON DELETE RESTRICT` su `idea_categories.category_id` (protezione extra dato che non c'è UI di delete categoria).

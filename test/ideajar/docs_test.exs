@@ -152,5 +152,9 @@ defmodule Ideajar.DocsTest do
       assert content =~ ~s(legend reads "Categorie *")
       assert content =~ ~s("Scegli almeno una categoria")
     end
+
+    test "carries an explicit XSS scenario for category-name escape", %{content: content} do
+      assert content =~ "Scenario: XSS — a category whose name contains HTML is escaped"
+    end
   end
 end
