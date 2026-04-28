@@ -5,6 +5,7 @@ defmodule IdeajarWeb.IdeaLive.IndexTest do
 
   alias Ideajar.Categories.Category
   alias Ideajar.CategoriesFixtures
+  alias Ideajar.Ideas.Duration
   alias Ideajar.Ideas.Idea
   alias Ideajar.Repo
   alias IdeajarWeb.IdeaLive.Index
@@ -1760,6 +1761,138 @@ defmodule IdeajarWeb.IdeaLive.IndexTest do
         Regex.scan(~r{<button[^>]*id="form-duration-chip-\w+"[^>]*tabindex[^>]*>}, html)
 
       assert offenders == []
+    end
+  end
+
+  describe "idea card duration badge (slice 5 step 4)" do
+    # F13 — present: an idea with a duration renders a badge with the IT label.
+    test "idea with duration: :weekend renders <span data-testid=idea-duration-badge> with IT label",
+         %{conn: conn} do
+      mare = CategoriesFixtures.category_by_name!("mare")
+
+      assert {:ok, _idea} =
+               Ideajar.Ideas.create_idea(%{
+                 title: "Sirolo",
+                 category_ids: [mare.id],
+                 duration: "weekend"
+               })
+
+      {:ok, _view, html} =
+        live_isolated(conn, Index, session: @authenticated_session)
+
+      [_full, inner] =
+        Regex.run(
+          ~r{<span[^>]*data-testid="idea-duration-badge"[^>]*>(.*?)</span>}s,
+          html
+        )
+
+      assert String.trim(inner) == "weekend"
+    end
+
+    # F13 — absent: an idea without duration renders no badge for it.
+    test "idea with duration: nil renders NO data-testid=idea-duration-badge element",
+         %{conn: conn} do
+      mare = CategoriesFixtures.category_by_name!("mare")
+
+      assert {:ok, _idea} =
+               Ideajar.Ideas.create_idea(%{
+                 title: "Cinema stasera",
+                 category_ids: [mare.id]
+               })
+
+      {:ok, _view, html} =
+        live_isolated(conn, Index, session: @authenticated_session)
+
+      refute html =~ ~s(data-testid="idea-duration-badge")
+    end
+
+    # Multiple ideas: only the duration-bearing one shows a badge.
+    test "two ideas (one with :weekend, one without) render exactly one badge",
+         %{conn: conn} do
+      mare = CategoriesFixtures.category_by_name!("mare")
+
+      assert {:ok, _} =
+               Ideajar.Ideas.create_idea(%{
+                 title: "Sirolo",
+                 category_ids: [mare.id],
+                 duration: "weekend"
+               })
+
+      assert {:ok, _} =
+               Ideajar.Ideas.create_idea(%{
+                 title: "Cinema",
+                 category_ids: [mare.id]
+               })
+
+      {:ok, _view, html} =
+        live_isolated(conn, Index, session: @authenticated_session)
+
+      badges = Regex.scan(~r/data-testid="idea-duration-badge"/, html)
+      assert length(badges) == 1
+    end
+
+    # Each canonical duration label appears in the badge — parametric pin.
+    for duration <- Duration.values() do
+      label = Duration.label(duration)
+
+      test "duration #{inspect(duration)} renders the IT label #{inspect(label)} in the badge",
+           %{conn: conn} do
+        mare = CategoriesFixtures.category_by_name!("mare")
+
+        assert {:ok, _} =
+                 Ideajar.Ideas.create_idea(%{
+                   title: "T-#{unquote(Atom.to_string(duration))}",
+                   category_ids: [mare.id],
+                   duration: unquote(Atom.to_string(duration))
+                 })
+
+        {:ok, _view, html} =
+          live_isolated(conn, Index, session: @authenticated_session)
+
+        [_full, inner] =
+          Regex.run(
+            ~r{<span[^>]*data-testid="idea-duration-badge"[^>]*>(.*?)</span>}s,
+            html
+          )
+
+        assert String.trim(inner) == unquote(label)
+      end
+    end
+
+    # Position pin — the badge appears AFTER <ul aria-label="Categorie"> in DOM source order.
+    test "badge appears after <ul aria-label=\"Categorie\"> within the idea card",
+         %{conn: conn} do
+      mare = CategoriesFixtures.category_by_name!("mare")
+
+      assert {:ok, _} =
+               Ideajar.Ideas.create_idea(%{
+                 title: "Sirolo",
+                 category_ids: [mare.id],
+                 duration: "weekend"
+               })
+
+      {:ok, _view, html} =
+        live_isolated(conn, Index, session: @authenticated_session)
+
+      # Single-card scenario: the only `<ul aria-label="Categorie">` and the
+      # only badge in the document both belong to the same card. Scan the
+      # full HTML for source-order positions; the position-pin invariant is
+      # that the badge is rendered AFTER the categories list, never before.
+      categories_pos =
+        case :binary.match(html, ~s(aria-label="Categorie")) do
+          {pos, _} -> pos
+          :nomatch -> nil
+        end
+
+      badge_pos =
+        case :binary.match(html, ~s(data-testid="idea-duration-badge")) do
+          {pos, _} -> pos
+          :nomatch -> nil
+        end
+
+      assert is_integer(categories_pos)
+      assert is_integer(badge_pos)
+      assert categories_pos < badge_pos
     end
   end
 end

@@ -56,4 +56,27 @@ defmodule IdeajarWeb.Components.DurationChip do
   defp chip_base_class do
     "min-h-11 min-w-11 px-3 py-2 rounded-full border-2 inline-flex items-center gap-1 text-sm"
   end
+
+  attr :duration, :atom, required: true, values: Duration.values()
+
+  @doc """
+  Read-only badge rendered inside the idea card to advertise the persisted
+  duration. Conditional rendering (only when `idea.duration != nil`) is
+  the caller's responsibility — the badge always renders when invoked.
+
+  Subtly distinct from category badges (`bg-base-200` instead of the
+  default surface) for visual hierarchy. The label flows through HEEx
+  auto-escape via `{Duration.label(@duration)}`; never wrap with `raw/1`
+  (AA14 — XSS regression structural pin in `DurationChipTest`).
+  """
+  def duration_badge(assigns) do
+    ~H"""
+    <span
+      data-testid="idea-duration-badge"
+      class="inline-flex items-center px-2 py-1 rounded-full border border-base-300 text-xs text-base-content/80 bg-base-200"
+    >
+      {Duration.label(@duration)}
+    </span>
+    """
+  end
 end

@@ -78,6 +78,70 @@ defmodule IdeajarWeb.Components.DurationChipTest do
     end
   end
 
+  describe "duration_badge/1 — slice 5 step 4 (idea card)" do
+    defp render_badge(assigns) do
+      render_component(&DurationChip.duration_badge/1, assigns)
+    end
+
+    test "renders a span with data-testid=idea-duration-badge and the IT label" do
+      html = render_badge(%{duration: :weekend})
+
+      assert html =~ ~s(data-testid="idea-duration-badge")
+      assert html =~ ~s(<span)
+
+      [_full, inner] =
+        Regex.run(
+          ~r{<span[^>]*data-testid="idea-duration-badge"[^>]*>(.*?)</span>}s,
+          html
+        )
+
+      assert String.trim(inner) == "weekend"
+    end
+
+    test "renders subtle bg-base-200 (visually distinct from category badges)" do
+      html = render_badge(%{duration: :weekend})
+
+      assert html =~ "bg-base-200"
+      assert html =~ "rounded-full"
+      assert html =~ "border"
+      assert html =~ "text-xs"
+    end
+
+    test "compound atoms render IT label with spaces, not underscores" do
+      for {atom, label} <- [
+            {:poche_ore, "poche ore"},
+            {:mezza_giornata, "mezza giornata"},
+            {:giornata, "giornata"},
+            {:weekend, "weekend"},
+            {:piu_giorni, "più giorni"}
+          ] do
+        html = render_badge(%{duration: atom})
+
+        [_full, inner] =
+          Regex.run(
+            ~r{<span[^>]*data-testid="idea-duration-badge"[^>]*>(.*?)</span>}s,
+            html
+          )
+
+        assert String.trim(inner) == label
+      end
+    end
+
+    # AA14 — XSS regression sintetica (structural pin):
+    # `Duration.label/1` is hard-coded and cannot produce HTML chars (pinned by
+    # the DurationTest XSS-via-atom test). The remaining drift surface is the
+    # component itself. Pin that the badge interpolates the label via HEEx
+    # auto-escape (`{Duration.label(@duration)}`) and never via `raw/1`.
+    test "AA14 structural pin: badge source uses HEEx auto-escape, no raw/1 calls" do
+      src =
+        File.read!(Path.join(File.cwd!(), "lib/ideajar_web/components/duration_chip.ex"))
+
+      assert src =~ ~r/\{Duration\.label\(@duration\)\}/
+      refute src =~ ~r/\braw\(/
+      refute src =~ ~r/Phoenix\.HTML\.raw/
+    end
+  end
+
   describe "form_chip/1 — type-level mutual exclusion (S8)" do
     test "does NOT declare attr :state (only :duration and :pressed?)" do
       attrs = DurationChip.__info__(:attributes)
