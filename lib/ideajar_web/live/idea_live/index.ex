@@ -34,13 +34,13 @@ defmodule IdeajarWeb.IdeaLive.Index do
   def mount(_params, %{"authenticated" => true}, socket) do
     {:ok,
      socket
-     |> assign(:ideas, Ideas.list_ideas())
-     |> assign(:categories, Categories.list_categories())
-     |> assign(:form_visible?, false)
      |> assign(:filter_state, %{})
      |> assign(:last_filter_action, nil)
+     |> assign(:categories, Categories.list_categories())
+     |> assign(:form_visible?, false)
      |> reset_categories()
-     |> assign_form()}
+     |> assign_form()
+     |> reload_ideas()}
   end
 
   def mount(_params, _session, socket) do
@@ -93,7 +93,11 @@ defmodule IdeajarWeb.IdeaLive.Index do
     case parse_known_category_id(raw_id, socket.assigns.categories) do
       {:ok, id} ->
         new_state = cycle_state(socket.assigns.filter_state, id)
-        {:noreply, assign(socket, :filter_state, new_state)}
+
+        {:noreply,
+         socket
+         |> assign(:filter_state, new_state)
+         |> reload_ideas()}
 
       :error ->
         {:noreply, socket}
@@ -105,7 +109,10 @@ defmodule IdeajarWeb.IdeaLive.Index do
   def handle_event("cycle_filter", _params, socket), do: {:noreply, socket}
 
   def handle_event("clear_filters", _params, socket) do
-    {:noreply, assign(socket, :filter_state, %{})}
+    {:noreply,
+     socket
+     |> assign(:filter_state, %{})
+     |> reload_ideas()}
   end
 
   def handle_event("save", %{"idea" => attrs}, socket) do
@@ -128,10 +135,10 @@ defmodule IdeajarWeb.IdeaLive.Index do
   defp handle_save_result({:ok, _idea}, socket, _attrs) do
     {:noreply,
      socket
-     |> assign(:ideas, Ideas.list_ideas())
      |> assign(:form_visible?, false)
      |> reset_categories()
      |> assign_form()
+     |> reload_ideas()
      |> put_flash(:info, "Idea aggiunta")
      |> push_event("ideajar:focus", %{to: "#add-idea-button"})}
   end
@@ -154,6 +161,28 @@ defmodule IdeajarWeb.IdeaLive.Index do
   end
 
   defp reset_categories(socket), do: assign(socket, :selected_category_ids, MapSet.new())
+
+  # Re-loads the ideas list from the context using the filter opts derived
+  # from `@filter_state`. Called on mount + after every event that may
+  # change either the filter or the underlying ideas (cycle, clear, save).
+  defp reload_ideas(socket) do
+    opts = derive_filter_opts(socket.assigns.filter_state)
+    assign(socket, :ideas, Ideas.list_ideas(opts))
+  end
+
+  defp derive_filter_opts(filter_state) do
+    Enum.reduce(filter_state, [required: [], optional: []], fn
+      {id, :required}, acc -> Keyword.update!(acc, :required, &[id | &1])
+      {id, :optional}, acc -> Keyword.update!(acc, :optional, &[id | &1])
+    end)
+  end
+
+  @doc """
+  Returns true when at least one category in @filter_state is in
+  :optional or :required state. Used by the template to decide whether
+  to render the `Mostra tutte` reset button.
+  """
+  def filter_active?(filter_state), do: filter_state != %{}
 
   # Tri-state cycle: off → optional → required → off.
   defp cycle_state(map, id) do

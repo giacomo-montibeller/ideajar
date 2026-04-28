@@ -938,6 +938,283 @@ defmodule IdeajarWeb.IdeaLive.IndexTest do
     end
   end
 
+  # ── Slice 4 fixture for filter tests in LV ─────────────────────────
+  defp seed_5_lv_ideas do
+    %{
+      sirolo:
+        insert_idea_with_categories!("Sirolo", ["mare", "viaggio"], ~U[2026-04-27 10:00:00Z]),
+      uffizi:
+        insert_idea_with_categories!("Uffizi", ["museo", "cultura"], ~U[2026-04-27 10:01:00Z]),
+      stadio: insert_idea_with_categories!("Stadio", ["sport"], ~U[2026-04-27 10:02:00Z]),
+      bagno: insert_idea_with_categories!("Bagno", ["mare", "sport"], ~U[2026-04-27 10:03:00Z]),
+      cinema:
+        insert_idea_with_categories!("Cinema", ["cinema", "cultura"], ~U[2026-04-27 10:04:00Z])
+    }
+  end
+
+  defp cycle_filter(view, name) do
+    cat = CategoriesFixtures.category_by_name!(name)
+    render_click(view, "cycle_filter", %{"id" => "#{cat.id}"})
+    view
+  end
+
+  describe "filter row template (slice 4)" do
+    # Scenario: Visiting / with no filter shows every idea
+    test "renders every idea when filter is inactive", %{conn: conn} do
+      _ = seed_5_lv_ideas()
+      {:ok, _view, html} = live_isolated(conn, Index, session: @authenticated_session)
+
+      for title <- ["Sirolo", "Uffizi", "Stadio", "Bagno", "Cinema"] do
+        assert html =~ title
+      end
+    end
+
+    # Scenario: Filter chip wiring
+    test "renders 8 filter chips with correct phx-click and phx-value-id wiring",
+         %{conn: conn} do
+      {:ok, _view, html} = live_isolated(conn, Index, session: @authenticated_session)
+
+      # 8 filter chips with stable id pattern
+      filter_chip_ids =
+        Regex.scan(~r/id="(filter-chip-\d+)"/, html) |> Enum.map(&Enum.at(&1, 1))
+
+      assert length(filter_chip_ids) == 8
+      assert filter_chip_ids == Enum.uniq(filter_chip_ids)
+
+      # Each chip has phx-click="cycle_filter"
+      cycle_count = Regex.scan(~r/phx-click="cycle_filter"/, html) |> length()
+      assert cycle_count == 8
+    end
+
+    # A8 — DOM id distinct: form chip and filter chip don't collide
+    test "form-chip and filter-chip have distinct DOM ids when form is open",
+         %{conn: conn} do
+      view = mount_authenticated(conn) |> open_form()
+      html = render(view)
+
+      cat_chips = Regex.scan(~r/id="category-chip-\d+"/, html) |> length()
+      flt_chips = Regex.scan(~r/id="filter-chip-\d+"/, html) |> length()
+      assert cat_chips == 8
+      assert flt_chips == 8
+
+      # No id is shared between the two — collect all ids and check uniqueness
+      all_ids =
+        Regex.scan(~r/id="((?:category|filter)-chip-\d+)"/, html)
+        |> Enum.map(&Enum.at(&1, 1))
+
+      assert all_ids == Enum.uniq(all_ids)
+      assert length(all_ids) == 16
+    end
+
+    # A7 — Discoverability helper text
+    test "filter row contains the discoverability helper text", %{conn: conn} do
+      {:ok, _view, html} = live_isolated(conn, Index, session: @authenticated_session)
+      assert html =~ "Tocca per filtrare: 1× opzionale · 2× obbligatoria · 3× rimuovi"
+    end
+
+    # A17 — Visual row labels
+    test "filter row has visible 'Filtra per:' label", %{conn: conn} do
+      {:ok, _view, html} = live_isolated(conn, Index, session: @authenticated_session)
+      assert html =~ "Filtra per:"
+    end
+
+    test "form retains the 'Categorie *' legend with required asterisk", %{conn: conn} do
+      view = mount_authenticated(conn) |> open_form()
+      html = render(view)
+      assert html =~ ~r/Categorie\s*<span aria-hidden="true">\*</
+    end
+  end
+
+  describe "filter applied to list (slice 4)" do
+    test "single optional chip filters list", %{conn: conn} do
+      _ = seed_5_lv_ideas()
+      {:ok, view, _html} = live_isolated(conn, Index, session: @authenticated_session)
+
+      html = view |> cycle_filter("sport") |> render()
+
+      assert html =~ "Stadio"
+      assert html =~ "Bagno"
+      refute html =~ "Sirolo"
+      refute html =~ "Uffizi"
+    end
+
+    test "multiple optional chips OR-combine", %{conn: conn} do
+      _ = seed_5_lv_ideas()
+      {:ok, view, _html} = live_isolated(conn, Index, session: @authenticated_session)
+
+      html = view |> cycle_filter("sport") |> cycle_filter("cultura") |> render()
+
+      assert html =~ "Stadio"
+      assert html =~ "Bagno"
+      assert html =~ "Uffizi"
+      assert html =~ "Cinema"
+      refute html =~ "Sirolo"
+    end
+
+    test "single required chip (2 cycles) filters AND", %{conn: conn} do
+      _ = seed_5_lv_ideas()
+      {:ok, view, _html} = live_isolated(conn, Index, session: @authenticated_session)
+
+      html = view |> cycle_filter("mare") |> cycle_filter("mare") |> render()
+
+      assert html =~ "Sirolo"
+      assert html =~ "Bagno"
+      refute html =~ "Stadio"
+    end
+
+    test "mixed required + optional applies both clauses", %{conn: conn} do
+      _ = seed_5_lv_ideas()
+      {:ok, view, _html} = live_isolated(conn, Index, session: @authenticated_session)
+
+      html =
+        view
+        |> cycle_filter("mare")
+        |> cycle_filter("mare")
+        |> cycle_filter("sport")
+        |> cycle_filter("cultura")
+        |> render()
+
+      assert html =~ "Bagno"
+      refute html =~ "Sirolo"
+      refute html =~ "Uffizi"
+    end
+
+    # Scenario: Filter matching zero ideas shows the empty-result state
+    test "empty result shows 'Nessuna idea per i filtri attivi.' + funnel icon + inline Mostra tutte",
+         %{conn: conn} do
+      # Seed only ideas without "passeggiata" tag
+      _ = seed_5_lv_ideas()
+      {:ok, view, _html} = live_isolated(conn, Index, session: @authenticated_session)
+
+      html = view |> cycle_filter("passeggiata") |> cycle_filter("passeggiata") |> render()
+
+      assert html =~ ~s(data-testid="empty-filter-state")
+      assert html =~ "Nessuna idea per i filtri attivi."
+      assert html =~ "hero-funnel"
+      assert html =~ ~s(id="mostra-tutte-empty")
+
+      # The default workspace-empty state is NOT shown
+      refute html =~ "Nessuna idea ancora. Aggiungine una qui sopra."
+    end
+  end
+
+  describe "Mostra tutte single-instance placement (A10/F10)" do
+    test "filter inactive: zero Mostra tutte buttons", %{conn: conn} do
+      {:ok, _view, html} = live_isolated(conn, Index, session: @authenticated_session)
+      count = Regex.scan(~r/Mostra tutte/, html) |> length()
+      assert count == 0
+    end
+
+    test "filter active + non-empty list: exactly one Mostra tutte under filter row",
+         %{conn: conn} do
+      _ = seed_5_lv_ideas()
+      {:ok, view, _html} = live_isolated(conn, Index, session: @authenticated_session)
+
+      html = view |> cycle_filter("sport") |> render()
+
+      count = Regex.scan(~r/Mostra tutte/, html) |> length()
+      assert count == 1
+      assert html =~ ~s(id="mostra-tutte")
+      refute html =~ ~s(id="mostra-tutte-empty")
+    end
+
+    test "filter active + empty list: exactly one Mostra tutte inside empty-filter state",
+         %{conn: conn} do
+      _ = seed_5_lv_ideas()
+      {:ok, view, _html} = live_isolated(conn, Index, session: @authenticated_session)
+
+      html = view |> cycle_filter("passeggiata") |> cycle_filter("passeggiata") |> render()
+
+      count = Regex.scan(~r/Mostra tutte/, html) |> length()
+      assert count == 1
+      assert html =~ ~s(id="mostra-tutte-empty")
+      refute html =~ ~s(id="mostra-tutte")
+    end
+
+    test "click Mostra tutte resets filter and shows all ideas", %{conn: conn} do
+      _ = seed_5_lv_ideas()
+      {:ok, view, _html} = live_isolated(conn, Index, session: @authenticated_session)
+
+      view |> cycle_filter("mare")
+      html = render_click(view, "clear_filters")
+
+      for title <- ["Sirolo", "Uffizi", "Stadio", "Bagno", "Cinema"] do
+        assert html =~ title
+      end
+    end
+
+    test "workspace-empty state is distinct from empty-filter state (A9)", %{conn: conn} do
+      # No ideas seeded, no filter
+      {:ok, _view, html} = live_isolated(conn, Index, session: @authenticated_session)
+
+      assert html =~ "Nessuna idea ancora. Aggiungine una qui sopra."
+      refute html =~ ~s(data-testid="empty-filter-state")
+    end
+  end
+
+  describe "form/filter state isolation (A8)" do
+    test "cycle_filter does not affect @selected_category_ids of the form", %{conn: conn} do
+      _ = seed_5_lv_ideas()
+      view = mount_authenticated(conn) |> open_form() |> toggle_chip("mare")
+
+      assigns_before = :sys.get_state(view.pid).socket.assigns
+      assert MapSet.size(assigns_before.selected_category_ids) == 1
+
+      view |> cycle_filter("mare")
+
+      assigns_after = :sys.get_state(view.pid).socket.assigns
+
+      assert MapSet.equal?(
+               assigns_after.selected_category_ids,
+               assigns_before.selected_category_ids
+             )
+
+      assert assigns_after.filter_state[CategoriesFixtures.category_by_name!("mare").id] ==
+               :optional
+    end
+
+    test "clear_filters does not affect form @selected_category_ids", %{conn: conn} do
+      _ = seed_5_lv_ideas()
+      view = mount_authenticated(conn) |> open_form() |> toggle_chip("mare")
+      view |> cycle_filter("sport")
+
+      render_click(view, "clear_filters")
+
+      assigns = :sys.get_state(view.pid).socket.assigns
+      assert MapSet.size(assigns.selected_category_ids) == 1
+      assert assigns.filter_state == %{}
+    end
+
+    # F11: Filter survives form submission
+    test "submitting the form preserves @filter_state", %{conn: conn} do
+      _ = seed_5_lv_ideas()
+      view = mount_authenticated(conn) |> open_form()
+      view |> cycle_filter("mare")
+
+      submit(view, %{title: "Nuova"})
+
+      assigns = :sys.get_state(view.pid).socket.assigns
+      assert assigns.filter_state[CategoriesFixtures.category_by_name!("mare").id] == :optional
+    end
+
+    # F12: New idea outside filter is hidden
+    test "an idea created outside the active filter is hidden in the list", %{conn: conn} do
+      _ = seed_5_lv_ideas()
+      view = mount_authenticated(conn) |> open_form()
+
+      # Filter requires "mare" (2 cycles to reach :required)
+      view |> cycle_filter("mare") |> cycle_filter("mare")
+
+      # Submit a sport-only idea (mare not selected via toggle_chip)
+      view |> toggle_chip("sport")
+      html = form_submit(view, %{title: "SportOnly"})
+
+      # Idea was created but NOT visible in the filtered list
+      refute html =~ "SportOnly"
+      assert Repo.get_by(Idea, title: "SportOnly")
+    end
+  end
+
   describe "clear_filters handler (slice 4)" do
     # Scenario: "Mostra tutte" resets the filter state but leaves chips visible
     test "clear_filters resets @filter_state to %{}", %{conn: conn} do

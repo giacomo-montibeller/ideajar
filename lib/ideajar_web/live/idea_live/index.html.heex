@@ -70,9 +70,59 @@
       </button>
     </.form>
 
-    <p :if={@ideas == []} class="text-base-content/70">
+    <section
+      data-testid="filter-row"
+      aria-label="Filtra per:"
+      class="border-t border-base-300 pt-4 space-y-2"
+    >
+      <p class="text-sm font-semibold">Filtra per:</p>
+      <p id="filter-helper" class="text-sm text-base-content/70">
+        Tocca per filtrare: 1× opzionale · 2× obbligatoria · 3× rimuovi
+      </p>
+      <div class="flex flex-wrap gap-2">
+        <.filter_chip
+          :for={category <- @categories}
+          id={category.id}
+          name={category.name}
+          state={Map.get(@filter_state, category.id, :off)}
+          aria_describedby="filter-helper"
+        />
+      </div>
+      <button
+        :if={filter_active?(@filter_state) and @ideas != []}
+        id="mostra-tutte"
+        type="button"
+        phx-click="clear_filters"
+        class="btn btn-ghost btn-sm"
+      >
+        Mostra tutte
+      </button>
+    </section>
+
+    <p
+      :if={@ideas == [] and not filter_active?(@filter_state)}
+      class="text-base-content/70"
+    >
       Nessuna idea ancora. Aggiungine una qui sopra.
     </p>
+
+    <div
+      :if={@ideas == [] and filter_active?(@filter_state)}
+      data-testid="empty-filter-state"
+      class="rounded-box border border-base-300 p-4 space-y-3"
+    >
+      <p class="flex items-center gap-2 text-base-content/80">
+        <.icon name="hero-funnel" class="size-5" /> Nessuna idea per i filtri attivi.
+      </p>
+      <button
+        id="mostra-tutte-empty"
+        type="button"
+        phx-click="clear_filters"
+        class="btn btn-primary btn-sm"
+      >
+        Mostra tutte
+      </button>
+    </div>
 
     <ul :if={@ideas != []} class="space-y-4">
       <li
