@@ -92,11 +92,14 @@ defmodule IdeajarWeb.IdeaLive.Index do
   def handle_event("cycle_filter", %{"id" => raw_id}, socket) when is_binary(raw_id) do
     case parse_known_category_id(raw_id, socket.assigns.categories) do
       {:ok, id} ->
+        category_name = category_name_by_id(id, socket.assigns.categories)
         new_state = cycle_state(socket.assigns.filter_state, id)
+        new_action_prefix = action_prefix(new_state, id, category_name)
 
         {:noreply,
          socket
          |> assign(:filter_state, new_state)
+         |> assign(:last_filter_action, new_action_prefix)
          |> reload_ideas()}
 
       :error ->
@@ -112,6 +115,7 @@ defmodule IdeajarWeb.IdeaLive.Index do
     {:noreply,
      socket
      |> assign(:filter_state, %{})
+     |> assign(:last_filter_action, "Filtri rimossi, ")
      |> reload_ideas()}
   end
 
@@ -136,6 +140,7 @@ defmodule IdeajarWeb.IdeaLive.Index do
     {:noreply,
      socket
      |> assign(:form_visible?, false)
+     |> assign(:last_filter_action, nil)
      |> reset_categories()
      |> assign_form()
      |> reload_ideas()
@@ -183,6 +188,20 @@ defmodule IdeajarWeb.IdeaLive.Index do
   to render the `Mostra tutte` reset button.
   """
   def filter_active?(filter_state), do: filter_state != %{}
+
+  defp category_name_by_id(id, categories) do
+    Enum.find_value(categories, fn cat -> if cat.id == id, do: cat.name end)
+  end
+
+  # Builds the live-region prefix that describes the action just applied
+  # to the chip with `id`. Read directly from the post-cycle state.
+  defp action_prefix(filter_state, id, name) do
+    case Map.get(filter_state, id) do
+      :optional -> "#{name} opzionale, "
+      :required -> "#{name} obbligatoria, "
+      nil -> "#{name} rimossa, "
+    end
+  end
 
   # Tri-state cycle: off → optional → required → off.
   defp cycle_state(map, id) do

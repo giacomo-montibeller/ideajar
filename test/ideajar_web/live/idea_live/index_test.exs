@@ -1215,6 +1215,116 @@ defmodule IdeajarWeb.IdeaLive.IndexTest do
     end
   end
 
+  describe "live-region count + last action (slice 4)" do
+    test "initial render includes a polite live-region with id filter-status",
+         %{conn: conn} do
+      _ = seed_5_lv_ideas()
+      {:ok, _view, html} = live_isolated(conn, Index, session: @authenticated_session)
+
+      assert html =~ ~s(id="filter-status")
+      assert html =~ ~s(role="status")
+      assert html =~ ~s(aria-live="polite")
+      assert html =~ "5 idee"
+    end
+
+    test "no filter active: live-region has no action prefix", %{conn: conn} do
+      _ = seed_5_lv_ideas()
+      {:ok, _view, html} = live_isolated(conn, Index, session: @authenticated_session)
+
+      assert html =~ extract_filter_status(html)
+      status = extract_filter_status(html)
+      assert status == "5 idee"
+    end
+
+    test "cycle to optional adds 'opzionale,' prefix and updates count",
+         %{conn: conn} do
+      _ = seed_5_lv_ideas()
+      {:ok, view, _html} = live_isolated(conn, Index, session: @authenticated_session)
+
+      html = view |> cycle_filter("mare") |> render()
+      assert extract_filter_status(html) == "mare opzionale, 2 idee"
+    end
+
+    test "cycle to required swaps the prefix to 'obbligatoria,'", %{conn: conn} do
+      _ = seed_5_lv_ideas()
+      {:ok, view, _html} = live_isolated(conn, Index, session: @authenticated_session)
+
+      view |> cycle_filter("mare")
+      html = view |> cycle_filter("mare") |> render()
+      assert extract_filter_status(html) == "mare obbligatoria, 2 idee"
+    end
+
+    test "cycle back to off uses 'rimossa,' prefix", %{conn: conn} do
+      _ = seed_5_lv_ideas()
+      {:ok, view, _html} = live_isolated(conn, Index, session: @authenticated_session)
+
+      view |> cycle_filter("mare") |> cycle_filter("mare")
+      html = view |> cycle_filter("mare") |> render()
+      assert extract_filter_status(html) == "mare rimossa, 5 idee"
+    end
+
+    test "Mostra tutte produces 'Filtri rimossi,' prefix", %{conn: conn} do
+      _ = seed_5_lv_ideas()
+      {:ok, view, _html} = live_isolated(conn, Index, session: @authenticated_session)
+
+      view |> cycle_filter("mare")
+      html = render_click(view, "clear_filters")
+      assert extract_filter_status(html) == "Filtri rimossi, 5 idee"
+    end
+
+    test "singular boundary: filter producing 1 result shows '1 idea'",
+         %{conn: conn} do
+      _ = seed_5_lv_ideas()
+      {:ok, view, _html} = live_isolated(conn, Index, session: @authenticated_session)
+
+      # mare required + sport required → only Bagno (1 idea)
+      view |> cycle_filter("mare") |> cycle_filter("mare")
+      html = view |> cycle_filter("sport") |> cycle_filter("sport") |> render()
+      assert extract_filter_status(html) == "sport obbligatoria, 1 idea"
+    end
+
+    test "DOM node identity stable across cycles", %{conn: conn} do
+      _ = seed_5_lv_ideas()
+      {:ok, view, _html} = live_isolated(conn, Index, session: @authenticated_session)
+
+      for _ <- 1..3 do
+        html = view |> cycle_filter("mare") |> render()
+        # Exactly one filter-status element in every render
+        count = Regex.scan(~r/id="filter-status"/, html) |> length()
+        assert count == 1
+      end
+    end
+
+    # F11/A16 lifecycle: form save success resets @last_filter_action to nil
+    test "form save success clears last action prefix from the live-region",
+         %{conn: conn} do
+      _ = seed_5_lv_ideas()
+      view = mount_authenticated(conn) |> open_form()
+      view |> cycle_filter("mare")
+
+      # Sanity: prefix is present after cycle
+      pre_save_html = render(view)
+      assert extract_filter_status(pre_save_html) =~ "opzionale,"
+
+      # Submit: idea is created, prefix is cleared
+      submit(view, %{title: "Nuova"})
+      post_save_html = render(view)
+
+      status = extract_filter_status(post_save_html)
+      refute status =~ "opzionale,"
+      refute status =~ "obbligatoria,"
+      refute status =~ "rimossa,"
+      refute status =~ "Filtri rimossi,"
+    end
+  end
+
+  defp extract_filter_status(html) do
+    case Regex.run(~r{<div[^>]*id="filter-status"[^>]*>(.*?)</div>}s, html) do
+      [_, inner] -> inner |> String.trim()
+      _ -> nil
+    end
+  end
+
   describe "clear_filters handler (slice 4)" do
     # Scenario: "Mostra tutte" resets the filter state but leaves chips visible
     test "clear_filters resets @filter_state to %{}", %{conn: conn} do
