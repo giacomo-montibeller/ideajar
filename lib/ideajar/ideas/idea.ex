@@ -20,6 +20,8 @@ defmodule Ideajar.Ideas.Idea do
 
   import Ecto.Changeset
 
+  alias Ideajar.Ideas.Duration
+
   @type t :: %__MODULE__{}
 
   @title_required "Il titolo è obbligatorio"
@@ -27,13 +29,15 @@ defmodule Ideajar.Ideas.Idea do
   @url_invalid "Il link deve iniziare con http:// o https://"
   @url_too_long "Il link non può superare i 2000 caratteri"
   @categories_required "Seleziona almeno una categoria"
+  @duration_invalid "Durata non valida"
 
-  @castable_fields [:title, :description, :url]
+  @castable_fields [:title, :description, :url, :duration]
 
   schema "ideas" do
     field :title, :string
     field :description, :string
     field :url, :string
+    field :duration, Ecto.Enum, values: Duration.values()
 
     many_to_many :categories, Ideajar.Categories.Category, join_through: "idea_categories"
 
@@ -61,6 +65,7 @@ defmodule Ideajar.Ideas.Idea do
   def changeset(%__MODULE__{} = idea, attrs) do
     idea
     |> cast(attrs, @castable_fields)
+    |> override_duration_error()
     |> trim_text(:title)
     |> trim_text(:url)
     |> validate_required([:title], message: @title_required)
@@ -69,6 +74,21 @@ defmodule Ideajar.Ideas.Idea do
     |> validate_url(:url)
     |> put_categories(attrs)
     |> validate_at_least_one_category()
+  end
+
+  # `Ecto.Enum` cast emits the generic `"is invalid"` message when the input
+  # string is not a member of the whitelist. We override it on `:duration`
+  # only with the canonical IT copy `"Durata non valida"` (AA22), preserving
+  # any opts the cast attached (e.g. `validation: :cast`).
+  defp override_duration_error(%Ecto.Changeset{errors: errors} = cs) do
+    case Keyword.get(errors, :duration) do
+      {"is invalid", opts} ->
+        new_errors = Keyword.put(errors, :duration, {@duration_invalid, opts})
+        %{cs | errors: new_errors}
+
+      _ ->
+        cs
+    end
   end
 
   # `put_categories` accepts both atom-keyed and string-keyed maps to handle

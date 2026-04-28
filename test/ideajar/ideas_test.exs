@@ -435,6 +435,99 @@ defmodule Ideajar.IdeasTest do
     end
   end
 
+  describe "changeset/2 — duration field (slice 5)" do
+    test "valid 'weekend' string casts to :weekend atom in changes" do
+      mare = by_name("mare")
+
+      cs =
+        Idea.changeset(%Idea{}, %{
+          title: "Foo",
+          url: "",
+          description: "",
+          categories: [mare],
+          duration: "weekend"
+        })
+
+      assert cs.valid?
+      assert cs.changes[:duration] == :weekend
+    end
+
+    test "duration: nil leaves :duration out of changes (NULL ammesso)" do
+      mare = by_name("mare")
+
+      cs =
+        Idea.changeset(%Idea{}, %{
+          title: "Foo",
+          url: "",
+          description: "",
+          categories: [mare],
+          duration: nil
+        })
+
+      assert cs.valid?
+      refute Map.has_key?(cs.changes, :duration)
+    end
+
+    test "duration: '' leaves :duration out of changes (Ecto.Enum casts empty string to nil)" do
+      mare = by_name("mare")
+
+      cs =
+        Idea.changeset(%Idea{}, %{
+          title: "Foo",
+          url: "",
+          description: "",
+          categories: [mare],
+          duration: ""
+        })
+
+      assert cs.valid?
+      refute Map.has_key?(cs.changes, :duration)
+    end
+
+    test "rejects 'schifoso' with the custom Italian error message" do
+      mare = by_name("mare")
+
+      cs =
+        Idea.changeset(%Idea{}, %{
+          title: "Foo",
+          url: "",
+          description: "",
+          categories: [mare],
+          duration: "schifoso"
+        })
+
+      refute cs.valid?
+      assert {"Durata non valida", _opts} = Keyword.fetch!(cs.errors, :duration)
+    end
+
+    test "rejects '<script>' with the custom Italian error message" do
+      mare = by_name("mare")
+
+      cs =
+        Idea.changeset(%Idea{}, %{
+          title: "Foo",
+          url: "",
+          description: "",
+          categories: [mare],
+          duration: "<script>"
+        })
+
+      refute cs.valid?
+      assert {"Durata non valida", _opts} = Keyword.fetch!(cs.errors, :duration)
+    end
+
+    test "schema declares :duration as a parameterized Ecto.Enum with Duration.values()" do
+      type = Idea.__schema__(:type, :duration)
+
+      assert match?({:parameterized, {Ecto.Enum, _}}, type)
+
+      {:parameterized, {Ecto.Enum, %{mappings: mappings}}} = type
+      atom_values = Enum.map(mappings, fn {atom, _string} -> atom end)
+
+      assert atom_values == Ideajar.Ideas.Duration.values()
+    end
+  end
+
   defp insert_idea_with_categories!(title, cats, %DateTime{} = at) do
     idea =
       %Idea{title: title}
