@@ -185,6 +185,44 @@ defmodule Ideajar.MigrationsTest do
     assert rows == Enum.map(@canonical_categories, fn {ord, name} -> [name, ord] end)
   end
 
+  test "seed_categories down then up restores the canonical 8 rows (round-trip)" do
+    Ecto.Migrator.up(Repo, @categories_version, @categories_migration, log: false)
+
+    Ecto.Migrator.up(
+      Repo,
+      @seed_categories_version,
+      @seed_categories_migration,
+      log: false
+    )
+
+    %{rows: [[count_after_up]]} = SQL.query!(Repo, "SELECT COUNT(*) FROM categories", [])
+    assert count_after_up == 8
+
+    Ecto.Migrator.down(
+      Repo,
+      @seed_categories_version,
+      @seed_categories_migration,
+      log: false
+    )
+
+    %{rows: [[count_after_down]]} = SQL.query!(Repo, "SELECT COUNT(*) FROM categories", [])
+    assert count_after_down == 0
+
+    Ecto.Migrator.up(
+      Repo,
+      @seed_categories_version,
+      @seed_categories_migration,
+      log: false
+    )
+
+    rows =
+      Repo
+      |> SQL.query!("SELECT name, display_order FROM categories ORDER BY display_order", [])
+      |> Map.fetch!(:rows)
+
+    assert rows == Enum.map(@canonical_categories, fn {ord, name} -> [name, ord] end)
+  end
+
   test "running seed_categories up/0 a second time on an already-seeded DB is a no-op" do
     Ecto.Migrator.up(Repo, @categories_version, @categories_migration, log: false)
 

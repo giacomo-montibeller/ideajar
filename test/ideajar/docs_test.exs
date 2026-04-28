@@ -147,5 +147,10 @@ defmodule Ideajar.DocsTest do
       assert content =~ "hostile category_ids"
       assert content =~ "Ideajar.Categories module exposes only"
     end
+
+    test "documents the legend asterisk and the helper-text contract", %{content: content} do
+      assert content =~ ~s(legend reads "Categorie *")
+      assert content =~ ~s("Scegli almeno una categoria")
+    end
   end
 end

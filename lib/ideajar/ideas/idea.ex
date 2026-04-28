@@ -2,9 +2,13 @@ defmodule Ideajar.Ideas.Idea do
   @moduledoc """
   Schema and changeset for an idea persisted in the workspace.
 
-  Slice 2 stores only the bare-minimum fields: title (required), description
-  (free-text, no length cap), and url (optional, validated to start with
-  http(s)://).
+  Slice 2 fields: title (required, max 200, trimmed), description (free-text,
+  no length cap), url (optional, max 2000, http(s):// only).
+
+  Slice 3 adds a `many_to_many :categories` association via the
+  `idea_categories` join table; the changeset enforces "at least one
+  category" at the application level (SQLite cannot express the rule
+  natively for many-to-many).
 
   Note on the type mapping: the SQLite migration uses `:text` for description
   and url so that values longer than 255 characters are stored without
@@ -39,13 +43,16 @@ defmodule Ideajar.Ideas.Idea do
   @doc """
   Builds a changeset for creating an idea.
 
-  Validation rules — the single source of truth for the slice 2 form:
+  Validation rules — the single source of truth for the add-idea form:
 
     * `:title` — required, trimmed, max 200 chars
     * `:description` — optional, free-text, no length cap (A2)
     * `:url` — optional, trimmed; if present must parse as http(s):// with a
       non-empty host and be ≤ 2000 chars. The scheme check is
       case-insensitive but the value is stored verbatim (S5).
+    * `:categories` — at least one required (slice 3). Caller must inject
+      already-resolved `%Category{}` structs under the `:categories` (or
+      `"categories"`) key; the changeset itself does no DB lookup.
 
   Errors do not short-circuit: a submit with both an invalid title and an
   invalid url surfaces both messages.
@@ -61,7 +68,7 @@ defmodule Ideajar.Ideas.Idea do
     |> validate_length(:url, max: 2000, message: @url_too_long)
     |> validate_url(:url)
     |> put_categories(attrs)
-    |> validate_categories_present()
+    |> validate_at_least_one_category()
   end
 
   # `put_categories` accepts both atom-keyed and string-keyed maps to handle
@@ -84,7 +91,7 @@ defmodule Ideajar.Ideas.Idea do
   # ran), so it cannot enforce "min: 1" on its own. We do the check by hand:
   # an empty list or a never-set categories field both surface the canonical
   # error.
-  defp validate_categories_present(changeset) do
+  defp validate_at_least_one_category(changeset) do
     case get_field(changeset, :categories) do
       cats when is_list(cats) and cats != [] -> changeset
       _ -> add_error(changeset, :categories, @categories_required)

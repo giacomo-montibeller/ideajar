@@ -15,7 +15,8 @@ espone una sezione `Categorie` con chip toggleabili (`<button
 type="button" aria-pressed=…>`); almeno una categoria obbligatoria,
 validata a livello changeset. La card di un'idea renderizza i suoi tag in
 `display_order` come piccoli badge. Le idee dev di slice 2 vengono
-cancellate dalla migration (test data; in prod questo sarà gestito
+cancellate da una migration dedicata (`wipe_slice2_dev_ideas`, distinta
+dalla DDL del join table; test data, in prod questo sarà gestito
 separatamente da slice 9).
 
 Fuori scope esplicito: filtri per categoria (slice 4), search per nome
@@ -44,7 +45,8 @@ Feature: Tag ideas with one or more curated categories
   Scenario: Opening the form shows all 8 categories as toggleable chips
     Given I am on "/"
     When I click "+ Aggiungi idea"
-    Then I see a labelled fieldset with legend "Categorie"
+    Then I see a labelled fieldset whose legend reads "Categorie *"
+    And the fieldset has a helper text "Scegli almeno una categoria"
     And the fieldset contains exactly 8 chips in display_order
     And every chip has type="button" and aria-pressed="false"
     And every chip has a hit area of at least 44×44 CSS px
@@ -309,7 +311,8 @@ Nessuna nuova dipendenza Hex.
 
 | Elemento | Testo IT |
 |---|---|
-| Legend del fieldset | `Categorie` |
+| Legend del fieldset | `Categorie *` (asterisco visivo + sr-only "obbligatorio") |
+| Helper text sotto legend | `Scegli almeno una categoria` |
 | Errore "almeno una" | `Seleziona almeno una categoria` |
 | Errore id invalido | `Categoria non valida` |
 | Categoria 1 | `passeggiata` |

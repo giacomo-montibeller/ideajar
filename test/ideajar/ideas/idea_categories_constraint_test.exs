@@ -70,6 +70,7 @@ defmodule Ideajar.Ideas.IdeaCategoriesConstraintTest do
   end
 
   describe "PRIMARY KEY constraint on (idea_id, category_id)" do
+    # Scenario: PRIMARY KEY on idea_categories prevents duplicate (idea_id, category_id) inserts
     test "inserting a duplicate (idea_id, category_id) row raises a constraint error" do
       idea = insert_idea_with_categories!("uniqcheck", ["mare"])
       mare = Repo.get_by!(Category, name: "mare")

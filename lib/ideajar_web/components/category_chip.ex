@@ -4,6 +4,11 @@ defmodule IdeajarWeb.Components.CategoryChip do
   `data-selected`, and a leading checkmark icon when selected — three
   cues that are independent of each other so the selected/deselected
   visual contract stays color-blind safe (WCAG 1.4.11).
+
+  `aria_describedby` should be set on each chip (not on the parent
+  fieldset) because most screen-reader / browser pairs do not propagate
+  a fieldset's `aria-describedby` to its child controls when the chips
+  themselves are tabbed onto.
   """
 
   use Phoenix.Component
@@ -13,6 +18,7 @@ defmodule IdeajarWeb.Components.CategoryChip do
   attr :id, :integer, required: true
   attr :name, :string, required: true
   attr :selected?, :boolean, required: true
+  attr :aria_describedby, :string, default: nil
 
   def category_chip(assigns) do
     ~H"""
@@ -20,6 +26,7 @@ defmodule IdeajarWeb.Components.CategoryChip do
       id={"category-chip-#{@id}"}
       type="button"
       aria-pressed={if @selected?, do: "true", else: "false"}
+      aria-describedby={@aria_describedby}
       data-selected={if @selected?, do: "true", else: "false"}
       phx-click="toggle_category"
       phx-value-id={@id}

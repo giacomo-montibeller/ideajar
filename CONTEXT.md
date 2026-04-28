@@ -23,39 +23,46 @@ Webapp per raccogliere idee di attività nel tempo libero (passeggiata al lago, 
 
 ## Modello dati
 
+Stato attuale (slice 2 + 3 implementate):
+
 ```
 ideas
   id
-  title              string, required
-  description        text, optional
-  url                string, optional
-  lat, lng           float, optional
-  location_name      string, optional
-  duration           enum [few_hours, half_day, full_day, weekend, multi_day]
-  estimated_cost     integer, optional, in € per coppia
+  title              string, required, max 200, trimmed
+  description        text, optional, no length cap
+  url                text, optional, max 2000, trimmed, http(s):// only
   inserted_at, updated_at
 
 categories            seed da codice, non CRUD
-  id, name, icon, color, sort_order
+  id
+  name               string, required, UNIQUE
+  display_order      integer, required, UNIQUE (1..N)
+  inserted_at, updated_at
 
-ideas_categories      many-to-many
+idea_categories       many-to-many (composite PK)
+  idea_id            FK ideas, ON DELETE CASCADE
+  category_id        FK categories, ON DELETE RESTRICT
 ```
+
+Slice future estenderanno `ideas` con `lat, lng, location_name` (slice 6),
+`duration` enum (slice 5), `estimated_cost` (slice 5).
 
 Nota: `created_by` **non** presente — irrilevante per due utenti che condividono lo spazio.
 
 ## Categorie (fisse, gestite via release)
-Proposta iniziale di seed:
 
-- 🌊 Mare
-- 🏔️ Montagna
-- 🏞️ Natura
-- 🏛️ Cultura
-- 🍽️ Gastronomia
-- 🎭 Spettacolo
-- 🎢 Avventura
-- ✈️ Viaggio
-- 🏠 Casa
-- 🛍️ Shopping
+Seed shipped in slice 3 (8 voci, ordinate per `display_order`):
+
+| order | name        |
+|-------|-------------|
+| 1     | passeggiata |
+| 2     | mare        |
+| 3     | museo       |
+| 4     | ristorante  |
+| 5     | sport       |
+| 6     | cultura     |
+| 7     | cinema      |
+| 8     | viaggio     |
 
 Modificabili tramite seed/migration in fase di rilascio.
 

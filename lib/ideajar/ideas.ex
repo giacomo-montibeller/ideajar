@@ -11,11 +11,8 @@ defmodule Ideajar.Ideas do
   import Ecto.Query
 
   alias Ideajar.Categories
-  alias Ideajar.Categories.Category
   alias Ideajar.Ideas.Idea
   alias Ideajar.Repo
-
-  @category_invalid "Categoria non valida"
 
   @doc """
   Returns every idea ordered by `inserted_at` descending, with `id`
@@ -25,7 +22,7 @@ defmodule Ideajar.Ideas do
   @spec list_ideas() :: [Idea.t()]
   def list_ideas do
     Repo.all(from i in Idea, order_by: [desc: i.inserted_at, desc: i.id])
-    |> Repo.preload(categories: from(c in Category, order_by: [asc: c.display_order]))
+    |> Repo.preload(categories: Categories.preload_query())
   end
 
   @doc """
@@ -35,9 +32,10 @@ defmodule Ideajar.Ideas do
   submissions). When `category_ids` is present, ids are resolved through
   `Categories.list_by_ids/1` (safe int cast, dedupe POST cast,
   all-or-nothing). On invalid ids the function builds a minimal error
-  changeset with exactly one error on `:categories` (`Categoria non valida`)
-  — it does NOT fall through `Idea.changeset/2`, so the canonical
-  "Seleziona almeno una categoria" message does not pile on top.
+  changeset with exactly one error on `:categories`
+  (`Categories.invalid_message/0`) — it does NOT fall through
+  `Idea.changeset/2`, so the canonical "Seleziona almeno una categoria"
+  message does not pile on top.
 
   Returns the persisted idea (with `:categories` preloaded ordered) on
   success or the invalid changeset on failure (no I/O performed when the
@@ -50,7 +48,7 @@ defmodule Ideajar.Ideas do
     case Categories.list_by_ids(raw_ids) do
       {:ok, cats} ->
         attrs
-        |> put_categories(cats)
+        |> inject_resolved_categories(cats)
         |> insert_idea()
 
       {:error, :not_found} ->
@@ -58,42 +56,41 @@ defmodule Ideajar.Ideas do
     end
   end
 
-  # Inject the resolved categories using the same key style the caller used,
-  # so Ecto.Changeset.cast does not refuse a mixed atom/string map.
-  defp put_categories(attrs, cats) do
-    if Map.has_key?(attrs, "title") do
+  defp fetch_raw_category_ids(attrs) do
+    Map.get(attrs, "category_ids") || Map.get(attrs, :category_ids) || []
+  end
+
+  # Inject the resolved Category structs using the same key style the
+  # caller used. We probe the actual key shape rather than hard-coding a
+  # specific key name so that adding new fields elsewhere doesn't break
+  # the detection.
+  defp inject_resolved_categories(attrs, cats) do
+    if string_keyed?(attrs) do
       Map.put(attrs, "categories", cats)
     else
       Map.put(attrs, :categories, cats)
     end
   end
 
-  defp fetch_raw_category_ids(attrs) do
-    Map.get(attrs, "category_ids") || Map.get(attrs, :category_ids) || []
+  defp string_keyed?(attrs) do
+    Enum.any?(Map.keys(attrs), &is_binary/1)
   end
 
   defp insert_idea(attrs) do
-    %Idea{}
-    |> Idea.changeset(attrs)
-    |> Repo.insert()
-    |> case do
-      {:ok, idea} ->
-        {:ok,
-         Repo.preload(idea, categories: from(c in Category, order_by: [asc: c.display_order]))}
-
-      err ->
-        err
+    with {:ok, idea} <- %Idea{} |> Idea.changeset(attrs) |> Repo.insert() do
+      {:ok, Repo.preload(idea, categories: Categories.preload_query())}
     end
   end
 
-  # Builds a changeset that surfaces ONLY the "Categoria non valida" error
-  # on :categories, while preserving title / description / url so the LV
-  # re-render shows what the user typed. We deliberately avoid running
-  # `Idea.changeset/2` here — its `validate_categories_present` would
-  # add a second error on the same field.
+  # Builds a changeset that surfaces ONLY the controlled "Categoria non
+  # valida" error on :categories, while preserving title / description /
+  # url so the LV re-render shows what the user typed. We deliberately
+  # avoid running `Idea.changeset/2` here — its
+  # `validate_at_least_one_category` would add a second error on the
+  # same field.
   defp build_invalid_categories_changeset(attrs) do
     %Idea{}
     |> Ecto.Changeset.cast(attrs, [:title, :description, :url])
-    |> Ecto.Changeset.add_error(:categories, @category_invalid)
+    |> Ecto.Changeset.add_error(:categories, Categories.invalid_message())
   end
 end

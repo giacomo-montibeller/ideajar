@@ -37,7 +37,7 @@ defmodule IdeajarWeb.IdeaLive.Index do
      |> assign(:ideas, Ideas.list_ideas())
      |> assign(:categories, Categories.list_categories())
      |> assign(:form_visible?, false)
-     |> assign(:selected_category_ids, MapSet.new())
+     |> reset_categories()
      |> assign_form()}
   end
 
@@ -50,7 +50,7 @@ defmodule IdeajarWeb.IdeaLive.Index do
     {:noreply,
      socket
      |> assign(:form_visible?, true)
-     |> assign(:selected_category_ids, MapSet.new())
+     |> reset_categories()
      |> assign_form()
      |> push_event("ideajar:focus", %{to: "#idea-title"})}
   end
@@ -65,58 +65,33 @@ defmodule IdeajarWeb.IdeaLive.Index do
     {:noreply,
      socket
      |> assign(:form_visible?, false)
-     |> assign(:selected_category_ids, MapSet.new())
+     |> reset_categories()
      |> assign_form()}
   end
 
-  def handle_event("toggle_category", %{"id" => raw_id}, socket) do
-    case Integer.parse(to_string(raw_id)) do
+  def handle_event("toggle_category", %{"id" => raw_id}, socket) when is_binary(raw_id) do
+    case Integer.parse(raw_id) do
       {id, ""} when id > 0 ->
         set = socket.assigns.selected_category_ids
         new_set = if MapSet.member?(set, id), do: MapSet.delete(set, id), else: MapSet.put(set, id)
         {:noreply, assign(socket, :selected_category_ids, new_set)}
 
       _ ->
-        # Hostile or malformed phx-value-id: treat as no-op rather than
-        # crashing the LV process.
         {:noreply, socket}
     end
   end
+
+  # Catchall for hostile or malformed phx-value-id (non-string types).
+  def handle_event("toggle_category", _params, socket), do: {:noreply, socket}
 
   def handle_event("save", %{"idea" => attrs}, socket) do
     attrs_with_categories =
       Map.put(attrs, "category_ids", MapSet.to_list(socket.assigns.selected_category_ids))
 
-    case create_idea_fun(socket).(attrs_with_categories) do
-      {:ok, _idea} ->
-        {:noreply,
-         socket
-         |> assign(:ideas, Ideas.list_ideas())
-         |> assign(:form_visible?, false)
-         |> assign(:selected_category_ids, MapSet.new())
-         |> assign_form()
-         |> put_flash(:info, "Idea aggiunta")
-         |> push_event("ideajar:focus", %{to: "#add-idea-button"})}
-
-      {:error, %Ecto.Changeset{} = changeset} ->
-        {:noreply,
-         socket
-         |> assign(:form, to_form(changeset, as: "idea", action: :insert))
-         |> push_event("ideajar:focus", %{to: focus_first_invalid(changeset)})}
-
-      {:error, _other} ->
-        # Persistence layer failed for a non-validation reason (DB locked,
-        # disk full, …). We surface a generic flash, keep the form open
-        # with the user's input, and leave the LV process alive.
-        {:noreply,
-         socket
-         |> assign(:form, to_form(Idea.changeset(%Idea{}, attrs), as: "idea"))
-         |> put_flash(:error, "Salvataggio non riuscito, riprova")}
-    end
-  end
-
-  defp assign_form(socket) do
-    assign(socket, :form, to_form(Idea.changeset(%Idea{}, %{}), as: "idea"))
+    socket
+    |> create_idea_fun()
+    |> apply([attrs_with_categories])
+    |> handle_save_result(socket, attrs)
   end
 
   # Test seam: tests assign `:create_idea_fun` to inject a deterministic
@@ -126,11 +101,45 @@ defmodule IdeajarWeb.IdeaLive.Index do
     socket.assigns[:create_idea_fun] || (&Ideas.create_idea/1)
   end
 
+  defp handle_save_result({:ok, _idea}, socket, _attrs) do
+    {:noreply,
+     socket
+     |> assign(:ideas, Ideas.list_ideas())
+     |> assign(:form_visible?, false)
+     |> reset_categories()
+     |> assign_form()
+     |> put_flash(:info, "Idea aggiunta")
+     |> push_event("ideajar:focus", %{to: "#add-idea-button"})}
+  end
+
+  defp handle_save_result({:error, %Ecto.Changeset{} = changeset}, socket, _attrs) do
+    {:noreply,
+     socket
+     |> assign(:form, to_form(changeset, as: "idea", action: :insert))
+     |> push_event("ideajar:focus", %{to: focus_first_invalid(changeset)})}
+  end
+
+  defp handle_save_result({:error, _other}, socket, attrs) do
+    # Persistence layer failed for a non-validation reason (DB locked,
+    # disk full, …). Surface a generic flash, keep the form open with
+    # the user's input, leave the LV process alive.
+    {:noreply,
+     socket
+     |> assign(:form, to_form(Idea.changeset(%Idea{}, attrs), as: "idea"))
+     |> put_flash(:error, "Salvataggio non riuscito, riprova")}
+  end
+
+  defp reset_categories(socket), do: assign(socket, :selected_category_ids, MapSet.new())
+
+  defp assign_form(socket) do
+    assign(socket, :form, to_form(Idea.changeset(%Idea{}, %{}), as: "idea"))
+  end
+
   # First-invalid focus: priority follows the visual order of the form so
   # screen-reader users land on the topmost field that needs attention.
   # When the error is on :categories, we focus the error region (which is
-  # `tabindex="-1"` and `role="alert"`) so the SR announces the message
-  # before the user reaches the chips.
+  # `tabindex="-1"`) so the SR announces the message before the user
+  # reaches the chips.
   defp focus_first_invalid(%Ecto.Changeset{errors: errors}) do
     cond do
       Keyword.has_key?(errors, :title) -> "#idea-title"
@@ -144,7 +153,10 @@ defmodule IdeajarWeb.IdeaLive.Index do
     Phoenix.LiveView.redirect(socket, to: "/login?return_to=%2F")
   end
 
-  # Used by the template to decide whether to render the error region.
+  # Used by the template to decide whether to render the error region
+  # and what message to show. Public so HEEx can call them via the
+  # implicit module dispatch; they read only the form.source.errors
+  # keyword list and surface the field-level state.
   def has_categories_error?(form) do
     Keyword.has_key?(form.source.errors, :categories)
   end
@@ -153,6 +165,20 @@ defmodule IdeajarWeb.IdeaLive.Index do
     case Keyword.get(form.source.errors, :categories) do
       {message, _opts} -> message
       _ -> nil
+    end
+  end
+
+  @doc """
+  Builds the space-separated list of ids that each chip should expose as
+  `aria-describedby`. The help text is always associated; on error, the
+  error region id is appended so screen readers announce both when the
+  chip receives focus.
+  """
+  def chip_describedby(form) do
+    if has_categories_error?(form) do
+      "idea-categories-help idea-categories-error"
+    else
+      "idea-categories-help"
     end
   end
 end

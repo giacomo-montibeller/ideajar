@@ -61,6 +61,16 @@ defmodule IdeajarWeb.IdeaLive.IndexTest do
     )
   end
 
+  # Extract the inner HTML of the idea-categories badge list so positional
+  # assertions can disambiguate badge order from chip occurrences in the
+  # form. Avoids the brittleness of using List.last on raw binary matches.
+  defp idea_card_badges_html(html) do
+    case Regex.run(~r{<ul[^>]*data-testid="idea-categories"[^>]*>(.*?)</ul>}s, html) do
+      [_, inner] -> inner
+      _ -> ""
+    end
+  end
+
   describe "mount/3 — auth gate" do
     # Scenario: LiveView mount with no session redirects to /login
     test "redirects to /login when the session has no :authenticated flag", %{conn: conn} do
@@ -199,7 +209,6 @@ defmodule IdeajarWeb.IdeaLive.IndexTest do
       assert html =~ ~s(target="_blank")
       assert html =~ ~s(rel="noopener noreferrer")
       assert html =~ ~s(aria-label="Apri link in una nuova scheda")
-      assert html =~ "break-all"
 
       refute html =~ ~s(id="idea-form")
 
@@ -231,7 +240,9 @@ defmodule IdeajarWeb.IdeaLive.IndexTest do
       # links never use it, so its absence proves we did not render a link
       # block for this title-only idea.
       refute html =~ ~s(target="_blank")
-      refute html =~ "whitespace-pre-wrap"
+      # Description block is gated by data-testid so we don't depend on
+      # Tailwind class names for behaviour assertions.
+      refute html =~ ~s(data-testid="idea-description")
     end
 
     # Scenario Outline: Valid links case-insensitive (S5)
@@ -290,12 +301,13 @@ defmodule IdeajarWeb.IdeaLive.IndexTest do
     end
 
     # Scenario: Description newlines are preserved via CSS
-    test "description container carries whitespace-pre-wrap", %{conn: conn} do
+    test "description block is rendered and preserves the newline content",
+         %{conn: conn} do
       view = mount_authenticated(conn) |> open_form()
 
       html = submit(view, %{title: "x", description: "riga 1\nriga 2"})
 
-      assert html =~ "whitespace-pre-wrap"
+      assert html =~ ~s(data-testid="idea-description")
       assert html =~ "riga 1"
       assert html =~ "riga 2"
     end
@@ -532,9 +544,66 @@ defmodule IdeajarWeb.IdeaLive.IndexTest do
 
       {:ok, _view, html} = live_isolated(conn, Index, session: @authenticated_session)
 
-      cultura_at = :binary.matches(html, "cultura") |> List.last() |> elem(0)
-      cinema_at = :binary.matches(html, "cinema") |> List.last() |> elem(0)
+      card = idea_card_badges_html(html)
+      cultura_at = :binary.match(card, "cultura") |> elem(0)
+      cinema_at = :binary.match(card, "cinema") |> elem(0)
       assert cultura_at < cinema_at
+    end
+
+    # Scenario: An idea with all 8 categories renders all 8 badges in display_order
+    test "idea card with all 8 categories renders every badge in display_order ASC",
+         %{conn: conn} do
+      all_names = ["passeggiata", "mare", "museo", "ristorante", "sport", "cultura", "cinema", "viaggio"]
+
+      insert_idea_with_categories!("Tutto", all_names, ~U[2026-04-27 10:00:00Z])
+
+      {:ok, _view, html} = live_isolated(conn, Index, session: @authenticated_session)
+      card = idea_card_badges_html(html)
+
+      # Each name appears in the card. Take their first occurrence inside the
+      # card region and assert the order matches the canonical display_order.
+      positions =
+        Enum.map(all_names, fn name ->
+          {pos, _len} = :binary.match(card, name)
+          {name, pos}
+        end)
+
+      assert Enum.map(positions, &elem(&1, 0)) == all_names
+      assert positions |> Enum.map(&elem(&1, 1)) |> then(&(&1 == Enum.sort(&1)))
+    end
+
+    # Scenario: User input is HTML-escaped on render — category names too (S1)
+    test "S1 — a category whose name contains HTML is escaped on render",
+         %{conn: conn} do
+      # Bypass the seed: insert a synthetic category with HTML-like name and
+      # tag a fresh idea with it, so the render exercises the escape both in
+      # the chip (form) and the badge (card).
+      naughty =
+        Repo.insert!(%Category{
+          name: "<script>alert(1)</script>",
+          display_order: 999
+        })
+
+      idea =
+        %Idea{title: "Naughty"}
+        |> Ecto.Changeset.change()
+        |> Ecto.Changeset.put_assoc(:categories, [naughty])
+        |> Repo.insert!()
+
+      _ = idea
+
+      {:ok, view, html} = live_isolated(conn, Index, session: @authenticated_session)
+
+      # Card renders the category badge: must be escaped, must NOT contain
+      # the raw <script> tag.
+      assert html =~ "&lt;script&gt;alert(1)&lt;/script&gt;"
+      refute html =~ "<script>alert(1)</script>"
+
+      # Same check inside the chip group: open the form and confirm the
+      # synthetic chip name is escaped there too.
+      form_html = render_click(view, "toggle_form")
+      assert form_html =~ "&lt;script&gt;alert(1)&lt;/script&gt;"
+      refute form_html =~ "<script>alert(1)</script>"
     end
   end
 
@@ -720,9 +789,9 @@ defmodule IdeajarWeb.IdeaLive.IndexTest do
 
       # mare=2, viaggio=8 → mare appears first in the badges list
       assert html =~ "Mare a Sirolo"
-      assert html =~ "category-badge"
-      mare_at = :binary.matches(html, "mare") |> List.last() |> elem(0)
-      viaggio_at = :binary.matches(html, "viaggio") |> List.last() |> elem(0)
+      card = idea_card_badges_html(html)
+      mare_at = :binary.match(card, "mare") |> elem(0)
+      viaggio_at = :binary.match(card, "viaggio") |> elem(0)
       assert mare_at < viaggio_at
     end
 

@@ -13,13 +13,31 @@ defmodule Ideajar.Categories do
   alias Ideajar.Categories.Category
   alias Ideajar.Repo
 
+  @invalid_message "Categoria non valida"
+
+  @doc """
+  Canonical user-facing error string returned when `list_by_ids/1` cannot
+  resolve every requested id. Owned by the Categories context so callers
+  in other contexts (e.g. `Ideas`) do not need to duplicate the literal.
+  """
+  @spec invalid_message() :: String.t()
+  def invalid_message, do: @invalid_message
+
   @doc """
   Returns every category ordered by `display_order` ascending.
   """
   @spec list_categories() :: [Category.t()]
   def list_categories do
-    Repo.all(from c in Category, order_by: [asc: c.display_order])
+    Repo.all(preload_query())
   end
+
+  @doc """
+  Ecto query that returns categories ordered by `display_order` ASC.
+  Exposed so callers can compose it into an `Ecto.Repo.preload` without
+  reaching into the `Category` schema themselves.
+  """
+  @spec preload_query() :: Ecto.Query.t()
+  def preload_query, do: from(c in Category, order_by: [asc: c.display_order])
 
   @doc """
   Looks up categories by id, returning all-or-nothing.
@@ -38,7 +56,7 @@ defmodule Ideajar.Categories do
   """
   @spec list_by_ids([any]) :: {:ok, [Category.t()]} | {:error, :not_found}
   def list_by_ids(raw_ids) when is_list(raw_ids) do
-    with {:ok, ints} <- safe_cast_ints(raw_ids) do
+    with {:ok, ints} <- cast_positive_ints(raw_ids) do
       unique = Enum.uniq(ints)
 
       cats = Repo.all(from c in Category, where: c.id in ^unique)
@@ -51,7 +69,7 @@ defmodule Ideajar.Categories do
     end
   end
 
-  defp safe_cast_ints(raw) do
+  defp cast_positive_ints(raw) do
     raw
     |> Enum.reduce_while({:ok, []}, fn
       n, {:ok, acc} when is_integer(n) and n > 0 ->
