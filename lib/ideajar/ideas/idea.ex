@@ -22,6 +22,7 @@ defmodule Ideajar.Ideas.Idea do
   @title_too_long "Il titolo non può superare i 200 caratteri"
   @url_invalid "Il link deve iniziare con http:// o https://"
   @url_too_long "Il link non può superare i 2000 caratteri"
+  @categories_required "Seleziona almeno una categoria"
 
   @castable_fields [:title, :description, :url]
 
@@ -59,6 +60,35 @@ defmodule Ideajar.Ideas.Idea do
     |> validate_length(:title, max: 200, message: @title_too_long)
     |> validate_length(:url, max: 2000, message: @url_too_long)
     |> validate_url(:url)
+    |> put_categories(attrs)
+    |> validate_categories_present()
+  end
+
+  # `put_categories` accepts both atom-keyed and string-keyed maps to handle
+  # domain callers (atom keys) and LiveView form submissions (string keys).
+  # When neither key is present `:categories` stays nil — `validate_length`
+  # below then surfaces the canonical "almeno una categoria" error.
+  defp put_categories(changeset, %{categories: cats}) when is_list(cats),
+    do: put_assoc(changeset, :categories, cats)
+
+  defp put_categories(changeset, %{"categories" => cats}) when is_list(cats),
+    do: put_assoc(changeset, :categories, cats)
+
+  defp put_categories(changeset, _attrs), do: changeset
+
+  # NOTE: order matters — this validator only sees the categories association
+  # if `put_assoc` ran before it. Keep `put_categories/2` in the pipeline
+  # above this call.
+  #
+  # `validate_length/3` skips silently when the field is nil (no put_assoc
+  # ran), so it cannot enforce "min: 1" on its own. We do the check by hand:
+  # an empty list or a never-set categories field both surface the canonical
+  # error.
+  defp validate_categories_present(changeset) do
+    case get_field(changeset, :categories) do
+      cats when is_list(cats) and cats != [] -> changeset
+      _ -> add_error(changeset, :categories, @categories_required)
+    end
   end
 
   # `update_change` runs only when the field is present in changes; it leaves

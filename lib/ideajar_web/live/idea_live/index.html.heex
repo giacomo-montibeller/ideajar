@@ -32,6 +32,41 @@
       <.input field={@form[:description]} id="idea-description" label="Descrizione" type="textarea" />
       <.input field={@form[:url]} id="idea-url" label="Link" type="url" />
 
+      <fieldset
+        class="fieldset"
+        aria-describedby={
+          if has_categories_error?(@form),
+            do: "idea-categories-help idea-categories-error",
+            else: "idea-categories-help"
+        }
+      >
+        <legend class="label mb-1">
+          Categorie <span aria-hidden="true">*</span>
+          <span class="sr-only">obbligatorio</span>
+        </legend>
+        <p id="idea-categories-help" class="text-sm text-base-content/70 mb-2">
+          Scegli almeno una categoria
+        </p>
+        <div class="flex flex-wrap gap-2">
+          <.category_chip
+            :for={category <- @categories}
+            id={category.id}
+            name={category.name}
+            selected?={MapSet.member?(@selected_category_ids, category.id)}
+          />
+        </div>
+        <p
+          :if={has_categories_error?(@form)}
+          id="idea-categories-error"
+          role="alert"
+          tabindex="-1"
+          class="mt-1.5 flex gap-2 items-center text-sm text-error"
+        >
+          <.icon name="hero-exclamation-circle" class="size-5" />
+          {categories_error_message(@form)}
+        </p>
+      </fieldset>
+
       <button type="submit" phx-disable-with="Salvataggio…" class="btn btn-primary">
         Salva
       </button>
@@ -58,6 +93,14 @@
             {idea.url}
           </a>
         </p>
+        <ul :if={idea.categories != []} class="flex flex-wrap gap-2 mt-2">
+          <li
+            :for={cat <- idea.categories}
+            class="category-badge px-2 py-1 rounded-full border border-base-300 text-xs text-base-content/80"
+          >
+            {cat.name}
+          </li>
+        </ul>
       </li>
     </ul>
   </section>

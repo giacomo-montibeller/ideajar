@@ -1,24 +1,87 @@
 defmodule Ideajar.Ideas.IdeaTest do
   use Ideajar.DataCase, async: true
 
+  alias Ideajar.Categories.Category
   alias Ideajar.Ideas.Idea
 
   @title_required "Il titolo è obbligatorio"
   @title_too_long "Il titolo non può superare i 200 caratteri"
   @url_invalid "Il link deve iniziare con http:// o https://"
   @url_too_long "Il link non può superare i 2000 caratteri"
+  @categories_required "Seleziona almeno una categoria"
 
-  defp changeset(attrs), do: Idea.changeset(%Idea{}, attrs)
+  # Default helper used by slice-2-era validation tests: pre-attaches a
+  # canonical category so the changeset's slice-3 "min: 1 category" rule
+  # does not fail tests that are about title / description / url. Tests
+  # that specifically exercise the categories rule (or set their own)
+  # provide :categories explicitly and override this default.
+  defp changeset(attrs) do
+    cat = Repo.get_by!(Category, name: "mare")
+
+    full_attrs =
+      if Map.has_key?(attrs, :categories) or Map.has_key?(attrs, "categories") do
+        attrs
+      else
+        Map.put(attrs, :categories, [cat])
+      end
+
+    Idea.changeset(%Idea{}, full_attrs)
+  end
 
   defp first_error(%Ecto.Changeset{} = cs, field) do
     {message, _opts} = Keyword.fetch!(cs.errors, field)
     message
   end
 
+  defp by_name(name), do: Repo.get_by!(Category, name: name)
+
   describe "schema" do
     test "lists the expected fields" do
       assert Idea.__schema__(:fields) ==
                [:id, :title, :description, :url, :inserted_at, :updated_at]
+    end
+  end
+
+  describe "changeset/2 — categories (slice 3)" do
+    test "is valid with a populated categories list" do
+      mare = by_name("mare")
+      assert changeset(%{title: "x", categories: [mare]}).valid?
+    end
+
+    test "rejects a missing :categories key with a single canonical error" do
+      cs = Idea.changeset(%Idea{}, %{title: "x"})
+      refute cs.valid?
+      assert first_error(cs, :categories) == @categories_required
+      assert length(Keyword.get_values(cs.errors, :categories)) == 1
+    end
+
+    test "rejects an empty categories list with the canonical error" do
+      cs = Idea.changeset(%Idea{}, %{title: "x", categories: []})
+      refute cs.valid?
+      assert first_error(cs, :categories) == @categories_required
+      assert length(Keyword.get_values(cs.errors, :categories)) == 1
+    end
+
+    test "is valid with two distinct categories and stores them in :categories" do
+      mare = by_name("mare")
+      sport = by_name("sport")
+
+      cs = changeset(%{title: "x", categories: [mare, sport]})
+
+      assert cs.valid?
+      ids = cs.changes[:categories] |> Enum.map(& &1.data.id)
+      assert mare.id in ids
+      assert sport.id in ids
+      assert length(cs.changes[:categories]) == 2
+    end
+
+    test "regression: an empty changeset (used by LV form mount) does not crash" do
+      cs = Idea.changeset(%Idea{}, %{})
+
+      refute cs.valid?
+      # Both :title and :categories should error — both are required.
+      assert {@title_required, _} = Keyword.fetch!(cs.errors, :title)
+      assert {@categories_required, _} = Keyword.fetch!(cs.errors, :categories)
     end
   end
 

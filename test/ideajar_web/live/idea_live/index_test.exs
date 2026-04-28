@@ -3,6 +3,8 @@ defmodule IdeajarWeb.IdeaLive.IndexTest do
 
   import Phoenix.LiveViewTest
 
+  alias Ideajar.Categories.Category
+  alias Ideajar.CategoriesFixtures
   alias Ideajar.Ideas.Idea
   alias Ideajar.Repo
   alias IdeajarWeb.IdeaLive.Index
@@ -19,18 +21,44 @@ defmodule IdeajarWeb.IdeaLive.IndexTest do
     view
   end
 
+  defp toggle_chip(view, name) do
+    cat = CategoriesFixtures.category_by_name!(name)
+    render_click(view, "toggle_category", %{"id" => "#{cat.id}"})
+    view
+  end
+
+  # Slice-2-era tests use this helper: it pre-selects "mare" so the
+  # submit satisfies the slice-3 "min: 1 category" rule without forcing
+  # every test author to think about chip selection. Slice-3 tests that
+  # test the categories rule itself use `submit_no_chip/2` or set their
+  # own chips explicitly via `toggle_chip/2`.
   defp submit(view, attrs) do
+    view
+    |> toggle_chip("mare")
+    |> form_submit(attrs)
+  end
+
+  defp submit_no_chip(view, attrs), do: form_submit(view, attrs)
+
+  defp form_submit(view, attrs) do
     view
     |> form("#idea-form", idea: attrs)
     |> render_submit()
   end
 
-  defp insert_idea!(attrs, %DateTime{} = at) do
-    %Idea{}
-    |> Map.merge(Map.new(attrs))
-    |> Map.put(:inserted_at, at)
-    |> Map.put(:updated_at, at)
-    |> Repo.insert!()
+  defp insert_idea_with_categories!(title, category_names, %DateTime{} = at) do
+    cats = Enum.map(category_names, &CategoriesFixtures.category_by_name!/1)
+
+    idea =
+      %Idea{title: title}
+      |> Ecto.Changeset.change()
+      |> Ecto.Changeset.put_assoc(:categories, cats)
+      |> Repo.insert!()
+
+    Repo.update!(
+      Ecto.Changeset.change(idea, inserted_at: at, updated_at: at),
+      force: true
+    )
   end
 
   describe "mount/3 — auth gate" do
@@ -463,8 +491,8 @@ defmodule IdeajarWeb.IdeaLive.IndexTest do
   describe "list rendering" do
     # Scenario: Ideas are rendered newest-first
     test "renders ideas with the newest at the top", %{conn: conn} do
-      _old = insert_idea!(%{title: "Vecchia"}, ~U[2026-04-26 10:00:00Z])
-      _new = insert_idea!(%{title: "Recente"}, ~U[2026-04-27 10:00:00Z])
+      _old = insert_idea_with_categories!("Vecchia", ["mare"], ~U[2026-04-26 10:00:00Z])
+      _new = insert_idea_with_categories!("Recente", ["mare"], ~U[2026-04-27 10:00:00Z])
 
       {:ok, _view, html} = live_isolated(conn, Index, session: @authenticated_session)
 
@@ -479,9 +507,9 @@ defmodule IdeajarWeb.IdeaLive.IndexTest do
     # Scenario: Tie-break — equal inserted_at, higher id first
     test "ideas with equal inserted_at are ordered by id descending", %{conn: conn} do
       same = ~U[2026-04-27 10:00:00Z]
-      first = insert_idea!(%{title: "First"}, same)
-      second = insert_idea!(%{title: "Second"}, same)
-      assert second.id > first.id
+      first_id = insert_idea_with_categories!("First", ["mare"], same).id
+      second_id = insert_idea_with_categories!("Second", ["mare"], same).id
+      assert second_id > first_id
 
       {:ok, _view, html} = live_isolated(conn, Index, session: @authenticated_session)
 
@@ -491,6 +519,271 @@ defmodule IdeajarWeb.IdeaLive.IndexTest do
         end
 
       assert second_at < first_at
+    end
+
+    # Scenario: Idea card renders its categories in display_order
+    test "idea card renders category badges in display_order ASC", %{conn: conn} do
+      # cinema=7, cultura=6 → cultura should appear before cinema in the card
+      insert_idea_with_categories!(
+        "Cinema stasera",
+        ["cinema", "cultura"],
+        ~U[2026-04-27 10:00:00Z]
+      )
+
+      {:ok, _view, html} = live_isolated(conn, Index, session: @authenticated_session)
+
+      cultura_at = :binary.matches(html, "cultura") |> List.last() |> elem(0)
+      cinema_at = :binary.matches(html, "cinema") |> List.last() |> elem(0)
+      assert cultura_at < cinema_at
+    end
+  end
+
+  # ── Slice 3: chip rendering and toggle ────────────────────────────
+  describe "categories — chip rendering and toggle" do
+    # Scenario: Opening the form shows all 8 categories as toggleable chips
+    test "opening the form renders the fieldset, legend with required marker, and 8 chips",
+         %{conn: conn} do
+      view = mount_authenticated(conn)
+      html = render_click(view, "toggle_form")
+
+      assert html =~ ~s(<legend )
+      assert html =~ "Categorie"
+      assert html =~ ~s(<span aria-hidden="true">*</span>)
+      assert html =~ "Scegli almeno una categoria"
+
+      for {_ord, name} <- [
+            {1, "passeggiata"},
+            {2, "mare"},
+            {3, "museo"},
+            {4, "ristorante"},
+            {5, "sport"},
+            {6, "cultura"},
+            {7, "cinema"},
+            {8, "viaggio"}
+          ] do
+        assert html =~ name
+      end
+
+      # Default state: all chips deselected.
+      assert html =~ ~s(aria-pressed="false")
+      assert html =~ ~s(data-selected="false")
+      refute html =~ ~s(aria-pressed="true")
+      refute html =~ ~s(data-selected="true")
+    end
+
+    # Scenario: Each chip toggles its aria-pressed state on click
+    test "clicking a chip toggles aria-pressed and data-selected, and adds the check icon",
+         %{conn: conn} do
+      view = mount_authenticated(conn) |> open_form()
+      mare = CategoriesFixtures.category_by_name!("mare")
+
+      html = render_click(view, "toggle_category", %{"id" => "#{mare.id}"})
+
+      assert html =~ ~s(category-chip-#{mare.id})
+      assert html =~ ~s(aria-pressed="true")
+      assert html =~ ~s(data-selected="true")
+      # The hero-check icon appears only on selected chips.
+      assert html =~ "hero-check"
+
+      assigns = :sys.get_state(view.pid).socket.assigns
+      assert MapSet.member?(assigns.selected_category_ids, mare.id)
+
+      html2 = render_click(view, "toggle_category", %{"id" => "#{mare.id}"})
+
+      assigns2 = :sys.get_state(view.pid).socket.assigns
+      refute MapSet.member?(assigns2.selected_category_ids, mare.id)
+      refute html2 =~ ~s(aria-pressed="true")
+    end
+
+    # Scenario: Multiple chips can be selected at once
+    test "selecting multiple chips records each in selected_category_ids", %{conn: conn} do
+      view = mount_authenticated(conn) |> open_form()
+
+      view
+      |> toggle_chip("mare")
+      |> toggle_chip("museo")
+      |> toggle_chip("viaggio")
+
+      assigns = :sys.get_state(view.pid).socket.assigns
+      ids = MapSet.to_list(assigns.selected_category_ids)
+      assert length(ids) == 3
+    end
+
+    # F6 — Reset on close+reopen
+    test "closing then reopening the form resets selected_category_ids", %{conn: conn} do
+      view = mount_authenticated(conn) |> open_form() |> toggle_chip("mare")
+
+      assigns_after_select = :sys.get_state(view.pid).socket.assigns
+      assert MapSet.size(assigns_after_select.selected_category_ids) == 1
+
+      render_click(view, "close_form")
+      render_click(view, "toggle_form")
+
+      assigns_after_reopen = :sys.get_state(view.pid).socket.assigns
+      assert MapSet.equal?(assigns_after_reopen.selected_category_ids, MapSet.new())
+    end
+
+    # W8: hostile / malformed phx-value-id is a silent no-op
+    test "toggle_category with a non-integer id is a no-op", %{conn: conn} do
+      view = mount_authenticated(conn) |> open_form()
+
+      render_click(view, "toggle_category", %{"id" => "not-an-int"})
+
+      assigns = :sys.get_state(view.pid).socket.assigns
+      assert MapSet.equal?(assigns.selected_category_ids, MapSet.new())
+      assert Process.alive?(view.pid)
+    end
+  end
+
+  # ── Slice 3: save flow with categories ────────────────────────────
+  describe "save — categories validation (slice 3)" do
+    # Scenario: Submitting with no category selected shows the validation error
+    test "no chip selected surfaces the canonical error and pushes focus to error region",
+         %{conn: conn} do
+      view = mount_authenticated(conn) |> open_form()
+
+      html = submit_no_chip(view, %{title: "Cinema stasera"})
+
+      assert html =~ "Seleziona almeno una categoria"
+      assert html =~ ~s(id="idea-categories-error")
+      assert html =~ ~s(role="alert")
+      # tabindex="-1" lets the server-driven focus push land here without
+      # adding it to the natural Tab order.
+      assert html =~ ~s(tabindex="-1")
+
+      assert_push_event(view, "ideajar:focus", %{to: "#idea-categories-error"})
+
+      assigns = :sys.get_state(view.pid).socket.assigns
+      assert assigns.form_visible? == true
+      assert assigns.ideas == []
+    end
+
+    # Scenario: Errors accumulate; focus targets #idea-title (priority)
+    test "title-empty + url-invalid + no-chip surfaces all errors; focus on #idea-title",
+         %{conn: conn} do
+      view = mount_authenticated(conn) |> open_form()
+
+      html = submit_no_chip(view, %{title: "", url: "ftp://x"})
+
+      assert html =~ "Il titolo è obbligatorio"
+      assert html =~ "Il link deve iniziare con http:// o https://"
+      assert html =~ "Seleziona almeno una categoria"
+
+      assert_push_event(view, "ideajar:focus", %{to: "#idea-title"})
+    end
+
+    # Scenario: A toggled-then-untoggled chip submits as no category
+    test "toggling a chip on then off submits as no category", %{conn: conn} do
+      view = mount_authenticated(conn) |> open_form()
+
+      view |> toggle_chip("mare") |> toggle_chip("mare")
+
+      html = form_submit(view, %{title: "x"})
+
+      assert html =~ "Seleziona almeno una categoria"
+    end
+
+    # F8 — recovery: title/url preserved between failed and successful submits
+    test "categories-only error preserves title and url for the recovery submit",
+         %{conn: conn} do
+      view = mount_authenticated(conn) |> open_form()
+
+      html =
+        submit_no_chip(view, %{title: "Sirolo", url: "https://example.com"})
+
+      assert html =~ "Seleziona almeno una categoria"
+      # The form re-render shows the user's typed values still in the inputs.
+      assert html =~ ~s(value="Sirolo")
+      assert html =~ ~s(value="https://example.com")
+
+      view |> toggle_chip("mare")
+      html2 = form_submit(view, %{title: "Sirolo", url: "https://example.com"})
+
+      assert html2 =~ "Idea aggiunta"
+
+      assigns = :sys.get_state(view.pid).socket.assigns
+      assert length(assigns.ideas) == 1
+      idea = hd(assigns.ideas)
+      assert idea.title == "Sirolo"
+      assert idea.url == "https://example.com"
+      assert Enum.map(idea.categories, & &1.name) == ["mare"]
+    end
+
+    # Happy path that exercises chip selection + idea card badges
+    test "submitting with two chips renders the badges in display_order on the card",
+         %{conn: conn} do
+      view = mount_authenticated(conn) |> open_form()
+
+      view |> toggle_chip("mare") |> toggle_chip("viaggio")
+
+      html = form_submit(view, %{title: "Mare a Sirolo"})
+
+      # mare=2, viaggio=8 → mare appears first in the badges list
+      assert html =~ "Mare a Sirolo"
+      assert html =~ "category-badge"
+      mare_at = :binary.matches(html, "mare") |> List.last() |> elem(0)
+      viaggio_at = :binary.matches(html, "viaggio") |> List.last() |> elem(0)
+      assert mare_at < viaggio_at
+    end
+
+    # F7 — chips reset after successful save
+    test "after successful save, reopening the form clears chip selection",
+         %{conn: conn} do
+      view = mount_authenticated(conn) |> open_form()
+
+      view |> toggle_chip("mare")
+      form_submit(view, %{title: "Saved"})
+
+      render_click(view, "toggle_form")
+
+      assigns = :sys.get_state(view.pid).socket.assigns
+      assert MapSet.equal?(assigns.selected_category_ids, MapSet.new())
+    end
+  end
+
+  # ── Slice 3: out-of-scope guard + auth boundary ───────────────────
+  describe "out-of-scope and auth boundary" do
+    # Scenario: There is no UI to manage categories
+    test "the form does not expose any category management UI", %{conn: conn} do
+      view = mount_authenticated(conn)
+      html = render_click(view, "toggle_form")
+
+      refute html =~ ~r/(Aggiungi|Modifica|Elimina|Gestisci) categori[ae]/i
+
+      # Only `toggle_category` should be a categories-related phx-click.
+      categories_clicks =
+        Regex.scan(~r/phx-click="([^"]*categor[^"]*)"/i, html)
+        |> Enum.map(&Enum.at(&1, 1))
+        |> Enum.uniq()
+
+      assert categories_clicks == ["toggle_category"]
+    end
+
+    # S4 — Auth boundary: unauthenticated mount cannot reach chip form
+    test "session-empty mount redirects even with the new event handlers in place",
+         %{conn: conn} do
+      assert {:error, {:redirect, %{to: "/login?return_to=%2F"}}} =
+               live_isolated(conn, Index, session: %{})
+    end
+
+    # S4 — Module API surface: Categories exposes only read-only functions
+    test "Ideajar.Categories module exposes only list_categories and list_by_ids" do
+      exported = Ideajar.Categories.__info__(:functions) |> Enum.map(&elem(&1, 0))
+
+      refute :create_category in exported
+      refute :update_category in exported
+      refute :delete_category in exported
+      assert :list_categories in exported
+      assert :list_by_ids in exported
+    end
+  end
+
+  # Belt-and-suspenders: the schema still exposes the same module API as
+  # before so a future refactor doesn't accidentally break the boundary.
+  describe "Category schema is referenced via the Categories context" do
+    test "Idea.__schema__(:association, :categories).related is Ideajar.Categories.Category" do
+      assoc = Idea.__schema__(:association, :categories)
+      assert assoc.related == Category
     end
   end
 end
