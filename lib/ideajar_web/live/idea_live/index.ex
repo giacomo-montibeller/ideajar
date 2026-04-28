@@ -37,6 +37,8 @@ defmodule IdeajarWeb.IdeaLive.Index do
      |> assign(:ideas, Ideas.list_ideas())
      |> assign(:categories, Categories.list_categories())
      |> assign(:form_visible?, false)
+     |> assign(:filter_state, %{})
+     |> assign(:last_filter_action, nil)
      |> reset_categories()
      |> assign_form()}
   end
@@ -87,6 +89,25 @@ defmodule IdeajarWeb.IdeaLive.Index do
   # Catchall for hostile or malformed phx-value-id (non-string types).
   def handle_event("toggle_category", _params, socket), do: {:noreply, socket}
 
+  def handle_event("cycle_filter", %{"id" => raw_id}, socket) when is_binary(raw_id) do
+    case parse_known_category_id(raw_id, socket.assigns.categories) do
+      {:ok, id} ->
+        new_state = cycle_state(socket.assigns.filter_state, id)
+        {:noreply, assign(socket, :filter_state, new_state)}
+
+      :error ->
+        {:noreply, socket}
+    end
+  end
+
+  # Catchall for cycle_filter with malformed/missing params (defense-in-depth
+  # against DevTools tampering). Hostile id values land here as well.
+  def handle_event("cycle_filter", _params, socket), do: {:noreply, socket}
+
+  def handle_event("clear_filters", _params, socket) do
+    {:noreply, assign(socket, :filter_state, %{})}
+  end
+
   def handle_event("save", %{"idea" => attrs}, socket) do
     attrs_with_categories =
       Map.put(attrs, "category_ids", MapSet.to_list(socket.assigns.selected_category_ids))
@@ -133,6 +154,29 @@ defmodule IdeajarWeb.IdeaLive.Index do
   end
 
   defp reset_categories(socket), do: assign(socket, :selected_category_ids, MapSet.new())
+
+  # Tri-state cycle: off → optional → required → off.
+  defp cycle_state(map, id) do
+    case Map.get(map, id) do
+      nil -> Map.put(map, id, :optional)
+      :optional -> Map.put(map, id, :required)
+      :required -> Map.delete(map, id)
+    end
+  end
+
+  # Membership-gated parse: accepts only string-encoded positive integers
+  # whose value matches a category id present in `@categories` (the
+  # snapshot loaded at mount). Defense-in-depth against DevTools id
+  # tampering.
+  defp parse_known_category_id(raw, categories) do
+    with {id, ""} <- Integer.parse(raw),
+         true <- id > 0,
+         true <- Enum.any?(categories, &(&1.id == id)) do
+      {:ok, id}
+    else
+      _ -> :error
+    end
+  end
 
   defp assign_form(socket) do
     assign(socket, :form, to_form(Idea.changeset(%Idea{}, %{}), as: "idea"))

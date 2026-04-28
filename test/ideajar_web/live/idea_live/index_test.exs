@@ -864,4 +864,105 @@ defmodule IdeajarWeb.IdeaLive.IndexTest do
       assert assoc.related == Category
     end
   end
+
+  # ── Slice 4: cycle_filter + clear_filters handlers + @filter_state ──
+  describe "cycle_filter handler (slice 4)" do
+    test "mount initializes @filter_state to %{}", %{conn: conn} do
+      view = mount_authenticated(conn)
+      assigns = :sys.get_state(view.pid).socket.assigns
+      assert assigns.filter_state == %{}
+    end
+
+    # Scenario: Clicking a chip cycles off → optional → required → off
+    test "first click sets state to :optional", %{conn: conn} do
+      view = mount_authenticated(conn)
+      mare = CategoriesFixtures.category_by_name!("mare")
+
+      render_click(view, "cycle_filter", %{"id" => "#{mare.id}"})
+
+      assigns = :sys.get_state(view.pid).socket.assigns
+      assert assigns.filter_state[mare.id] == :optional
+    end
+
+    test "second click sets state to :required", %{conn: conn} do
+      view = mount_authenticated(conn)
+      mare = CategoriesFixtures.category_by_name!("mare")
+
+      render_click(view, "cycle_filter", %{"id" => "#{mare.id}"})
+      render_click(view, "cycle_filter", %{"id" => "#{mare.id}"})
+
+      assigns = :sys.get_state(view.pid).socket.assigns
+      assert assigns.filter_state[mare.id] == :required
+    end
+
+    test "third click removes the id (back to off)", %{conn: conn} do
+      view = mount_authenticated(conn)
+      mare = CategoriesFixtures.category_by_name!("mare")
+
+      Enum.each(1..3, fn _ -> render_click(view, "cycle_filter", %{"id" => "#{mare.id}"}) end)
+
+      assigns = :sys.get_state(view.pid).socket.assigns
+      refute Map.has_key?(assigns.filter_state, mare.id)
+    end
+
+    # F6 rapid cycle pin: 5 clicks → :required (5 mod 3 = 2 transitions: off→optional→required)
+    test "5 rapid consecutive clicks land on :required", %{conn: conn} do
+      view = mount_authenticated(conn)
+      mare = CategoriesFixtures.category_by_name!("mare")
+
+      Enum.each(1..5, fn _ -> render_click(view, "cycle_filter", %{"id" => "#{mare.id}"}) end)
+
+      assigns = :sys.get_state(view.pid).socket.assigns
+      assert assigns.filter_state[mare.id] == :required
+    end
+
+    # S1 hostile inputs scenario outline
+    for value <- ["abc", "", "-1", "0", "1.5", "99999999"] do
+      test "cycle_filter with hostile id #{inspect(value)} is a no-op", %{conn: conn} do
+        view = mount_authenticated(conn)
+
+        render_click(view, "cycle_filter", %{"id" => unquote(value)})
+
+        assigns = :sys.get_state(view.pid).socket.assigns
+        assert assigns.filter_state == %{}
+        assert Process.alive?(view.pid)
+      end
+    end
+
+    test "cycle_filter with no params is a no-op", %{conn: conn} do
+      view = mount_authenticated(conn)
+      render_click(view, "cycle_filter", %{})
+      assigns = :sys.get_state(view.pid).socket.assigns
+      assert assigns.filter_state == %{}
+      assert Process.alive?(view.pid)
+    end
+  end
+
+  describe "clear_filters handler (slice 4)" do
+    # Scenario: "Mostra tutte" resets the filter state but leaves chips visible
+    test "clear_filters resets @filter_state to %{}", %{conn: conn} do
+      view = mount_authenticated(conn)
+      mare = CategoriesFixtures.category_by_name!("mare")
+      sport = CategoriesFixtures.category_by_name!("sport")
+
+      render_click(view, "cycle_filter", %{"id" => "#{mare.id}"})
+      render_click(view, "cycle_filter", %{"id" => "#{sport.id}"})
+      render_click(view, "cycle_filter", %{"id" => "#{sport.id}"})
+
+      render_click(view, "clear_filters")
+
+      assigns = :sys.get_state(view.pid).socket.assigns
+      assert assigns.filter_state == %{}
+    end
+
+    test "clear_filters on already-empty filter is idempotent (S3)", %{conn: conn} do
+      view = mount_authenticated(conn)
+
+      render_click(view, "clear_filters")
+
+      assigns = :sys.get_state(view.pid).socket.assigns
+      assert assigns.filter_state == %{}
+      assert Process.alive?(view.pid)
+    end
+  end
 end
