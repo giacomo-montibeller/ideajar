@@ -128,6 +128,101 @@ defmodule Ideajar.IdeasTest do
     end
   end
 
+  describe "list_ideas/1 — optional (OR clause, slice 4)" do
+    test "returns ideas tagged with the single optional category" do
+      _ = seed_5_ideas()
+      sport = by_name("sport")
+
+      titles =
+        Ideas.list_ideas(optional: [sport.id]) |> Enum.map(& &1.title) |> Enum.sort()
+
+      assert titles == ["Bagno", "Stadio"]
+    end
+
+    test "returns ideas tagged with any of the optional categories (OR)" do
+      _ = seed_5_ideas()
+      sport = by_name("sport")
+      cultura = by_name("cultura")
+
+      titles =
+        Ideas.list_ideas(optional: [sport.id, cultura.id])
+        |> Enum.map(& &1.title)
+        |> Enum.sort()
+
+      assert titles == ["Bagno", "Cinema", "Stadio", "Uffizi"]
+    end
+
+    test "optional: [] is a no-op (returns every idea)" do
+      _ = seed_5_ideas()
+      assert length(Ideas.list_ideas(optional: [])) == 5
+    end
+
+    test "optional: [non_existent_id] returns []" do
+      _ = seed_5_ideas()
+      assert Ideas.list_ideas(optional: [999_999]) == []
+    end
+
+    test "duplicate ids in optional are normalized" do
+      _ = seed_5_ideas()
+      sport = by_name("sport")
+
+      titles_dup =
+        Ideas.list_ideas(optional: [sport.id, sport.id])
+        |> Enum.map(& &1.title)
+        |> Enum.sort()
+
+      titles_uniq =
+        Ideas.list_ideas(optional: [sport.id])
+        |> Enum.map(& &1.title)
+        |> Enum.sort()
+
+      assert titles_dup == titles_uniq
+    end
+  end
+
+  describe "list_ideas/1 — combined required + optional (slice 4)" do
+    test "mare required + (sport or cultura) optional → only Bagno" do
+      _ = seed_5_ideas()
+      mare = by_name("mare")
+      sport = by_name("sport")
+      cultura = by_name("cultura")
+
+      titles =
+        Ideas.list_ideas(required: [mare.id], optional: [sport.id, cultura.id])
+        |> Enum.map(& &1.title)
+
+      assert titles == ["Bagno"]
+    end
+
+    test "required only with optional: [] is identical to required only" do
+      _ = seed_5_ideas()
+      mare = by_name("mare")
+
+      with_empty_opt = Ideas.list_ideas(required: [mare.id], optional: [])
+      without_opt_key = Ideas.list_ideas(required: [mare.id])
+
+      assert Enum.map(with_empty_opt, & &1.id) == Enum.map(without_opt_key, & &1.id)
+    end
+
+    test "optional only with required: [] is identical to optional only" do
+      _ = seed_5_ideas()
+      sport = by_name("sport")
+
+      with_empty_req = Ideas.list_ideas(required: [], optional: [sport.id])
+      without_req_key = Ideas.list_ideas(optional: [sport.id])
+
+      assert Enum.map(with_empty_req, & &1.id) == Enum.map(without_req_key, & &1.id)
+    end
+
+    test "incompatible combinations return []" do
+      _ = seed_5_ideas()
+      mare = by_name("mare")
+      museo = by_name("museo")
+
+      assert Ideas.list_ideas(required: [mare.id], optional: [museo.id]) == []
+    end
+  end
+
   describe "list_ideas/1 — signature and guard (slice 4)" do
     test "list_ideas() == list_ideas([]) (regression for slice 3 callers)" do
       mare = by_name("mare")

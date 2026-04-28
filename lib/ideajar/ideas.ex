@@ -31,11 +31,13 @@ defmodule Ideajar.Ideas do
             "list_ideas/1 expects a keyword list, got: #{inspect(opts)}"
 
     required = Keyword.get(opts, :required, [])
+    optional = Keyword.get(opts, :optional, [])
 
     base_query = from i in Idea, order_by: [desc: i.inserted_at, desc: i.id]
 
     base_query
     |> apply_required(required)
+    |> apply_optional(optional)
     |> Repo.all()
     |> Repo.preload(categories: Categories.preload_query())
   end
@@ -55,6 +57,21 @@ defmodule Ideajar.Ideas do
         where: ic.category_id in ^unique,
         group_by: ic.idea_id,
         having: count(fragment("DISTINCT ?", ic.category_id)) == ^count,
+        select: ic.idea_id
+
+    from i in query, where: i.id in subquery(subq)
+  end
+
+  # OR clause: an idea passes if any of the optional ids is present on
+  # it. Implemented via subquery `WHERE category_id IN ^optional`. An
+  # empty list is a no-op (no filter applied). Duplicates are
+  # normalized via Enum.uniq before the query is built.
+  defp apply_optional(query, []), do: query
+
+  defp apply_optional(query, ids) do
+    subq =
+      from ic in "idea_categories",
+        where: ic.category_id in ^Enum.uniq(ids),
         select: ic.idea_id
 
     from i in query, where: i.id in subquery(subq)
