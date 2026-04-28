@@ -528,6 +528,202 @@ defmodule Ideajar.IdeasTest do
     end
   end
 
+  describe "list_ideas/1 with :durations opt (slice 5 step 5)" do
+    # Background fixture matching the spec: 6 ideas across all 5 durations
+    # plus one NULL-duration idea (Bagno improvviso) used as the regression
+    # pin for AA7 NULL exclusion semantics.
+    defp seed_6_ideas_with_durations do
+      %{
+        caffe:
+          insert_idea_with_categories_and_duration!(
+            "Caffè al volo",
+            [by_name("passeggiata")],
+            :poche_ore,
+            ~U[2026-04-27 10:00:00Z]
+          ),
+        sirolo:
+          insert_idea_with_categories_and_duration!(
+            "Sirolo",
+            [by_name("mare"), by_name("viaggio")],
+            :weekend,
+            ~U[2026-04-27 10:01:00Z]
+          ),
+        uffizi:
+          insert_idea_with_categories_and_duration!(
+            "Uffizi",
+            [by_name("museo"), by_name("cultura")],
+            :giornata,
+            ~U[2026-04-27 10:02:00Z]
+          ),
+        stadio:
+          insert_idea_with_categories_and_duration!(
+            "Stadio",
+            [by_name("sport")],
+            :mezza_giornata,
+            ~U[2026-04-27 10:03:00Z]
+          ),
+        parigi:
+          insert_idea_with_categories_and_duration!(
+            "Parigi 4 giorni",
+            [by_name("viaggio"), by_name("cultura")],
+            :piu_giorni,
+            ~U[2026-04-27 10:04:00Z]
+          ),
+        bagno:
+          insert_idea_with_categories_and_duration!(
+            "Bagno improvviso",
+            [by_name("mare")],
+            nil,
+            ~U[2026-04-27 10:05:00Z]
+          )
+      }
+    end
+
+    test "F6 regression: list_ideas([]) returns all 6 ideas (NULL passes)" do
+      _ = seed_6_ideas_with_durations()
+
+      titles = Ideas.list_ideas([]) |> Enum.map(& &1.title) |> Enum.sort()
+
+      assert titles ==
+               [
+                 "Bagno improvviso",
+                 "Caffè al volo",
+                 "Parigi 4 giorni",
+                 "Sirolo",
+                 "Stadio",
+                 "Uffizi"
+               ]
+    end
+
+    test "F7 single duration filter: only :weekend ideas, NULL excluded" do
+      _ = seed_6_ideas_with_durations()
+
+      result = Ideas.list_ideas(durations: [:weekend])
+      titles = Enum.map(result, & &1.title)
+
+      assert titles == ["Sirolo"]
+      # Pin: Bagno improvviso (NULL duration) is EXCLUDED.
+      refute Enum.any?(result, &(&1.title == "Bagno improvviso"))
+    end
+
+    test "F8 multiple durations form OR (Sirolo + Uffizi)" do
+      _ = seed_6_ideas_with_durations()
+
+      result = Ideas.list_ideas(durations: [:weekend, :giornata])
+      titles = result |> Enum.map(& &1.title) |> Enum.sort()
+
+      assert titles == ["Sirolo", "Uffizi"]
+      refute Enum.any?(result, &(&1.title == "Bagno improvviso"))
+    end
+
+    test "F10 empty durations list is inactive (NULL passes, all 6 returned)" do
+      _ = seed_6_ideas_with_durations()
+
+      titles =
+        Ideas.list_ideas(durations: []) |> Enum.map(& &1.title) |> Enum.sort()
+
+      assert titles ==
+               [
+                 "Bagno improvviso",
+                 "Caffè al volo",
+                 "Parigi 4 giorni",
+                 "Sirolo",
+                 "Stadio",
+                 "Uffizi"
+               ]
+    end
+
+    test "F9 combined required + durations is AND (only Sirolo, Parigi excluded)" do
+      _ = seed_6_ideas_with_durations()
+      viaggio = by_name("viaggio")
+
+      titles =
+        Ideas.list_ideas(required: [viaggio.id], durations: [:weekend])
+        |> Enum.map(& &1.title)
+
+      assert titles == ["Sirolo"]
+    end
+
+    test "NULL strict exclusion edge: only NULL idea in DB returns []" do
+      _ =
+        insert_idea_with_categories_and_duration!(
+          "Bagno improvviso",
+          [by_name("mare")],
+          nil,
+          ~U[2026-04-27 10:00:00Z]
+        )
+
+      assert Ideas.list_ideas(durations: [:weekend]) == []
+    end
+
+    test "duplicate atoms in durations are normalized via Enum.uniq" do
+      _ = seed_6_ideas_with_durations()
+
+      titles_dup =
+        Ideas.list_ideas(durations: [:weekend, :weekend])
+        |> Enum.map(& &1.title)
+        |> Enum.sort()
+
+      titles_uniq =
+        Ideas.list_ideas(durations: [:weekend])
+        |> Enum.map(& &1.title)
+        |> Enum.sort()
+
+      assert titles_dup == titles_uniq
+    end
+
+    test "unknown atom raises Ecto.Query.CastError (caller-responsibility contract)" do
+      _ = seed_6_ideas_with_durations()
+
+      # Boundary contract: `list_ideas/1` trusts callers to pass only atoms
+      # in `Duration.values/0`. Production callers (LiveView toggle handlers)
+      # gate input through `Duration.parse/1`, which filters to the whitelist
+      # via `String.to_existing_atom/1`. If a bug ever lets an out-of-band
+      # atom through, Ecto.Enum surfaces a CastError loudly instead of
+      # silently returning a misleading empty list — this test pins that
+      # contract so the safety net cannot drift.
+      assert_raise Ecto.Query.CastError, fn ->
+        Ideas.list_ideas(durations: [:totally_made_up])
+      end
+    end
+
+    test "slice-4 regression: required: [mare_id] still returns Sirolo + Bagno" do
+      _ = seed_6_ideas_with_durations()
+      mare = by_name("mare")
+
+      titles =
+        Ideas.list_ideas(required: [mare.id])
+        |> Enum.map(& &1.title)
+        |> Enum.sort()
+
+      assert titles == ["Bagno improvviso", "Sirolo"]
+    end
+
+    test "slice-4 regression: optional: [sport_id, cultura_id] still works (OR)" do
+      _ = seed_6_ideas_with_durations()
+      sport = by_name("sport")
+      cultura = by_name("cultura")
+
+      titles =
+        Ideas.list_ideas(optional: [sport.id, cultura.id])
+        |> Enum.map(& &1.title)
+        |> Enum.sort()
+
+      assert titles == ["Parigi 4 giorni", "Stadio", "Uffizi"]
+    end
+
+    test "O3 SQL emission pin: durations clause emits IN, no IS NULL" do
+      # `build_query/1` is exposed as a `@doc false` test seam (see
+      # `Ideajar.Ideas`) so we can introspect the Ecto query before
+      # `Repo.all` runs. Parallel to other test seams in the codebase.
+      query = Ideas.build_query(durations: [:weekend])
+      {sql, _params} = Repo.to_sql(:all, query)
+
+      assert sql =~ ~r/"duration"\s+IN/i
+      refute sql =~ ~r/IS\s+NULL/i
+    end
+  end
+
   defp insert_idea_with_categories!(title, cats, %DateTime{} = at) do
     idea =
       %Idea{title: title}
@@ -536,6 +732,19 @@ defmodule Ideajar.IdeasTest do
       |> Repo.insert!()
 
     # Force inserted_at to a known value (Repo.insert! sets it to now()).
+    Repo.update!(
+      Ecto.Changeset.change(idea, inserted_at: at, updated_at: at),
+      force: true
+    )
+  end
+
+  defp insert_idea_with_categories_and_duration!(title, cats, duration, %DateTime{} = at) do
+    idea =
+      %Idea{title: title, duration: duration}
+      |> Ecto.Changeset.change()
+      |> Ecto.Changeset.put_assoc(:categories, cats)
+      |> Repo.insert!()
+
     Repo.update!(
       Ecto.Changeset.change(idea, inserted_at: at, updated_at: at),
       force: true

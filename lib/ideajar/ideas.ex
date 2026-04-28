@@ -6,6 +6,11 @@ defmodule Ideajar.Ideas do
   extends `create_idea/1` to take `category_ids` and validate them via the
   `Ideajar.Categories` boundary, and extends `list_ideas/0` to preload
   the `:categories` association ordered by `display_order`.
+
+  Slice 5 adds the `durations: [atom]` filter clause to `list_ideas/1`
+  (NULL ideas excluded when the clause is non-empty — see AA7) and
+  refactors the three `apply_*` private helpers behind a single
+  `apply_filters/2` private composer (AA8, rule of 3 fires).
   """
 
   import Ecto.Query
@@ -19,9 +24,15 @@ defmodule Ideajar.Ideas do
   descending as a deterministic tie-breaker. Each idea has its
   `:categories` association preloaded and sorted by `display_order` ASC.
 
-  Slice 4 extends with optional `:required` and `:optional` keyword
-  filter clauses. `list_ideas/0` and `list_ideas([])` are equivalent
-  (regression-pinned).
+  Accepted opts (each defaults to an empty list = clause inactive):
+
+    * `:required` — `[integer]`, AND across category ids (slice 4)
+    * `:optional` — `[integer]`, OR across category ids (slice 4)
+    * `:durations` — `[atom]`, OR across duration atoms (slice 5).
+      When non-empty, ideas with `duration: nil` are EXCLUDED — see AA7.
+      An empty list (or omitting the opt) leaves NULL ideas in the result.
+
+  `list_ideas/0` and `list_ideas([])` are equivalent (regression-pinned).
   """
   @spec list_ideas() :: [Idea.t()]
   @spec list_ideas(keyword()) :: [Idea.t()]
@@ -30,16 +41,30 @@ defmodule Ideajar.Ideas do
       raise ArgumentError,
             "list_ideas/1 expects a keyword list, got: #{inspect(opts)}"
 
-    required = Keyword.get(opts, :required, [])
-    optional = Keyword.get(opts, :optional, [])
-
-    base_query = from i in Idea, order_by: [desc: i.inserted_at, desc: i.id]
-
-    base_query
-    |> apply_required(required)
-    |> apply_optional(optional)
+    opts
+    |> build_query()
     |> Repo.all()
     |> Repo.preload(categories: Categories.preload_query())
+  end
+
+  @doc false
+  # Test seam: returns the composed Ecto query before `Repo.all` runs so
+  # tests can pin the emitted SQL via `Repo.to_sql/2`. Parallel to
+  # `create_idea_fun` in `IdeaLive.Index`. Not part of the public API.
+  @spec build_query(keyword()) :: Ecto.Query.t()
+  def build_query(opts) when is_list(opts) do
+    base_query = from i in Idea, order_by: [desc: i.inserted_at, desc: i.id]
+    apply_filters(base_query, opts)
+  end
+
+  # Single composer for every filter clause. Rule of 3 fires (required,
+  # optional, durations) — slice 6+ would extract this into a dedicated
+  # `Ideajar.Ideas.Filter` module if a fourth clause lands (see R5-1).
+  defp apply_filters(query, opts) do
+    query
+    |> apply_required(Keyword.get(opts, :required, []))
+    |> apply_optional(Keyword.get(opts, :optional, []))
+    |> apply_durations(Keyword.get(opts, :durations, []))
   end
 
   # AND clause: an idea passes only if every required category id is
@@ -75,6 +100,18 @@ defmodule Ideajar.Ideas do
         select: ic.idea_id
 
     from i in query, where: i.id in subquery(subq)
+  end
+
+  # OR clause across duration atoms with strict NULL exclusion (AA7).
+  # An empty list is a no-op (clause inactive, NULL ideas pass through).
+  # When non-empty, the emitted SQL is `WHERE "duration" IN (...)` with
+  # no `OR IS NULL`, so ideas without a stored duration are filtered out
+  # by SQL three-valued logic. Duplicates are normalized via Enum.uniq
+  # to keep the parameter list compact.
+  defp apply_durations(query, []), do: query
+
+  defp apply_durations(query, durations) do
+    from i in query, where: i.duration in ^Enum.uniq(durations)
   end
 
   @doc """
