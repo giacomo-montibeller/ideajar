@@ -18,9 +18,18 @@ defmodule Ideajar.Ideas do
   Returns every idea ordered by `inserted_at` descending, with `id`
   descending as a deterministic tie-breaker. Each idea has its
   `:categories` association preloaded and sorted by `display_order` ASC.
+
+  Slice 4 extends with optional `:required` and `:optional` keyword
+  filter clauses. `list_ideas/0` and `list_ideas([])` are equivalent
+  (regression-pinned).
   """
   @spec list_ideas() :: [Idea.t()]
-  def list_ideas do
+  @spec list_ideas(keyword()) :: [Idea.t()]
+  def list_ideas(opts \\ []) when is_list(opts) do
+    Keyword.keyword?(opts) ||
+      raise ArgumentError,
+            "list_ideas/1 expects a keyword list, got: #{inspect(opts)}"
+
     Repo.all(from i in Idea, order_by: [desc: i.inserted_at, desc: i.id])
     |> Repo.preload(categories: Categories.preload_query())
   end

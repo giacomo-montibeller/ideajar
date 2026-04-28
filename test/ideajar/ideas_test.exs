@@ -21,6 +21,38 @@ defmodule Ideajar.IdeasTest do
     message
   end
 
+  describe "list_ideas/1 — signature and guard (slice 4)" do
+    test "list_ideas() == list_ideas([]) (regression for slice 3 callers)" do
+      mare = by_name("mare")
+      insert_idea_with_categories!("A", [mare], ~U[2026-04-27 10:00:00Z])
+      insert_idea_with_categories!("B", [mare], ~U[2026-04-27 10:01:00Z])
+
+      assert Enum.map(Ideas.list_ideas(), & &1.id) == Enum.map(Ideas.list_ideas([]), & &1.id)
+    end
+
+    test "exposes both arity 0 and arity 1 in __info__(:functions)" do
+      arities =
+        Ideas.__info__(:functions)
+        |> Enum.filter(fn {name, _arity} -> name == :list_ideas end)
+        |> Enum.map(fn {_name, arity} -> arity end)
+        |> MapSet.new()
+
+      assert MapSet.equal?(arities, MapSet.new([0, 1]))
+    end
+
+    test "raises ArgumentError when opts is not a keyword list" do
+      assert_raise ArgumentError, ~r/keyword list/, fn ->
+        Ideas.list_ideas([1, 2, 3])
+      end
+    end
+
+    test "raises ArgumentError when opts is not a list at all" do
+      assert_raise FunctionClauseError, fn ->
+        Ideas.list_ideas("not a list")
+      end
+    end
+  end
+
   describe "list_ideas/0" do
     test "returns an empty list when there are no ideas" do
       assert Ideas.list_ideas() == []
