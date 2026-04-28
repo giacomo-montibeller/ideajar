@@ -1215,6 +1215,30 @@ defmodule IdeajarWeb.IdeaLive.IndexTest do
     end
   end
 
+  # ── Slice 4 Step 9: out-of-scope guard + XSS regression on filter chips ──
+  describe "out-of-scope guard (slice 4 A13)" do
+    test "no other filter UI strings appear (Durata/Budget/Distanza/Cerca)",
+         %{conn: conn} do
+      {:ok, _view, html} = live_isolated(conn, Index, session: @authenticated_session)
+      refute html =~ ~r/Durata|Budget|Distanza|Cerca/i
+    end
+  end
+
+  describe "filter chip XSS regression (slice 4 S2)" do
+    test "a category whose name contains <script> is escaped on the filter chip",
+         %{conn: conn} do
+      Repo.insert!(%Category{
+        name: "<script>alert(1)</script>",
+        display_order: 999
+      })
+
+      {:ok, _view, html} = live_isolated(conn, Index, session: @authenticated_session)
+
+      assert html =~ "&lt;script&gt;alert(1)&lt;/script&gt;"
+      refute html =~ "<script>alert(1)</script>"
+    end
+  end
+
   describe "live-region count + last action (slice 4)" do
     test "initial render includes a polite live-region with id filter-status",
          %{conn: conn} do

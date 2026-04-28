@@ -155,4 +155,28 @@ defmodule Ideajar.DocsTest do
       assert content =~ "Scenario: XSS — a category whose name contains HTML is escaped"
     end
   end
+
+  describe "docs/conventions.md — slice 4 UI copy" do
+    setup do
+      {:ok, content: File.read!(Path.join(File.cwd!(), "docs/conventions.md"))}
+    end
+
+    test "lists every canonical UI copy string introduced in slice 4", %{content: content} do
+      slice_4_strings = [
+        "Mostra tutte",
+        "Nessuna idea per i filtri attivi.",
+        "Tocca per filtrare: 1× opzionale · 2× obbligatoria · 3× rimuovi",
+        "Filtra per:",
+        "opzionale",
+        "obbligatoria",
+        "rimossa",
+        "Filtri rimossi",
+        "1 idea"
+      ]
+
+      for needle <- slice_4_strings do
+        assert content =~ needle, "missing slice-4 UI copy in conventions.md: #{needle}"
+      end
+    end
+  end
 end

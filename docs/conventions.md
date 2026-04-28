@@ -64,6 +64,24 @@ Stringhe aggiunte in slice 3 (categories on ideas):
 | Categoria 7                       | `cinema`                                              |
 | Categoria 8                       | `viaggio`                                             |
 
+Stringhe aggiunte in slice 4 (filter by category):
+
+| Elemento                          | Testo IT                                              |
+|-----------------------------------|-------------------------------------------------------|
+| Bottone reset filtro              | `Mostra tutte`                                        |
+| Empty state filter-no-match       | `Nessuna idea per i filtri attivi.`                   |
+| Helper text discoverability       | `Tocca per filtrare: 1× opzionale · 2× obbligatoria · 3× rimuovi` |
+| Label visivo filter row           | `Filtra per:`                                         |
+| Aria-label chip filter off        | `<nome>`                                              |
+| Aria-label chip filter optional   | `<nome> opzionale`                                    |
+| Aria-label chip filter obbligatoria | `<nome> obbligatoria`                               |
+| Live-region prefix optional       | `<nome> opzionale, `                                  |
+| Live-region prefix required       | `<nome> obbligatoria, `                               |
+| Live-region prefix off            | `<nome> rimossa, `                                    |
+| Live-region prefix clear          | `Filtri rimossi, `                                    |
+| Live-region count singolare       | `1 idea`                                              |
+| Live-region count plurale         | `<N> idee` (incluso `0 idee`)                         |
+
 Nuova copy aggiunta da slice future va appesa qui per evitare drift.
 
 ## Architettura

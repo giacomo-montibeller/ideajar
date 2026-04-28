@@ -2,7 +2,7 @@
 
 **Created**: 2026-04-28
 **Branch**: main (trunk-based)
-**Status**: approved
+**Status**: implemented
 **Spec**: `docs/specs/filter-by-category.md`
 
 ## Build conventions (carried from slice 1 + 2 + 3)
