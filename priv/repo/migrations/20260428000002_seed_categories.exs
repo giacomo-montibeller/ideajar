@@ -36,6 +36,6 @@ defmodule Ideajar.Repo.Migrations.SeedCategories do
 
   def down do
     names = Enum.map(@seed_categories, fn {_order, name} -> name end)
-    repo().delete_all(from c in "categories", where: c.name in ^names)
+    repo().delete_all(from(c in "categories", where: c.name in ^names))
   end
 end

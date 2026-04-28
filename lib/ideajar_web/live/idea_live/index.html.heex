@@ -29,7 +29,12 @@
       </div>
 
       <.input field={@form[:title]} id="idea-title" label="Titolo" required />
-      <.input field={@form[:description]} id="idea-description" label="Descrizione" type="textarea" />
+      <.input
+        field={@form[:description]}
+        id="idea-description"
+        label="Descrizione"
+        type="textarea"
+      />
       <.input field={@form[:url]} id="idea-url" label="Link" type="url" />
 
       <fieldset class="fieldset">

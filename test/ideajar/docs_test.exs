@@ -83,8 +83,7 @@ defmodule Ideajar.DocsTest do
 
   describe "docs/specs/add-idea-base.md — iter-2 sync" do
     setup do
-      {:ok,
-       content: File.read!(Path.join(File.cwd!(), "docs/specs/add-idea-base.md"))}
+      {:ok, content: File.read!(Path.join(File.cwd!(), "docs/specs/add-idea-base.md"))}
     end
 
     # Iter 2 added new invalid-link examples (data:, https://, ://example.com)
@@ -128,8 +127,7 @@ defmodule Ideajar.DocsTest do
 
   describe "docs/specs/categories-on-ideas.md — slice 3 spec sync" do
     setup do
-      {:ok,
-       content: File.read!(Path.join(File.cwd!(), "docs/specs/categories-on-ideas.md"))}
+      {:ok, content: File.read!(Path.join(File.cwd!(), "docs/specs/categories-on-ideas.md"))}
     end
 
     test "uses the iter-2 wording 'Manually re-invoking' for the seed-migration scenario",

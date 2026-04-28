@@ -73,7 +73,10 @@ defmodule IdeajarWeb.IdeaLive.Index do
     case Integer.parse(raw_id) do
       {id, ""} when id > 0 ->
         set = socket.assigns.selected_category_ids
-        new_set = if MapSet.member?(set, id), do: MapSet.delete(set, id), else: MapSet.put(set, id)
+
+        new_set =
+          if MapSet.member?(set, id), do: MapSet.delete(set, id), else: MapSet.put(set, id)
+
         {:noreply, assign(socket, :selected_category_ids, new_set)}
 
       _ ->

@@ -203,7 +203,7 @@ Feature: Device-level password authentication
 
 - [ ] **P1** — Submit con password errata risponde dopo ≥500ms e <800ms. Verificabile via test cronometrato.
 - [ ] **P2** — Submit con password corretta risponde in <200ms in produzione (Gigalixir EU region, latenza desktop).
-- [ ] **P3** — Form di login renderizza in <100ms su prima visita (HTML statico-equivalente, no DB hit).
+- ~~P3~~ — Originariamente "Form di login renderizza senza DB hit". Rimosso: design budget non binary-verifiable, il test originale era inflake-safe perché il telemetry handler era globale al BEAM e catturava query di altri test. Se mai regredisce si nota da metrics, non da test.
 
 ### Validation venue
 

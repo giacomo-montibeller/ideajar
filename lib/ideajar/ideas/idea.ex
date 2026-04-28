@@ -127,10 +127,17 @@ defmodule Ideajar.Ideas.Idea do
     %URI{scheme: scheme, host: host} = URI.parse(value)
 
     cond do
-      is_nil(scheme) -> add_error(changeset, field, @url_invalid)
-      String.downcase(scheme) not in ["http", "https"] -> add_error(changeset, field, @url_invalid)
-      host in [nil, ""] -> add_error(changeset, field, @url_invalid)
-      true -> changeset
+      is_nil(scheme) ->
+        add_error(changeset, field, @url_invalid)
+
+      String.downcase(scheme) not in ["http", "https"] ->
+        add_error(changeset, field, @url_invalid)
+
+      host in [nil, ""] ->
+        add_error(changeset, field, @url_invalid)
+
+      true ->
+        changeset
     end
   end
 end

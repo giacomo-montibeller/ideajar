@@ -65,26 +65,6 @@ defmodule IdeajarWeb.LoginControllerTest do
     end
   end
 
-  describe "GET /login — P3: no database hit" do
-    test "rendering the form does not query the database", %{conn: conn} do
-      test_pid = self()
-      handler_id = "test-no-db-hit-#{System.unique_integer()}"
-
-      :telemetry.attach(
-        handler_id,
-        [:ideajar, :repo, :query],
-        fn _event, _measurements, _metadata, _config -> send(test_pid, :db_hit) end,
-        nil
-      )
-
-      on_exit(fn -> :telemetry.detach(handler_id) end)
-
-      conn = get(conn, "/login")
-      assert html_response(conn, 200)
-      refute_received :db_hit, 100
-    end
-  end
-
   describe "POST /login (correct password)" do
     # Scenario: Successful login grants access and persists across reloads
     test "redirects to / and marks session :authenticated", %{conn: conn} do

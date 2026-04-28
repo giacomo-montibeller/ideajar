@@ -331,7 +331,7 @@ Nessuna nuova dipendenza Hex. `Ecto.SQLite3` già configurato in slice 1.
 
 - [ ] **P1** — `Ideas.list_ideas/0` con 1000 idee fixture rende in <50ms (single SELECT con index su DESC).
 - [ ] **P2** — Render LiveView iniziale per workspace con 0 idee in <100ms.
-- [ ] **P3** — Submit valido → form collapse + new idea visible: render LiveView round-trip <100ms (single Ecto insert).
+- ~~P3~~ — Submit round-trip budget rimosso (design budget non binary-verifiable, allineato al rationale di slice 1 P3 e degli altri P-criteri scartati).
 
 ### Validation venue
 

@@ -553,7 +553,16 @@ defmodule IdeajarWeb.IdeaLive.IndexTest do
     # Scenario: An idea with all 8 categories renders all 8 badges in display_order
     test "idea card with all 8 categories renders every badge in display_order ASC",
          %{conn: conn} do
-      all_names = ["passeggiata", "mare", "museo", "ristorante", "sport", "cultura", "cinema", "viaggio"]
+      all_names = [
+        "passeggiata",
+        "mare",
+        "museo",
+        "ristorante",
+        "sport",
+        "cultura",
+        "cinema",
+        "viaggio"
+      ]
 
       insert_idea_with_categories!("Tutto", all_names, ~U[2026-04-27 10:00:00Z])
 
