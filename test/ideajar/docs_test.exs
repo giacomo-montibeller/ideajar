@@ -98,4 +98,54 @@ defmodule Ideajar.DocsTest do
       refute content =~ "change_idea/2"
     end
   end
+
+  describe "docs/conventions.md — slice 3 UI copy" do
+    setup do
+      {:ok, content: File.read!(Path.join(File.cwd!(), "docs/conventions.md"))}
+    end
+
+    test "lists every canonical UI copy string introduced in slice 3", %{content: content} do
+      slice_3_strings = [
+        "Categorie *",
+        "Scegli almeno una categoria",
+        "Seleziona almeno una categoria",
+        "Categoria non valida",
+        "passeggiata",
+        "mare",
+        "museo",
+        "ristorante",
+        "sport",
+        "cultura",
+        "cinema",
+        "viaggio"
+      ]
+
+      for needle <- slice_3_strings do
+        assert content =~ needle, "missing slice-3 UI copy in conventions.md: #{needle}"
+      end
+    end
+  end
+
+  describe "docs/specs/categories-on-ideas.md — slice 3 spec sync" do
+    setup do
+      {:ok,
+       content: File.read!(Path.join(File.cwd!(), "docs/specs/categories-on-ideas.md"))}
+    end
+
+    test "uses the iter-2 wording 'Manually re-invoking' for the seed-migration scenario",
+         %{content: content} do
+      assert content =~ "Manually re-invoking"
+      refute content =~ ~r/Re-running mix ecto.migrate/i
+    end
+
+    test "carries the new boundary scenarios required after iter-2 review", %{
+      content: content
+    } do
+      assert content =~ "PRIMARY KEY on idea_categories prevents duplicate"
+      assert content =~ "Unauthenticated mount cannot reach the chip form"
+      assert content =~ "Mixed-type duplicates"
+      assert content =~ "hostile category_ids"
+      assert content =~ "Ideajar.Categories module exposes only"
+    end
+  end
 end

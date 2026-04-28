@@ -119,10 +119,17 @@ Feature: Tag ideas with one or more curated categories
     Then no chip is aria-pressed="true"
 
   # ── Persistence semantics ───────────────────────────────────────
-  Scenario: Re-running mix ecto.migrate does not duplicate categories
-    Given the migration has already been applied
-    When I run mix ecto.migrate again
+  Scenario: Manually re-invoking the seed-categories migration up/0 is a no-op
+    Given the seed-categories migration has been applied
+    When the migration's up/0 is invoked a second time on the same DB
     Then the categories table still has exactly 8 rows
+    And no exception is raised
+
+  Scenario: PRIMARY KEY on idea_categories prevents duplicate (idea_id, category_id) inserts
+    Given an idea has the "mare" category attached
+    When Repo.insert_all/3 attempts to insert (idea.id, mare.id) again
+    Then a UNIQUE/PRIMARY KEY constraint error is raised
+    And the join table still has exactly one row for that pair
 
   Scenario: Deleting an idea cascades on idea_categories but leaves categories intact
     Given an idea tagged "mare" and "museo"
@@ -135,21 +142,50 @@ Feature: Tag ideas with one or more curated categories
     When I attempt to delete the "mare" row directly via Repo.delete/1
     Then the database raises a foreign key constraint error
 
-  # ── Hostile inputs ─────────────────────────────────────────────
-  Scenario: Submit with a non-existent category_id is rejected
-    When I submit "x" with category_ids [999999]
-    Then I see "Categoria non valida" associated with the categories fieldset
-    And no idea is created
+  # ── Hostile inputs (S2/S3) ─────────────────────────────────────
+  Scenario Outline: Calling Ideas.create_idea/1 with hostile category_ids returns "Categoria non valida"
+    Given the workspace has the canonical 8 categories
+    When Ideas.create_idea/1 is called with title "x" and category_ids <value>
+    Then the call returns {:error, changeset}
+    And errors[:categories] is exactly "Categoria non valida"
+    And no exception is raised
+
+    Examples:
+      | value          |
+      | [999999]       |
+      | [-1]           |
+      | [0]            |
+      | [1.5]          |
+      | ["abc"]        |
+      | [""]           |
+      | [nil]          |
+      | [valid, 99999] |
 
   Scenario: Duplicate category_ids are silently de-duplicated server-side
     When I submit "x" with category_ids [2, 2, 3]
     Then the idea is created with exactly two categories: "mare" and "museo"
 
+  Scenario: Mixed-type duplicates ["1", 1] dedupe to one category
+    When Ideas.create_idea/1 is called with category_ids ["2", 2]
+    Then the idea is created with exactly one category whose id == 2
+
+  # ── Auth boundary (S4) ─────────────────────────────────────────
+  Scenario: Unauthenticated mount cannot reach the chip form
+    Given my browser holds no session cookie
+    When the LiveView at "/" attempts to mount
+    Then the mount returns a redirect to "/login?return_to=%2F"
+    And @categories is never assigned to the socket
+
   # ── Out-of-scope guard ─────────────────────────────────────────
   Scenario: There is no UI to manage categories
     When I visit "/"
-    Then no element with text "Aggiungi categoria" is rendered
-    And no element handles phx-click="manage_categories"
+    Then no element with text matching /Aggiungi|Modifica|Elimina|Gestisci categori[ae]/i is rendered
+    And the only categories-related phx-click in the page is "toggle_category"
+
+  Scenario: Ideajar.Categories module exposes only list_categories/0 and list_by_ids/1
+    When the application is loaded
+    Then Ideajar.Categories.__info__(:functions) does not contain :create_category, :update_category, or :delete_category
+    And it does contain :list_categories and :list_by_ids
 ```
 
 ## Architecture Specification

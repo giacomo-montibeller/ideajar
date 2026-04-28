@@ -47,6 +47,23 @@ Stringhe aggiunte in slice 2 (add base idea):
 | Flash success                     | `Idea aggiunta`                                       |
 | Flash DB error                    | `Salvataggio non riuscito, riprova`                   |
 
+Stringhe aggiunte in slice 3 (categories on ideas):
+
+| Elemento                          | Testo IT                                              |
+|-----------------------------------|-------------------------------------------------------|
+| Legend del fieldset categorie     | `Categorie *` (asterisco visivo + sr-only "obbligatorio") |
+| Helper text sotto legend          | `Scegli almeno una categoria`                         |
+| Errore "almeno una"               | `Seleziona almeno una categoria`                      |
+| Errore id invalido                | `Categoria non valida`                                |
+| Categoria 1                       | `passeggiata`                                         |
+| Categoria 2                       | `mare`                                                |
+| Categoria 3                       | `museo`                                               |
+| Categoria 4                       | `ristorante`                                          |
+| Categoria 5                       | `sport`                                               |
+| Categoria 6                       | `cultura`                                             |
+| Categoria 7                       | `cinema`                                              |
+| Categoria 8                       | `viaggio`                                             |
+
 Nuova copy aggiunta da slice future va appesa qui per evitare drift.
 
 ## Architettura
