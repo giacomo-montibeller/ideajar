@@ -25,9 +25,11 @@ defmodule IdeajarWeb.IdeaLive.Index do
   use IdeajarWeb, :live_view
 
   import IdeajarWeb.Components.CategoryChip
+  import IdeajarWeb.Components.DurationChip
 
   alias Ideajar.Categories
   alias Ideajar.Ideas
+  alias Ideajar.Ideas.Duration
   alias Ideajar.Ideas.Idea
 
   @impl Phoenix.LiveView
@@ -39,6 +41,7 @@ defmodule IdeajarWeb.IdeaLive.Index do
      |> assign(:categories, Categories.list_categories())
      |> assign(:form_visible?, false)
      |> reset_categories()
+     |> reset_duration()
      |> assign_form()
      |> reload_ideas()}
   end
@@ -53,6 +56,7 @@ defmodule IdeajarWeb.IdeaLive.Index do
      socket
      |> assign(:form_visible?, true)
      |> reset_categories()
+     |> reset_duration()
      |> assign_form()
      |> push_event("ideajar:focus", %{to: "#idea-title"})}
   end
@@ -68,6 +72,7 @@ defmodule IdeajarWeb.IdeaLive.Index do
      socket
      |> assign(:form_visible?, false)
      |> reset_categories()
+     |> reset_duration()
      |> assign_form()}
   end
 
@@ -88,6 +93,24 @@ defmodule IdeajarWeb.IdeaLive.Index do
 
   # Catchall for hostile or malformed phx-value-id (non-string types).
   def handle_event("toggle_category", _params, socket), do: {:noreply, socket}
+
+  def handle_event("toggle_form_duration", %{"duration" => raw}, socket)
+      when is_binary(raw) do
+    case Duration.parse(raw) do
+      {:ok, atom} ->
+        new_value =
+          if socket.assigns.selected_duration == atom, do: nil, else: atom
+
+        {:noreply, assign(socket, :selected_duration, new_value)}
+
+      :error ->
+        {:noreply, socket}
+    end
+  end
+
+  # Catchall for hostile or malformed phx-value-duration payloads (non-string
+  # types or missing key).
+  def handle_event("toggle_form_duration", _params, socket), do: {:noreply, socket}
 
   def handle_event("cycle_filter", %{"id" => raw_id}, socket) when is_binary(raw_id) do
     case parse_known_category_id(raw_id, socket.assigns.categories) do
@@ -123,11 +146,27 @@ defmodule IdeajarWeb.IdeaLive.Index do
     attrs_with_categories =
       Map.put(attrs, "category_ids", MapSet.to_list(socket.assigns.selected_category_ids))
 
+    attrs_with_duration =
+      maybe_inject_duration(attrs_with_categories, socket.assigns.selected_duration, attrs)
+
     socket
     |> create_idea_fun()
-    |> apply([attrs_with_categories])
+    |> apply([attrs_with_duration])
     |> handle_save_result(socket, attrs)
   end
+
+  # Slice 5: inject the chip-derived duration into the form params.
+  #
+  #   * `@selected_duration` is an atom → stringify and override any
+  #     `"duration"` key present in `attrs` (the chip is the source of truth).
+  #   * `@selected_duration` is `nil` → preserve whatever the form params
+  #     already had under `"duration"`. This is what surfaces the hostile-
+  #     duration error path: a tampered payload (`"duration" => "<script>"`)
+  #     reaches the changeset and produces `"Durata non valida"`.
+  defp maybe_inject_duration(params, nil, _attrs), do: params
+
+  defp maybe_inject_duration(params, atom, _attrs) when is_atom(atom),
+    do: Map.put(params, "duration", Atom.to_string(atom))
 
   # Test seam: tests assign `:create_idea_fun` to inject a deterministic
   # failure without dragging in Mox for a single call site. In production
@@ -142,6 +181,7 @@ defmodule IdeajarWeb.IdeaLive.Index do
      |> assign(:form_visible?, false)
      |> assign(:last_filter_action, nil)
      |> reset_categories()
+     |> reset_duration()
      |> assign_form()
      |> reload_ideas()
      |> put_flash(:info, "Idea aggiunta")
@@ -166,6 +206,10 @@ defmodule IdeajarWeb.IdeaLive.Index do
   end
 
   defp reset_categories(socket), do: assign(socket, :selected_category_ids, MapSet.new())
+
+  # Slice 5 (AA5): `@selected_duration :: atom | nil`. Reset on mount, on form
+  # open, on close_form, and on save success — symmetrical with `reset_categories/1`.
+  defp reset_duration(socket), do: assign(socket, :selected_duration, nil)
 
   # Re-loads the ideas list from the context using the filter opts derived
   # from `@filter_state`. Called on mount + after every event that may
@@ -258,6 +302,21 @@ defmodule IdeajarWeb.IdeaLive.Index do
 
   def categories_error_message(form) do
     case Keyword.get(form.source.errors, :categories) do
+      {message, _opts} -> message
+      _ -> nil
+    end
+  end
+
+  @doc """
+  Slice 5: surface the canonical "Durata non valida" error under the Durata
+  fieldset when the changeset reports a `:duration` cast failure (S4).
+  """
+  def has_duration_error?(form) do
+    Keyword.has_key?(form.source.errors, :duration)
+  end
+
+  def duration_error_message(form) do
+    case Keyword.get(form.source.errors, :duration) do
       {message, _opts} -> message
       _ -> nil
     end

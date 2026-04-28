@@ -1472,4 +1472,294 @@ defmodule IdeajarWeb.IdeaLive.IndexTest do
       refute html =~ ~r{<p[^>]*class="[^"]*text-xs[^"]*"[^>]*>\s*Categorie\s*</p>}
     end
   end
+
+  # ── Slice 5 Step 3: form duration field (chip + handler + persistence) ──
+  describe "form duration field (slice 5 step 3)" do
+    test "fieldset Durata is hidden until the form is opened", %{conn: conn} do
+      view = mount_authenticated(conn)
+      html = render(view)
+
+      refute html =~ "Durata"
+    end
+
+    test "opening the form renders <legend>Durata</legend> with NO asterisk and 5 chips",
+         %{conn: conn} do
+      view = mount_authenticated(conn)
+      html = render_click(view, "toggle_form")
+
+      assert html =~ "<legend"
+      assert html =~ "Durata"
+
+      [duration_legend] =
+        Regex.run(~r{<legend[^>]*>\s*Durata\s*</legend>}, html) || [nil] |> List.wrap()
+
+      assert duration_legend, "Expected <legend>Durata</legend> to be rendered"
+      refute duration_legend =~ "*"
+
+      # 5 form-duration-chip buttons in display order with their IT labels.
+      for label <- ["poche ore", "mezza giornata", "giornata", "weekend", "più giorni"] do
+        assert html =~ label
+      end
+
+      ids =
+        Regex.scan(~r{id="(form-duration-chip-\w+)"}, html) |> Enum.map(&Enum.at(&1, 1))
+
+      assert ids == [
+               "form-duration-chip-poche_ore",
+               "form-duration-chip-mezza_giornata",
+               "form-duration-chip-giornata",
+               "form-duration-chip-weekend",
+               "form-duration-chip-piu_giorni"
+             ]
+    end
+
+    test "after open, @selected_duration is nil and all chips are aria-pressed=false",
+         %{conn: conn} do
+      view = mount_authenticated(conn)
+      _ = render_click(view, "toggle_form")
+
+      assigns = :sys.get_state(view.pid).socket.assigns
+      assert assigns.selected_duration == nil
+
+      html = render(view)
+
+      duration_chip_buttons =
+        Regex.scan(~r{<button[^>]*id="form-duration-chip-\w+"[^>]*>}, html)
+        |> Enum.map(&hd/1)
+
+      assert length(duration_chip_buttons) == 5
+
+      for btn <- duration_chip_buttons do
+        assert btn =~ ~s(aria-pressed="false")
+      end
+    end
+
+    test "click weekend chip sets @selected_duration=:weekend and chip aria-pressed=true",
+         %{conn: conn} do
+      view = mount_authenticated(conn) |> open_form()
+
+      html = render_click(view, "toggle_form_duration", %{"duration" => "weekend"})
+
+      assigns = :sys.get_state(view.pid).socket.assigns
+      assert assigns.selected_duration == :weekend
+
+      [weekend_btn] =
+        Regex.run(~r{<button[^>]*id="form-duration-chip-weekend"[^>]*>}, html) ||
+          [nil] |> List.wrap()
+
+      assert weekend_btn
+      assert weekend_btn =~ ~s(aria-pressed="true")
+
+      # Other 4 are still pressed=false.
+      others =
+        ~w(poche_ore mezza_giornata giornata piu_giorni)
+        |> Enum.map(fn d ->
+          [m] =
+            Regex.run(~r{<button[^>]*id="form-duration-chip-#{d}"[^>]*>}, html) ||
+              [nil] |> List.wrap()
+
+          m
+        end)
+
+      for btn <- others, do: assert(btn =~ ~s(aria-pressed="false"))
+    end
+
+    test "click weekend twice toggles back to nil (deselect)", %{conn: conn} do
+      view = mount_authenticated(conn) |> open_form()
+
+      render_click(view, "toggle_form_duration", %{"duration" => "weekend"})
+      html = render_click(view, "toggle_form_duration", %{"duration" => "weekend"})
+
+      assigns = :sys.get_state(view.pid).socket.assigns
+      assert assigns.selected_duration == nil
+
+      duration_chip_buttons =
+        Regex.scan(~r{<button[^>]*id="form-duration-chip-\w+"[^>]*>}, html)
+        |> Enum.map(&hd/1)
+
+      for btn <- duration_chip_buttons, do: assert(btn =~ ~s(aria-pressed="false"))
+    end
+
+    test "click giornata when weekend is pressed swaps single selection",
+         %{conn: conn} do
+      view = mount_authenticated(conn) |> open_form()
+
+      render_click(view, "toggle_form_duration", %{"duration" => "weekend"})
+      html = render_click(view, "toggle_form_duration", %{"duration" => "giornata"})
+
+      assigns = :sys.get_state(view.pid).socket.assigns
+      assert assigns.selected_duration == :giornata
+
+      [weekend_btn] =
+        Regex.run(~r{<button[^>]*id="form-duration-chip-weekend"[^>]*>}, html) ||
+          [nil] |> List.wrap()
+
+      [giornata_btn] =
+        Regex.run(~r{<button[^>]*id="form-duration-chip-giornata"[^>]*>}, html) ||
+          [nil] |> List.wrap()
+
+      assert weekend_btn =~ ~s(aria-pressed="false")
+      assert giornata_btn =~ ~s(aria-pressed="true")
+    end
+
+    test "save success WITH duration persists duration and resets @selected_duration to nil",
+         %{conn: conn} do
+      view = mount_authenticated(conn) |> open_form()
+
+      render_click(view, "toggle_form_duration", %{"duration" => "weekend"})
+
+      html = submit(view, %{title: "Sirolo weekend"})
+
+      assert html =~ "Idea aggiunta"
+
+      assigns = :sys.get_state(view.pid).socket.assigns
+      assert assigns.selected_duration == nil
+      assert length(assigns.ideas) == 1
+
+      idea = hd(assigns.ideas)
+      assert idea.duration == :weekend
+    end
+
+    test "save success WITHOUT duration persists duration: nil", %{conn: conn} do
+      view = mount_authenticated(conn) |> open_form()
+
+      submit(view, %{title: "Cinema stasera"})
+
+      assigns = :sys.get_state(view.pid).socket.assigns
+      assert length(assigns.ideas) == 1
+      idea = hd(assigns.ideas)
+      assert idea.duration == nil
+    end
+
+    test "close_form resets @selected_duration to nil", %{conn: conn} do
+      view = mount_authenticated(conn) |> open_form()
+
+      render_click(view, "toggle_form_duration", %{"duration" => "weekend"})
+
+      pre =
+        :sys.get_state(view.pid).socket.assigns
+
+      assert pre.selected_duration == :weekend
+
+      render_click(view, "close_form")
+
+      post = :sys.get_state(view.pid).socket.assigns
+      assert post.form_visible? == false
+      assert post.selected_duration == nil
+    end
+
+    test "open_form resets @selected_duration to nil even after close+reopen with prior pick",
+         %{conn: conn} do
+      view = mount_authenticated(conn) |> open_form()
+
+      render_click(view, "toggle_form_duration", %{"duration" => "weekend"})
+      render_click(view, "close_form")
+      render_click(view, "toggle_form")
+
+      assigns = :sys.get_state(view.pid).socket.assigns
+      assert assigns.form_visible? == true
+      assert assigns.selected_duration == nil
+    end
+
+    # S3 / B2 — hostile toggle_form_duration uniform list (5 strings + 3 non-strings).
+    for value <- ["schifoso", "", "WEEKEND", "poche_ora", "poche ore"] do
+      test "toggle_form_duration with hostile string #{inspect(value)} is a no-op",
+           %{conn: conn} do
+        view = mount_authenticated(conn) |> open_form()
+
+        # Pre-state: nil
+        render_click(view, "toggle_form_duration", %{"duration" => unquote(value)})
+
+        assigns = :sys.get_state(view.pid).socket.assigns
+        assert assigns.selected_duration == nil
+        assert Process.alive?(view.pid)
+      end
+    end
+
+    for value <- [42, [], %{}] do
+      test "toggle_form_duration with hostile non-string #{inspect(value)} is a no-op",
+           %{conn: conn} do
+        view = mount_authenticated(conn) |> open_form()
+
+        render_click(view, "toggle_form_duration", %{"duration" => unquote(Macro.escape(value))})
+
+        assigns = :sys.get_state(view.pid).socket.assigns
+        assert assigns.selected_duration == nil
+        assert Process.alive?(view.pid)
+      end
+    end
+
+    # S4 — Save with hostile duration string surfaces "Durata non valida" + nothing persists.
+    test "save with hostile duration string surfaces 'Durata non valida' and does not persist",
+         %{conn: conn} do
+      view = mount_authenticated(conn) |> open_form()
+
+      mare = CategoriesFixtures.category_by_name!("mare")
+      render_click(view, "toggle_category", %{"id" => "#{mare.id}"})
+
+      pre_count = length(Ideajar.Ideas.list_ideas([]))
+
+      # The Durata chip does not render a hidden form input — it lives
+      # outside `<form>` (chip is server-state, not an HTML form control).
+      # To exercise the S4 hostile-duration path we submit the save event
+      # directly with a tampered "duration" key that bypasses the chip
+      # (mimics a DevTools/curl payload). The LV save handler must let the
+      # raw value reach the changeset, where the Ecto.Enum cast rejects it
+      # and `override_duration_error/1` rewrites the message.
+      html =
+        render_submit(view, "save", %{
+          "idea" => %{
+            "title" => "X",
+            "description" => "",
+            "url" => "",
+            "duration" => "<script>"
+          }
+        })
+
+      assert html =~ "Durata non valida"
+      assert length(Ideajar.Ideas.list_ideas([])) == pre_count
+      assert Process.alive?(view.pid)
+    end
+
+    # AA18 / A11 — DOM id distinctness across the 3 chip families.
+    test "with form open, total chip ids = 5 form-duration + 8 filter-chip + 8 category-chip",
+         %{conn: conn} do
+      view = mount_authenticated(conn) |> open_form()
+      html = render(view)
+
+      ids =
+        Regex.scan(
+          ~r{id="(form-duration-chip-\w+|filter-chip-\d+|category-chip-\d+)"},
+          html
+        )
+        |> Enum.map(&Enum.at(&1, 1))
+
+      assert length(ids) == 21
+      assert ids == Enum.uniq(ids)
+    end
+
+    # A8 — form chip durata: no roving-tabindex hook, no explicit tabindex.
+    test "form duration fieldset has no RovingTabindex hook and chips have no explicit tabindex",
+         %{conn: conn} do
+      view = mount_authenticated(conn) |> open_form()
+      html = render(view)
+
+      # Pin the durata fieldset block via the legend, then assert the
+      # surrounding HTML up to the next closing </fieldset> contains neither
+      # a phx-hook="RovingTabindex" nor a data-roving-tabindex-group.
+      [durata_block] =
+        Regex.run(~r{<legend[^>]*>\s*Durata\s*</legend>.*?</fieldset>}s, html) ||
+          [nil] |> List.wrap()
+
+      assert durata_block, "Expected the durata fieldset block to be present"
+      refute durata_block =~ "RovingTabindex"
+      refute durata_block =~ "data-roving-tabindex-group"
+
+      # No form-duration-chip-* button carries an explicit tabindex attribute.
+      offenders =
+        Regex.scan(~r{<button[^>]*id="form-duration-chip-\w+"[^>]*tabindex[^>]*>}, html)
+
+      assert offenders == []
+    end
+  end
 end

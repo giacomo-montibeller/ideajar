@@ -65,6 +65,26 @@
         </p>
       </fieldset>
 
+      <fieldset class="fieldset">
+        <legend class="label mb-1">Durata</legend>
+        <div class="flex flex-wrap gap-2">
+          <.form_chip
+            :for={duration <- Ideajar.Ideas.Duration.values()}
+            duration={duration}
+            pressed?={@selected_duration == duration}
+          />
+        </div>
+        <p
+          :if={has_duration_error?(@form)}
+          id="idea-duration-error"
+          class="mt-1.5 flex gap-2 items-center text-sm text-error"
+          role="alert"
+        >
+          <.icon name="hero-exclamation-circle" class="size-5" />
+          {duration_error_message(@form)}
+        </p>
+      </fieldset>
+
       <button type="submit" phx-disable-with="Salvataggio…" class="btn btn-primary">
         Salva
       </button>
