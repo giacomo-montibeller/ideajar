@@ -11,11 +11,18 @@ defmodule Ideajar.Ideas do
   (NULL ideas excluded when the clause is non-empty — see AA7) and
   refactors the three `apply_*` private helpers behind a single
   `apply_filters/2` private composer (AA8, rule of 3 fires).
+
+  Slice 6 step 2 (R5-1) extracts that composer into the dedicated
+  `Ideajar.Ideas.Filter` module so the 4th clause (`apply_max_cost/2`,
+  slice 6 step 6) can land without growing this context past its
+  single-responsibility line. Behaviour is identical — the 3 clauses
+  moved verbatim.
   """
 
   import Ecto.Query
 
   alias Ideajar.Categories
+  alias Ideajar.Ideas.Filter
   alias Ideajar.Ideas.Idea
   alias Ideajar.Repo
 
@@ -54,64 +61,7 @@ defmodule Ideajar.Ideas do
   @spec build_query(keyword()) :: Ecto.Query.t()
   def build_query(opts) when is_list(opts) do
     base_query = from i in Idea, order_by: [desc: i.inserted_at, desc: i.id]
-    apply_filters(base_query, opts)
-  end
-
-  # Single composer for every filter clause. Rule of 3 fires (required,
-  # optional, durations) — slice 6+ would extract this into a dedicated
-  # `Ideajar.Ideas.Filter` module if a fourth clause lands (see R5-1).
-  defp apply_filters(query, opts) do
-    query
-    |> apply_required(Keyword.get(opts, :required, []))
-    |> apply_optional(Keyword.get(opts, :optional, []))
-    |> apply_durations(Keyword.get(opts, :durations, []))
-  end
-
-  # AND clause: an idea passes only if every required category id is
-  # present on it. Implemented via subquery with `HAVING COUNT(DISTINCT
-  # category_id)` equal to the unique-id count, which is the SQL-emission
-  # we pin via `Ecto.Adapters.SQL.to_sql/2` in tests.
-  defp apply_required(query, []), do: query
-
-  defp apply_required(query, ids) do
-    unique = Enum.uniq(ids)
-    count = length(unique)
-
-    subq =
-      from ic in "idea_categories",
-        where: ic.category_id in ^unique,
-        group_by: ic.idea_id,
-        having: count(fragment("DISTINCT ?", ic.category_id)) == ^count,
-        select: ic.idea_id
-
-    from i in query, where: i.id in subquery(subq)
-  end
-
-  # OR clause: an idea passes if any of the optional ids is present on
-  # it. Implemented via subquery `WHERE category_id IN ^optional`. An
-  # empty list is a no-op (no filter applied). Duplicates are
-  # normalized via Enum.uniq before the query is built.
-  defp apply_optional(query, []), do: query
-
-  defp apply_optional(query, ids) do
-    subq =
-      from ic in "idea_categories",
-        where: ic.category_id in ^Enum.uniq(ids),
-        select: ic.idea_id
-
-    from i in query, where: i.id in subquery(subq)
-  end
-
-  # OR clause across duration atoms with strict NULL exclusion (AA7).
-  # An empty list is a no-op (clause inactive, NULL ideas pass through).
-  # When non-empty, the emitted SQL is `WHERE "duration" IN (...)` with
-  # no `OR IS NULL`, so ideas without a stored duration are filtered out
-  # by SQL three-valued logic. Duplicates are normalized via Enum.uniq
-  # to keep the parameter list compact.
-  defp apply_durations(query, []), do: query
-
-  defp apply_durations(query, durations) do
-    from i in query, where: i.duration in ^Enum.uniq(durations)
+    Filter.apply(base_query, opts)
   end
 
   @doc """
