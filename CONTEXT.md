@@ -77,8 +77,11 @@ Modificabili tramite seed/migration in fase di rilascio.
    - Calcolo Haversine in Elixir (con poche centinaia di idee è istantaneo)
 5. **Ricerca testuale** — su `title` + `description`
 
-### Decisione UX aperta
-Quando un filtro non è applicabile a un'idea (es. budget filtrato a 50€ ma idea senza `estimated_cost`), la proposta è: **l'idea resta visibile**. Il filtro esclude solo ciò che certamente non rientra, evitando di nascondere idee buttate giù in fretta senza tutti i dettagli.
+## Decisione su filtri non applicabili
+
+Per il filtro **durata** (slice 5): un'idea con `duration: nil` viene **esclusa** quando ≥1 chip durata è on. Razionale: chi filtra per durata sta restringendo attivamente; un'idea senza durata stimata non è "sicuramente non weekend" ma "non confermata weekend" → fuori dal match.
+
+Per filtri futuri (`estimated_cost` slice 6, `distanza` slice 7) la decisione sarà rivalutata caso per caso nello spec della slice corrispondente.
 
 ## Punti di forza dell'approccio LiveView per questo caso d'uso
 - I filtri (categoria × durata × costo × distanza × testo) si compongono server-side sulla stessa query Ecto.

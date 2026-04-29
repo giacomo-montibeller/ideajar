@@ -179,4 +179,75 @@ defmodule Ideajar.DocsTest do
       end
     end
   end
+
+  describe "docs/conventions.md — slice 5 UI copy" do
+    setup do
+      {:ok, content: File.read!(Path.join(File.cwd!(), "docs/conventions.md"))}
+    end
+
+    test "lists every canonical UI copy string introduced in slice 5", %{content: content} do
+      slice_5_strings = [
+        # Form fieldset
+        "Durata",
+        # 5 chip labels
+        "poche ore",
+        "mezza giornata",
+        "giornata",
+        "weekend",
+        "più giorni",
+        # Error
+        "Durata non valida",
+        # Sub-labels (filter row)
+        "Categorie",
+        # Aria-label sub-block (SR)
+        "Filtra per categoria",
+        "Filtra per durata",
+        # Helper text NULL exclusion
+        "Le idee senza durata sono nascoste quando un filtro è attivo.",
+        # Live-region
+        "attiva,",
+        # Compound suffixes
+        ", filtri categoria attivi",
+        ", filtri durata attivi"
+      ]
+
+      for needle <- slice_5_strings do
+        assert content =~ needle, "missing slice-5 UI copy in conventions.md: #{needle}"
+      end
+    end
+  end
+
+  describe "CONTEXT.md — slice 5 closure" do
+    setup do
+      {:ok, content: File.read!(Path.join(File.cwd!(), "CONTEXT.md"))}
+    end
+
+    test "documents that ideas with NULL duration are excluded when the duration filter is active",
+         %{content: content} do
+      # The decision-closure clause must be present. Allow either Italian or
+      # English wording. The key tokens are 'duration' / 'durata' + 'NULL' /
+      # 'nil' + 'esclus' (escluso/esclusa/escluse).
+      assert content =~ ~r/(duration|durata).*(NULL|nil).*esclus/i
+    end
+
+    test "no longer carries the open-decision marker for the duration case",
+         %{content: content} do
+      # Slice 5 closes the "Decisione UX aperta" lato durata. Other future
+      # filters (slice 6 budget, slice 7 distance) may keep their own open
+      # decisions, so we do NOT refute "Decisione UX aperta" globally — we
+      # only refute it WITHIN a paragraph mentioning duration. Use a
+      # scoped regex on the duration paragraph.
+      duration_paragraph =
+        content
+        |> String.split(~r/\n\n+/)
+        |> Enum.find(fn para ->
+          para =~ ~r/durat/i and (para =~ ~r/NULL/i or para =~ ~r/nil/i)
+        end)
+
+      assert duration_paragraph, "no duration paragraph found in CONTEXT.md"
+
+      refute duration_paragraph =~ ~r/Decisione UX aperta/i,
+             "duration paragraph still marked as 'Decisione UX aperta'"
+    end
+  end
 end

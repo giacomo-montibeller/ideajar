@@ -82,6 +82,31 @@ Stringhe aggiunte in slice 4 (filter by category):
 | Live-region count singolare       | `1 idea`                                              |
 | Live-region count plurale         | `<N> idee` (incluso `0 idee`)                         |
 
+Stringhe aggiunte in slice 5 (duration on ideas):
+
+| Elemento                                   | Testo IT                                                          |
+|--------------------------------------------|-------------------------------------------------------------------|
+| Label fieldset durata (form)               | `Durata` (no asterisco — opzionale)                               |
+| Helper text form duration                  | (nessuno — campo opzionale)                                       |
+| Chip durata 1 (atom `:poche_ore`)          | `poche ore`                                                       |
+| Chip durata 2 (atom `:mezza_giornata`)     | `mezza giornata`                                                  |
+| Chip durata 3 (atom `:giornata`)           | `giornata`                                                        |
+| Chip durata 4 (atom `:weekend`)            | `weekend`                                                         |
+| Chip durata 5 (atom `:piu_giorni`)         | `più giorni`                                                      |
+| Errore duration invalida                   | `Durata non valida`                                               |
+| Sub-label filter Categorie (visivo)        | `Categorie`                                                       |
+| Sub-label filter Durata (visivo)           | `Durata`                                                          |
+| Aria-label sub-block categorie (SR)        | `Filtra per categoria`                                            |
+| Aria-label sub-block durata (SR)           | `Filtra per durata`                                               |
+| Helper text NULL-exclusion                 | `Le idee senza durata sono nascoste quando un filtro è attivo.`   |
+| Aria-label filter chip off                 | `<label>`                                                         |
+| Aria-label filter chip on                  | `<label> attiva`                                                  |
+| Live-region action prefix on               | `<label> attiva, `                                                |
+| Live-region action prefix off              | `<label> rimossa, `                                               |
+| Live-region compound suffix categoria      | `, filtri categoria attivi`                                       |
+| Live-region compound suffix durata         | `, filtri durata attivi`                                          |
+| Badge durata su idea card                  | `<label>` (label IT, non atom)                                    |
+
 Nuova copy aggiunta da slice future va appesa qui per evitare drift.
 
 ## Architettura
