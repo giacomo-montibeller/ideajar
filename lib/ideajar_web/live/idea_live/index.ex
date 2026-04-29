@@ -33,8 +33,14 @@ defmodule IdeajarWeb.IdeaLive.Index do
 
   alias Ideajar.Categories
   alias Ideajar.Ideas
+  alias Ideajar.Ideas.Budget
   alias Ideajar.Ideas.Duration
   alias Ideajar.Ideas.Idea
+  # BudgetChip.form_chip/1 collides on name with DurationChip.form_chip/1
+  # (both are imported above), so we leave it module-qualified in the
+  # template via `<BudgetChip.form_chip … />` (BB12 — same pattern as
+  # DurationChip.filter_chip).
+  alias IdeajarWeb.Components.BudgetChip
   alias IdeajarWeb.Components.DurationChip
 
   @impl Phoenix.LiveView
@@ -61,6 +67,7 @@ defmodule IdeajarWeb.IdeaLive.Index do
      |> assign(:form_visible?, false)
      |> reset_categories()
      |> reset_duration()
+     |> reset_budget()
      |> assign_form()
      |> reload_ideas()}
   end
@@ -76,6 +83,7 @@ defmodule IdeajarWeb.IdeaLive.Index do
      |> assign(:form_visible?, true)
      |> reset_categories()
      |> reset_duration()
+     |> reset_budget()
      |> assign_form()
      |> push_event("ideajar:focus", %{to: "#idea-title"})}
   end
@@ -92,6 +100,7 @@ defmodule IdeajarWeb.IdeaLive.Index do
      |> assign(:form_visible?, false)
      |> reset_categories()
      |> reset_duration()
+     |> reset_budget()
      |> assign_form()}
   end
 
@@ -130,6 +139,30 @@ defmodule IdeajarWeb.IdeaLive.Index do
   # Catchall for hostile or malformed phx-value-duration payloads (non-string
   # types or missing key).
   def handle_event("toggle_form_duration", _params, socket), do: {:noreply, socket}
+
+  # Slice 6 step 4 — binary single-select budget chip on the form.
+  # Membership-gated parse via `Budget.parse/1`; hostile payloads
+  # (non-string values, out-of-whitelist integers, non-numeric strings)
+  # land in the catchall as no-ops (S2). A click on the currently-pressed
+  # chip toggles back to nil; a click on a different chip swaps the
+  # single selection.
+  def handle_event("toggle_form_budget", %{"cost" => raw}, socket)
+      when is_binary(raw) do
+    case Budget.parse(raw) do
+      {:ok, val} ->
+        new_value =
+          if socket.assigns.selected_cost == val, do: nil, else: val
+
+        {:noreply, assign(socket, :selected_cost, new_value)}
+
+      :error ->
+        {:noreply, socket}
+    end
+  end
+
+  # Catchall for hostile or malformed phx-value-cost payloads (non-string
+  # types or missing key). Pinned by S2 hostile uniform list.
+  def handle_event("toggle_form_budget", _params, socket), do: {:noreply, socket}
 
   def handle_event("cycle_filter", %{"id" => raw_id}, socket) when is_binary(raw_id) do
     case parse_known_category_id(raw_id, socket.assigns.categories) do
@@ -206,9 +239,12 @@ defmodule IdeajarWeb.IdeaLive.Index do
     attrs_with_duration =
       maybe_inject_duration(attrs_with_categories, socket.assigns.selected_duration, attrs)
 
+    attrs_with_budget =
+      maybe_inject_budget(attrs_with_duration, socket.assigns.selected_cost)
+
     socket
     |> create_idea_fun()
-    |> apply([attrs_with_duration])
+    |> apply([attrs_with_budget])
     |> handle_save_result(socket, attrs)
   end
 
@@ -225,6 +261,22 @@ defmodule IdeajarWeb.IdeaLive.Index do
   defp maybe_inject_duration(params, atom, _attrs) when is_atom(atom),
     do: Map.put(params, "duration", Atom.to_string(atom))
 
+  # Slice 6 — symmetric to `maybe_inject_duration/3`:
+  #
+  #   * `@selected_cost` is an integer → stringify and override any
+  #     `"estimated_cost"` key present in `attrs` (chip is source of truth).
+  #     Note: `0` is a valid bucket (gratis); we override on every non-nil
+  #     value, including `0`.
+  #   * `@selected_cost` is `nil` → preserve whatever the form params
+  #     already had under `"estimated_cost"`. This is what surfaces the
+  #     hostile-cost error path (S3): a tampered payload (e.g.
+  #     `"estimated_cost" => "175"` or `"abc"`) reaches the changeset
+  #     and produces `"Budget non valido"`.
+  defp maybe_inject_budget(params, nil), do: params
+
+  defp maybe_inject_budget(params, value) when is_integer(value),
+    do: Map.put(params, "estimated_cost", Integer.to_string(value))
+
   # Test seam: tests assign `:create_idea_fun` to inject a deterministic
   # failure without dragging in Mox for a single call site. In production
   # the assign is absent and we fall back to the real context call.
@@ -240,6 +292,7 @@ defmodule IdeajarWeb.IdeaLive.Index do
      |> assign(:last_filter_action_suffix, "")
      |> reset_categories()
      |> reset_duration()
+     |> reset_budget()
      |> assign_form()
      |> reload_ideas()
      |> put_flash(:info, "Idea aggiunta")
@@ -268,6 +321,12 @@ defmodule IdeajarWeb.IdeaLive.Index do
   # Slice 5 (AA5): `@selected_duration :: atom | nil`. Reset on mount, on form
   # open, on close_form, and on save success — symmetrical with `reset_categories/1`.
   defp reset_duration(socket), do: assign(socket, :selected_duration, nil)
+
+  # Slice 6 (BB6): `@selected_cost :: integer | nil`. Reset on mount, on form
+  # open, on close_form, and on save success — symmetrical with
+  # `reset_categories/1` and `reset_duration/1`. `nil` means "no chip
+  # selected"; `0` is a valid bucket (gratis) and is NOT the reset value.
+  defp reset_budget(socket), do: assign(socket, :selected_cost, nil)
 
   # Re-loads the ideas list from the context using the filter opts derived
   # from `@filter_state` and `@duration_filter`. Called on mount + after
@@ -432,6 +491,23 @@ defmodule IdeajarWeb.IdeaLive.Index do
 
   def duration_error_message(form) do
     case Keyword.get(form.source.errors, :duration) do
+      {message, _opts} -> message
+      _ -> nil
+    end
+  end
+
+  @doc """
+  Slice 6: surface the canonical "Budget non valido" error under the
+  Budget fieldset when the changeset reports an `:estimated_cost` cast
+  failure (S3) or a whitelist violation. Symmetrical with
+  `has_duration_error?/1`.
+  """
+  def has_estimated_cost_error?(form) do
+    Keyword.has_key?(form.source.errors, :estimated_cost)
+  end
+
+  def estimated_cost_error_message(form) do
+    case Keyword.get(form.source.errors, :estimated_cost) do
       {message, _opts} -> message
       _ -> nil
     end

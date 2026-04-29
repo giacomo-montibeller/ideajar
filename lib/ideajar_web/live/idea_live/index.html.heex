@@ -85,6 +85,26 @@
         </p>
       </fieldset>
 
+      <fieldset class="fieldset">
+        <legend class="label mb-1">Budget</legend>
+        <div class="flex flex-wrap gap-2">
+          <BudgetChip.form_chip
+            :for={cost <- Ideajar.Ideas.Budget.values()}
+            cost={cost}
+            pressed?={@selected_cost == cost}
+          />
+        </div>
+        <p
+          :if={has_estimated_cost_error?(@form)}
+          id="idea-estimated-cost-error"
+          class="mt-1.5 flex gap-2 items-center text-sm text-error"
+          role="alert"
+        >
+          <.icon name="hero-exclamation-circle" class="size-5" />
+          {estimated_cost_error_message(@form)}
+        </p>
+      </fieldset>
+
       <button type="submit" phx-disable-with="Salvataggio…" class="btn btn-primary">
         Salva
       </button>
