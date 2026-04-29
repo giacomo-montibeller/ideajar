@@ -1216,12 +1216,21 @@ defmodule IdeajarWeb.IdeaLive.IndexTest do
     end
   end
 
-  # ── Slice 4 Step 9: out-of-scope guard + XSS regression on filter chips ──
-  describe "out-of-scope guard (slice 4 A13)" do
-    test "no other filter UI strings appear (Durata/Budget/Distanza/Cerca)",
+  # ── Slice 4 Step 9 / Slice 5 Step 6 (AA13): out-of-scope guard ──
+  # Slice 5 step 6 introduces `Durata` legitimately (filter sub-block label,
+  # form legend, badge, …) so the negative list narrows to the still-out-of-
+  # scope features. We also add a positive assertion that `Durata` is in the
+  # filter row sub-block label (regression: must not be silently removed).
+  describe "out-of-scope guard (slice 4 A13 + slice 5 AA13)" do
+    test "no Budget/Distanza/Cerca filter UI strings appear", %{conn: conn} do
+      {:ok, _view, html} = live_isolated(conn, Index, session: @authenticated_session)
+      refute html =~ ~r/Budget|Distanza|Cerca/i
+    end
+
+    test "Durata appears as a visible sub-block label in the filter row",
          %{conn: conn} do
       {:ok, _view, html} = live_isolated(conn, Index, session: @authenticated_session)
-      refute html =~ ~r/Durata|Budget|Distanza|Cerca/i
+      assert html =~ ~r{<p[^>]*class="[^"]*text-xs[^"]*"[^>]*>\s*Durata\s*</p>}
     end
   end
 
@@ -1463,24 +1472,30 @@ defmodule IdeajarWeb.IdeaLive.IndexTest do
       assert app_js =~ "RovingTabindex"
     end
 
-    # R5-4 prevention: the visible sub-label `Categorie` is ADDED in step 6
-    # (when a second sub-block appears). In step 1 there is only an aria-label
-    # on the role=group; no visible <p class="text-xs">Categorie</p>.
-    test "step 1 does NOT render a visible 'Categorie' sub-label above the filter chips",
+    # R5-4 prevention (post-step-6 inversion): the visible sub-label `Categorie`
+    # was absent in step 1 but is REQUIRED from step 6 onward (when the durata
+    # sub-block appears: AA1/AA11 — visible sub-labels distinguish two sibling
+    # role=group blocks). Asserted positively here. The `Durata` sub-label is
+    # asserted in the step-6 describe block.
+    test "renders the visible 'Categorie' sub-label above the filter chips (step 6)",
          %{conn: conn} do
       {:ok, _view, html} = live_isolated(conn, Index, session: @authenticated_session)
 
-      refute html =~ ~r{<p[^>]*class="[^"]*text-xs[^"]*"[^>]*>\s*Categorie\s*</p>}
+      assert html =~ ~r{<p[^>]*class="[^"]*text-xs[^"]*"[^>]*>\s*Categorie\s*</p>}
     end
   end
 
   # ── Slice 5 Step 3: form duration field (chip + handler + persistence) ──
   describe "form duration field (slice 5 step 3)" do
-    test "fieldset Durata is hidden until the form is opened", %{conn: conn} do
+    test "fieldset legend Durata is hidden until the form is opened", %{conn: conn} do
       view = mount_authenticated(conn)
       html = render(view)
 
-      refute html =~ "Durata"
+      # The string "Durata" appears legitimately in the filter row sub-block
+      # label and in the helper text (slice 5 step 6); we scope this assertion
+      # to the form's <legend> tag, which is what slice 3/5 controls via
+      # form_visible?.
+      refute html =~ ~r{<legend[^>]*>\s*Durata\s*</legend>}
     end
 
     test "opening the form renders <legend>Durata</legend> with NO asterisk and 5 chips",
@@ -1893,6 +1908,427 @@ defmodule IdeajarWeb.IdeaLive.IndexTest do
       assert is_integer(categories_pos)
       assert is_integer(badge_pos)
       assert categories_pos < badge_pos
+    end
+  end
+
+  # ── Slice 5 Step 6: duration filter sub-block ─────────────────────────
+  defp insert_idea_with_categories_and_duration!(
+         title,
+         category_names,
+         duration,
+         %DateTime{} = at
+       ) do
+    cats = Enum.map(category_names, &CategoriesFixtures.category_by_name!/1)
+
+    idea =
+      %Idea{title: title, duration: duration}
+      |> Ecto.Changeset.change()
+      |> Ecto.Changeset.put_assoc(:categories, cats)
+      |> Repo.insert!()
+
+    Repo.update!(
+      Ecto.Changeset.change(idea, inserted_at: at, updated_at: at),
+      force: true
+    )
+  end
+
+  defp seed_6_lv_ideas_with_durations do
+    %{
+      sirolo:
+        insert_idea_with_categories_and_duration!(
+          "Sirolo",
+          ["mare", "viaggio"],
+          :weekend,
+          ~U[2026-04-27 10:00:00Z]
+        ),
+      uffizi:
+        insert_idea_with_categories_and_duration!(
+          "Uffizi",
+          ["museo", "cultura"],
+          :giornata,
+          ~U[2026-04-27 10:01:00Z]
+        ),
+      stadio:
+        insert_idea_with_categories_and_duration!(
+          "Stadio",
+          ["sport"],
+          :poche_ore,
+          ~U[2026-04-27 10:02:00Z]
+        ),
+      bagno_improvviso:
+        insert_idea_with_categories_and_duration!(
+          "Bagno improvviso",
+          ["mare", "sport"],
+          nil,
+          ~U[2026-04-27 10:03:00Z]
+        ),
+      cinema:
+        insert_idea_with_categories_and_duration!(
+          "Cinema",
+          ["cinema", "cultura"],
+          :mezza_giornata,
+          ~U[2026-04-27 10:04:00Z]
+        ),
+      bivacco:
+        insert_idea_with_categories_and_duration!(
+          "Bivacco",
+          ["sport"],
+          :poche_ore,
+          ~U[2026-04-27 10:05:00Z]
+        )
+    }
+  end
+
+  defp cycle_duration(view, atom) do
+    render_click(view, "toggle_duration_filter", %{"duration" => Atom.to_string(atom)})
+    view
+  end
+
+  describe "duration filter sub-block (slice 5 step 6)" do
+    # 1. Sub-block durata reso (AA11/AA21)
+    test "renders <div role=group aria-label='Filtra per durata'> with hook + 5 chip buttons",
+         %{conn: conn} do
+      {:ok, _view, html} = live_isolated(conn, Index, session: @authenticated_session)
+
+      [group_open] =
+        Regex.run(~r{<div[^>]*id="filter-durations-group"[^>]*>}, html) ||
+          [nil] |> List.wrap()
+
+      assert group_open,
+             "Expected <div id=\"filter-durations-group\"> to be rendered"
+
+      assert group_open =~ ~s(role="group")
+      assert group_open =~ ~s(aria-label="Filtra per durata")
+      assert group_open =~ ~s(data-roving-tabindex-group="filter-durations")
+      assert group_open =~ ~s(phx-hook="RovingTabindex")
+
+      filter_duration_buttons =
+        Regex.scan(~r{<button[^>]*id="filter-duration-chip-\w+"[^>]*>}, html)
+        |> Enum.map(&hd/1)
+
+      assert length(filter_duration_buttons) == 5
+    end
+
+    # 2. Visible sub-labels on BOTH groups (AA1/AA11)
+    test "renders visible 'Categorie' AND 'Durata' sub-labels in the filter section",
+         %{conn: conn} do
+      {:ok, _view, html} = live_isolated(conn, Index, session: @authenticated_session)
+
+      assert html =~ ~r{<p[^>]*class="[^"]*text-xs[^"]*"[^>]*>\s*Categorie\s*</p>}
+      assert html =~ ~r{<p[^>]*class="[^"]*text-xs[^"]*"[^>]*>\s*Durata\s*</p>}
+    end
+
+    # 3. Helper text NULL-exclusion (AA19/A12)
+    test "renders the NULL-exclusion helper text exactly once, between sub-label and chip group",
+         %{conn: conn} do
+      {:ok, _view, html} = live_isolated(conn, Index, session: @authenticated_session)
+
+      helper_text = "Le idee senza durata sono nascoste quando un filtro è attivo."
+
+      occurrences =
+        Regex.scan(~r{Le idee senza durata sono nascoste quando un filtro è attivo\.}, html)
+        |> length()
+
+      assert occurrences == 1, "Expected the helper text to appear exactly once"
+
+      durata_label_pos =
+        case Regex.run(
+               ~r{<p[^>]*class="[^"]*text-xs[^"]*"[^>]*>\s*Durata\s*</p>},
+               html,
+               return: :index
+             ) do
+          [{pos, _len}] -> pos
+          _ -> nil
+        end
+
+      helper_pos =
+        case :binary.match(html, helper_text) do
+          {pos, _} -> pos
+          :nomatch -> nil
+        end
+
+      first_chip_pos =
+        case :binary.match(html, ~s(id="filter-duration-chip-poche_ore")) do
+          {pos, _} -> pos
+          :nomatch -> nil
+        end
+
+      assert is_integer(durata_label_pos)
+      assert is_integer(helper_pos)
+      assert is_integer(first_chip_pos)
+
+      assert durata_label_pos < helper_pos,
+             "Helper text must appear AFTER the 'Durata' sub-label"
+
+      assert helper_pos < first_chip_pos,
+             "Helper text must appear BEFORE the first duration chip"
+    end
+
+    # 4. Step 1 sub-block aria-label invariate.
+    test "categorie sub-block keeps aria-label='Filtra per categoria'", %{conn: conn} do
+      {:ok, _view, html} = live_isolated(conn, Index, session: @authenticated_session)
+      assert html =~ ~s(aria-label="Filtra per categoria")
+    end
+
+    # 5. Secondo rover: only 1 tabindex=0 on filter-duration-chip-*.
+    test "secondo rover: only first duration chip (poche_ore) has tabindex=0",
+         %{conn: conn} do
+      {:ok, _view, html} = live_isolated(conn, Index, session: @authenticated_session)
+
+      duration_chip_buttons =
+        Regex.scan(~r{<button[^>]*id="filter-duration-chip-\w+"[^>]*>}, html)
+        |> Enum.map(&hd/1)
+
+      assert length(duration_chip_buttons) == 5
+
+      tabindex_zero =
+        duration_chip_buttons |> Enum.filter(&(&1 =~ ~r/tabindex="0"/)) |> length()
+
+      tabindex_minus_one =
+        duration_chip_buttons |> Enum.filter(&(&1 =~ ~r/tabindex="-1"/)) |> length()
+
+      assert tabindex_zero == 1
+      assert tabindex_minus_one == 4
+
+      [poche_ore_btn] =
+        Regex.run(
+          ~r{<button[^>]*id="filter-duration-chip-poche_ore"[^>]*>},
+          html
+        ) || [nil] |> List.wrap()
+
+      assert poche_ore_btn =~ ~r/tabindex="0"/
+    end
+
+    # 6. Cycle 2-state on (F11)
+    test "cycle weekend on: @duration_filter == MapSet.new([:weekend]); chip flipped to :on",
+         %{conn: conn} do
+      _ = seed_6_lv_ideas_with_durations()
+      view = mount_authenticated(conn)
+
+      html = view |> cycle_duration(:weekend) |> render()
+
+      assigns = :sys.get_state(view.pid).socket.assigns
+      assert assigns.duration_filter == MapSet.new([:weekend])
+
+      [weekend_btn] =
+        Regex.run(
+          ~r{<button[^>]*id="filter-duration-chip-weekend"[^>]*>},
+          html
+        ) || [nil] |> List.wrap()
+
+      assert weekend_btn
+      assert weekend_btn =~ ~s(data-duration-filter-state="on")
+      assert weekend_btn =~ ~s(aria-label="weekend attiva")
+      # Hero-check icon present in the rendered chip
+      [_full, inner] =
+        Regex.run(
+          ~r{<button[^>]*id="filter-duration-chip-weekend"[^>]*>(.*?)</button>}s,
+          html
+        )
+
+      assert inner =~ "hero-check"
+    end
+
+    # 7. Cycle 2-state off (F11)
+    test "cycle weekend twice: returns @duration_filter to empty; chip back to :off",
+         %{conn: conn} do
+      _ = seed_6_lv_ideas_with_durations()
+      view = mount_authenticated(conn)
+
+      view |> cycle_duration(:weekend)
+      html = view |> cycle_duration(:weekend) |> render()
+
+      assigns = :sys.get_state(view.pid).socket.assigns
+      assert assigns.duration_filter == MapSet.new()
+
+      [weekend_btn] =
+        Regex.run(
+          ~r{<button[^>]*id="filter-duration-chip-weekend"[^>]*>},
+          html
+        ) || [nil] |> List.wrap()
+
+      assert weekend_btn
+      assert weekend_btn =~ ~s(data-duration-filter-state="off")
+      assert weekend_btn =~ ~s(aria-label="weekend")
+      refute weekend_btn =~ ~s(aria-label="weekend attiva")
+    end
+
+    # 8. Filter matching (F7)
+    test "cycle weekend on: list contains only :weekend ideas; NULL excluded",
+         %{conn: conn} do
+      _ = seed_6_lv_ideas_with_durations()
+      view = mount_authenticated(conn)
+
+      html = view |> cycle_duration(:weekend) |> render()
+
+      assert html =~ "Sirolo"
+      refute html =~ "Uffizi"
+      refute html =~ "Stadio"
+      refute html =~ "Bagno improvviso"
+      refute html =~ "Cinema"
+      refute html =~ "Bivacco"
+    end
+
+    # 9. Multi-OR (F8)
+    test "cycle weekend + giornata: list contains union (Sirolo + Uffizi)",
+         %{conn: conn} do
+      _ = seed_6_lv_ideas_with_durations()
+      view = mount_authenticated(conn)
+
+      html =
+        view
+        |> cycle_duration(:weekend)
+        |> cycle_duration(:giornata)
+        |> render()
+
+      assert html =~ "Sirolo"
+      assert html =~ "Uffizi"
+      refute html =~ "Stadio"
+      refute html =~ "Bagno improvviso"
+      refute html =~ "Cinema"
+      refute html =~ "Bivacco"
+    end
+
+    # 10. Empty result with duration filter only (no piu_giorni in DB)
+    test "cycle piu_giorni on a DB without piu_giorni ideas: empty-filter state",
+         %{conn: conn} do
+      _ = seed_6_lv_ideas_with_durations()
+      view = mount_authenticated(conn)
+
+      html = view |> cycle_duration(:piu_giorni) |> render()
+
+      assert html =~ "Nessuna idea per i filtri attivi."
+      assert html =~ "Mostra tutte"
+
+      [piu_giorni_btn] =
+        Regex.run(
+          ~r{<button[^>]*id="filter-duration-chip-piu_giorni"[^>]*>},
+          html
+        ) || [nil] |> List.wrap()
+
+      assert piu_giorni_btn
+      assert piu_giorni_btn =~ ~s(data-duration-filter-state="on")
+    end
+
+    # 11. Live-region prefix on, no compound (A5)
+    test "live-region: cycle weekend on, no category filter → 'weekend attiva, 1 idea'",
+         %{conn: conn} do
+      _ = seed_6_lv_ideas_with_durations()
+      view = mount_authenticated(conn)
+
+      html = view |> cycle_duration(:weekend) |> render()
+
+      assert extract_filter_status(html) == "weekend attiva, 1 idea"
+    end
+
+    # 12. Live-region prefix off
+    test "live-region: cycle weekend off → 'weekend rimossa, 6 idee'", %{conn: conn} do
+      _ = seed_6_lv_ideas_with_durations()
+      view = mount_authenticated(conn)
+
+      view |> cycle_duration(:weekend)
+      html = view |> cycle_duration(:weekend) |> render()
+
+      assert extract_filter_status(html) == "weekend rimossa, 6 idee"
+    end
+
+    # 13. Compound suffix on durata-action (A13/AA20)
+    test "live-region compound: category mare required + cycle weekend on → suffix 'filtri categoria attivi'",
+         %{conn: conn} do
+      _ = seed_6_lv_ideas_with_durations()
+      view = mount_authenticated(conn)
+
+      # Cycle mare to required (twice through cycle_filter)
+      view |> cycle_filter("mare") |> cycle_filter("mare")
+      html = view |> cycle_duration(:weekend) |> render()
+
+      assert extract_filter_status(html) ==
+               "weekend attiva, 1 idea, filtri categoria attivi"
+    end
+
+    # 14. Compound suffix on categoria-action (A13/AA20)
+    test "live-region compound: duration weekend on + cycle category mare to required → suffix 'filtri durata attivi'",
+         %{conn: conn} do
+      _ = seed_6_lv_ideas_with_durations()
+      view = mount_authenticated(conn)
+
+      view |> cycle_duration(:weekend)
+      view |> cycle_filter("mare")
+      html = view |> cycle_filter("mare") |> render()
+
+      assert extract_filter_status(html) ==
+               "mare obbligatoria, 1 idea, filtri durata attivi"
+    end
+
+    # 15. Filtri rimossi no suffix
+    test "live-region: with both groups active, click 'Mostra tutte' → 'Filtri rimossi, 6 idee' (no suffix)",
+         %{conn: conn} do
+      _ = seed_6_lv_ideas_with_durations()
+      view = mount_authenticated(conn)
+
+      view |> cycle_duration(:weekend) |> cycle_filter("mare")
+      html = render_click(view, "clear_filters")
+
+      assert extract_filter_status(html) == "Filtri rimossi, 6 idee"
+    end
+
+    # 16. Hostile filter duration uniform list (S1, S2)
+    for value <- ["schifoso", "", "WEEKEND", "poche_ora", "poche ore"] do
+      test "toggle_duration_filter with hostile string #{inspect(value)} is a no-op",
+           %{conn: conn} do
+        view = mount_authenticated(conn)
+
+        render_click(view, "toggle_duration_filter", %{"duration" => unquote(value)})
+
+        assigns = :sys.get_state(view.pid).socket.assigns
+        assert assigns.duration_filter == MapSet.new()
+        assert Process.alive?(view.pid)
+      end
+    end
+
+    for value <- [42, [], %{}] do
+      test "toggle_duration_filter with hostile non-string #{inspect(value)} is a no-op",
+           %{conn: conn} do
+        view = mount_authenticated(conn)
+
+        render_click(view, "toggle_duration_filter", %{
+          "duration" => unquote(Macro.escape(value))
+        })
+
+        assigns = :sys.get_state(view.pid).socket.assigns
+        assert assigns.duration_filter == MapSet.new()
+        assert Process.alive?(view.pid)
+      end
+    end
+
+    # 17. Form/filter durata ARIA non collide
+    test "form open + filter weekend on: both form-duration-chip-weekend and filter-duration-chip-weekend rendered",
+         %{conn: conn} do
+      view = mount_authenticated(conn)
+      view |> cycle_duration(:weekend)
+      _ = render_click(view, "toggle_form")
+      html = render(view)
+
+      [form_weekend] =
+        Regex.run(
+          ~r{<button[^>]*id="form-duration-chip-weekend"[^>]*>},
+          html
+        ) || [nil] |> List.wrap()
+
+      [filter_weekend] =
+        Regex.run(
+          ~r{<button[^>]*id="filter-duration-chip-weekend"[^>]*>},
+          html
+        ) || [nil] |> List.wrap()
+
+      assert form_weekend
+      assert filter_weekend
+
+      assert form_weekend =~ "aria-pressed"
+      refute form_weekend =~ "aria-label"
+
+      assert filter_weekend =~ "aria-label"
+      refute filter_weekend =~ "aria-pressed"
     end
   end
 end

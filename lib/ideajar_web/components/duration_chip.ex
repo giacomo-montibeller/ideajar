@@ -9,13 +9,16 @@ defmodule IdeajarWeb.Components.DurationChip do
   `atom | nil`) re-renders only one chip with `pressed?: true`. There is
   no DOM-level coupling between chips.
 
-  Slice 6 will add `filter_chip/1` here with a separate ARIA contract
+  Slice 5 step 6 adds `filter_chip/1` with a separate ARIA contract
   (`data-duration-filter-state` rather than `aria-pressed`), a separate
   DOM id namespace (`filter-duration-chip-<atom>`) and a separate event
-  (`cycle_duration_filter`). The two ARIA contracts are deliberately
+  (`toggle_duration_filter`). The two ARIA contracts are deliberately
   encoded as two distinct functions so the type system enforces mutual
   exclusion (a caller cannot pass `state` to `form_chip/1` because the
-  attr does not exist there — S8).
+  attr does not exist there, and `pressed?` cannot reach `filter_chip/1`
+  for the same reason — S8). The filter chip is binary (`:off | :on`),
+  symmetrical to a 2-state toggle: distinct from `CategoryChip.filter_chip/1`
+  which is tri-state (`:off | :optional | :required`).
 
   The chip class string mirrors `IdeajarWeb.Components.CategoryChip`
   visually but is duplicated by intent (R5-2): the third chip family
@@ -56,6 +59,54 @@ defmodule IdeajarWeb.Components.DurationChip do
   defp chip_base_class do
     "min-h-11 min-w-11 px-3 py-2 rounded-full border-2 inline-flex items-center gap-1 text-sm"
   end
+
+  attr :duration, :atom, required: true, values: Duration.values()
+  attr :state, :atom, default: :off, values: [:off, :on]
+  attr :tabindex, :integer, default: -1
+
+  @doc """
+  Slice 5 step 6 binary 2-state filter chip rendered in the filter row's
+  durata sub-block. ARIA contract:
+
+    * `aria-label="<label>"` when off
+    * `aria-label="<label> attiva"` when on
+    * `data-duration-filter-state="off|on"` (no `aria-pressed` — that
+      primitive is reserved for the form-side `form_chip/1`; the two
+      contracts are mutually exclusive at the type level — S8)
+    * Hero-check icon rendered only when `:on`
+
+  The `tabindex` attr defaults to `-1` so the caller can wire roving
+  tabindex semantics (one chip per group is `tabindex="0"`, the rest
+  `-1`). The DOM id `filter-duration-chip-<atom>` is namespaced so it
+  cannot collide with `form-duration-chip-<atom>` when the form is open
+  and the filter is active simultaneously (AA18).
+  """
+  def filter_chip(assigns) do
+    ~H"""
+    <button
+      id={"filter-duration-chip-#{@duration}"}
+      type="button"
+      aria-label={filter_chip_aria_label(@duration, @state)}
+      data-duration-filter-state={Atom.to_string(@state)}
+      tabindex={@tabindex}
+      phx-click="toggle_duration_filter"
+      phx-value-duration={Atom.to_string(@duration)}
+      class={[chip_base_class(), filter_chip_state_class(@state)]}
+    >
+      <.icon :if={@state == :on} name="hero-check" class="size-4" />
+      {Duration.label(@duration)}
+    </button>
+    """
+  end
+
+  defp filter_chip_aria_label(duration, :off), do: Duration.label(duration)
+  defp filter_chip_aria_label(duration, :on), do: "#{Duration.label(duration)} attiva"
+
+  defp filter_chip_state_class(:off),
+    do: "bg-base-100 text-base-content border-base-300 hover:border-base-content/50"
+
+  defp filter_chip_state_class(:on),
+    do: "bg-success text-success-content border-success"
 
   attr :duration, :atom, required: true, values: Duration.values()
 

@@ -159,4 +159,66 @@ defmodule IdeajarWeb.Components.DurationChipTest do
       refute html =~ "data-duration-filter-state"
     end
   end
+
+  describe "filter_chip/1 (slice 5 step 6)" do
+    defp render_filter_chip(assigns) do
+      render_component(&DurationChip.filter_chip/1, assigns)
+    end
+
+    test "state: :off renders id, data-state=off, aria-label=label, no icon, phx-* wiring" do
+      html = render_filter_chip(%{duration: :weekend, state: :off})
+
+      assert html =~ ~s(id="filter-duration-chip-weekend")
+      assert html =~ ~s(data-duration-filter-state="off")
+      assert html =~ ~s(aria-label="weekend")
+      assert html =~ ~s(phx-click="toggle_duration_filter")
+      assert html =~ ~s(phx-value-duration="weekend")
+      assert html =~ ~s(type="button")
+      refute html =~ "hero-check"
+      # filter_chip is a 2-state binary filter — distinct from the
+      # form chip's aria-pressed contract. No aria-pressed must appear.
+      refute html =~ "aria-pressed"
+    end
+
+    test "state: :on renders data-state=on, aria-label='<label> attiva', hero-check icon" do
+      html = render_filter_chip(%{duration: :weekend, state: :on})
+
+      assert html =~ ~s(data-duration-filter-state="on")
+      assert html =~ ~s(aria-label="weekend attiva")
+      assert html =~ "hero-check"
+      refute html =~ "aria-pressed"
+    end
+
+    # S8 type-level mutua esclusione: filter_chip does NOT accept attr `pressed?`.
+    # A caller passing pressed?: true would either crash (compile-time attr
+    # validation) or be silently dropped — verify rendering is unaffected and
+    # no aria-pressed leaks through (the form-chip contract must not appear).
+    test "S8: does NOT accept attr :pressed? — no aria-pressed in rendered output" do
+      html = render_filter_chip(%{duration: :weekend, state: :off})
+      refute html =~ "aria-pressed"
+
+      html_on = render_filter_chip(%{duration: :weekend, state: :on})
+      refute html_on =~ "aria-pressed"
+    end
+
+    test "tabindex defaults to -1; explicit tabindex: 0 is rendered" do
+      html_default = render_filter_chip(%{duration: :weekend, state: :off})
+      assert html_default =~ ~s(tabindex="-1")
+
+      html_zero = render_filter_chip(%{duration: :weekend, state: :off, tabindex: 0})
+      assert html_zero =~ ~s(tabindex="0")
+    end
+
+    test "renders the IT label (poche ore, mezza giornata, più giorni)" do
+      html_poche = render_filter_chip(%{duration: :poche_ore, state: :off})
+      assert html_poche =~ "poche ore"
+      assert html_poche =~ ~s(aria-label="poche ore")
+
+      html_mezza = render_filter_chip(%{duration: :mezza_giornata, state: :off})
+      assert html_mezza =~ "mezza giornata"
+
+      html_piu = render_filter_chip(%{duration: :piu_giorni, state: :off})
+      assert html_piu =~ "più giorni"
+    end
+  end
 end

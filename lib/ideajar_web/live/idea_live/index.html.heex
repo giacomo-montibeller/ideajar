@@ -99,6 +99,7 @@
       <p id="filter-helper" class="text-sm text-base-content/70">
         Tocca per filtrare: 1× opzionale · 2× obbligatoria · 3× rimuovi
       </p>
+      <p class="text-xs">Categorie</p>
       <div
         id="filter-categories-group"
         role="group"
@@ -116,8 +117,27 @@
           tabindex={if idx == 0, do: 0, else: -1}
         />
       </div>
+      <p class="text-xs">Durata</p>
+      <p class="text-xs text-base-content/70">
+        Le idee senza durata sono nascoste quando un filtro è attivo.
+      </p>
+      <div
+        id="filter-durations-group"
+        role="group"
+        aria-label="Filtra per durata"
+        data-roving-tabindex-group="filter-durations"
+        phx-hook="RovingTabindex"
+        class="flex flex-wrap gap-2"
+      >
+        <DurationChip.filter_chip
+          :for={{duration, idx} <- Enum.with_index(Ideajar.Ideas.Duration.values())}
+          duration={duration}
+          state={if MapSet.member?(@duration_filter, duration), do: :on, else: :off}
+          tabindex={if idx == 0, do: 0, else: -1}
+        />
+      </div>
       <button
-        :if={filter_active?(@filter_state) and @ideas != []}
+        :if={filter_active?(@filter_state, @duration_filter) and @ideas != []}
         id="mostra-tutte"
         type="button"
         phx-click="clear_filters"
@@ -133,18 +153,18 @@
       id="filter-status"
       class="text-sm text-base-content/70"
     >
-      {@last_filter_action}{IdeajarWeb.Pluralization.idee_count(length(@ideas))}
+      {@last_filter_action_prefix}{IdeajarWeb.Pluralization.idee_count(length(@ideas))}{@last_filter_action_suffix}
     </div>
 
     <p
-      :if={@ideas == [] and not filter_active?(@filter_state)}
+      :if={@ideas == [] and not filter_active?(@filter_state, @duration_filter)}
       class="text-base-content/70"
     >
       Nessuna idea ancora. Aggiungine una qui sopra.
     </p>
 
     <div
-      :if={@ideas == [] and filter_active?(@filter_state)}
+      :if={@ideas == [] and filter_active?(@filter_state, @duration_filter)}
       data-testid="empty-filter-state"
       class="rounded-box border border-base-300 p-4 space-y-3"
     >

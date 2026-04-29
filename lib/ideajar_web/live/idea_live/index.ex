@@ -25,19 +25,38 @@ defmodule IdeajarWeb.IdeaLive.Index do
   use IdeajarWeb, :live_view
 
   import IdeajarWeb.Components.CategoryChip
-  import IdeajarWeb.Components.DurationChip
+  # DurationChip carries its own `filter_chip/1` (slice 5 step 6) which would
+  # collide with `CategoryChip.filter_chip/1`. We import only the form-side
+  # helpers and call the duration filter chip via the module-qualified form
+  # `<DurationChip.filter_chip … />` in the template.
+  import IdeajarWeb.Components.DurationChip, only: [form_chip: 1, duration_badge: 1]
 
   alias Ideajar.Categories
   alias Ideajar.Ideas
   alias Ideajar.Ideas.Duration
   alias Ideajar.Ideas.Idea
+  alias IdeajarWeb.Components.DurationChip
 
   @impl Phoenix.LiveView
   def mount(_params, %{"authenticated" => true}, socket) do
     {:ok,
      socket
      |> assign(:filter_state, %{})
-     |> assign(:last_filter_action, nil)
+     |> assign(:duration_filter, MapSet.new())
+     # Live-region split (slice 5 step 6 / AA20):
+     #
+     #   * `@last_filter_action_prefix` — action-only part such as
+     #     `"weekend attiva, "` or `"Filtri rimossi, "`. `nil` until the
+     #     user first interacts with the filter row.
+     #   * `@last_filter_action_suffix` — compound-state suffix such as
+     #     `", filtri categoria attivi"`. Empty string when the *other*
+     #     filter group is empty (no compound).
+     #
+     # The template interleaves prefix + count + suffix at render time
+     # because the count is derived from `length(@ideas)` after each
+     # event. See `compound_suffix/3`.
+     |> assign(:last_filter_action_prefix, nil)
+     |> assign(:last_filter_action_suffix, "")
      |> assign(:categories, Categories.list_categories())
      |> assign(:form_visible?, false)
      |> reset_categories()
@@ -118,11 +137,13 @@ defmodule IdeajarWeb.IdeaLive.Index do
         category_name = category_name_by_id(id, socket.assigns.categories)
         new_state = cycle_state(socket.assigns.filter_state, id)
         new_action_prefix = action_prefix(new_state, id, category_name)
+        new_suffix = compound_suffix(new_state, socket.assigns.duration_filter, :category)
 
         {:noreply,
          socket
          |> assign(:filter_state, new_state)
-         |> assign(:last_filter_action, new_action_prefix)
+         |> assign(:last_filter_action_prefix, new_action_prefix)
+         |> assign(:last_filter_action_suffix, new_suffix)
          |> reload_ideas()}
 
       :error ->
@@ -134,11 +155,47 @@ defmodule IdeajarWeb.IdeaLive.Index do
   # against DevTools tampering). Hostile id values land here as well.
   def handle_event("cycle_filter", _params, socket), do: {:noreply, socket}
 
+  # Slice 5 step 6: binary 2-state duration filter. Membership-gated parse
+  # via `Duration.parse/1`; hostile payloads (non-string values, unknown
+  # atoms, casing mismatches) land in the catchall as no-ops.
+  def handle_event("toggle_duration_filter", %{"duration" => raw}, socket)
+      when is_binary(raw) do
+    case Duration.parse(raw) do
+      {:ok, atom} ->
+        current = socket.assigns.duration_filter
+
+        new_set =
+          if MapSet.member?(current, atom),
+            do: MapSet.delete(current, atom),
+            else: MapSet.put(current, atom)
+
+        new_prefix = duration_action_prefix(new_set, atom)
+        new_suffix = compound_suffix(socket.assigns.filter_state, new_set, :duration)
+
+        {:noreply,
+         socket
+         |> assign(:duration_filter, new_set)
+         |> assign(:last_filter_action_prefix, new_prefix)
+         |> assign(:last_filter_action_suffix, new_suffix)
+         |> reload_ideas()}
+
+      :error ->
+        {:noreply, socket}
+    end
+  end
+
+  # Catchall for hostile or malformed phx-value-duration payloads on the
+  # filter row (non-string types, missing key). Pinned by S1/S2 hostile
+  # uniform list in `index_test.exs` (slice 5 step 6 RED #16).
+  def handle_event("toggle_duration_filter", _params, socket), do: {:noreply, socket}
+
   def handle_event("clear_filters", _params, socket) do
     {:noreply,
      socket
      |> assign(:filter_state, %{})
-     |> assign(:last_filter_action, "Filtri rimossi, ")
+     |> assign(:duration_filter, MapSet.new())
+     |> assign(:last_filter_action_prefix, "Filtri rimossi, ")
+     |> assign(:last_filter_action_suffix, "")
      |> reload_ideas()}
   end
 
@@ -179,7 +236,8 @@ defmodule IdeajarWeb.IdeaLive.Index do
     {:noreply,
      socket
      |> assign(:form_visible?, false)
-     |> assign(:last_filter_action, nil)
+     |> assign(:last_filter_action_prefix, nil)
+     |> assign(:last_filter_action_suffix, "")
      |> reset_categories()
      |> reset_duration()
      |> assign_form()
@@ -212,26 +270,42 @@ defmodule IdeajarWeb.IdeaLive.Index do
   defp reset_duration(socket), do: assign(socket, :selected_duration, nil)
 
   # Re-loads the ideas list from the context using the filter opts derived
-  # from `@filter_state`. Called on mount + after every event that may
-  # change either the filter or the underlying ideas (cycle, clear, save).
+  # from `@filter_state` and `@duration_filter`. Called on mount + after
+  # every event that may change either the filter or the underlying ideas
+  # (cycle, clear, save, toggle_duration_filter).
   defp reload_ideas(socket) do
-    opts = derive_filter_opts(socket.assigns.filter_state)
+    opts =
+      derive_filter_opts(
+        socket.assigns.filter_state,
+        socket.assigns.duration_filter
+      )
+
     assign(socket, :ideas, Ideas.list_ideas(opts))
   end
 
-  defp derive_filter_opts(filter_state) do
-    Enum.reduce(filter_state, [required: [], optional: []], fn
+  defp derive_filter_opts(filter_state, duration_filter) do
+    filter_state
+    |> Enum.reduce([required: [], optional: []], fn
       {id, :required}, acc -> Keyword.update!(acc, :required, &[id | &1])
       {id, :optional}, acc -> Keyword.update!(acc, :optional, &[id | &1])
     end)
+    |> Keyword.put(:durations, MapSet.to_list(duration_filter))
   end
 
   @doc """
-  Returns true when at least one category in @filter_state is in
-  :optional or :required state. Used by the template to decide whether
-  to render the `Mostra tutte` reset button.
+  Returns true when at least one filter is active across categories
+  (`@filter_state`) or durations (`@duration_filter`). Used by the
+  template to decide whether to render the `Mostra tutte` reset button
+  and the empty-filter message.
+
+  Slice 5 step 6 extends this from `/1` (categoria-only) to `/2` (categoria
+  + durata) so the empty-filter affordance fires even when the only
+  active filter is on duration. Slice 5 step 7 adds combined-filter
+  scenarios on top of this.
   """
-  def filter_active?(filter_state), do: filter_state != %{}
+  def filter_active?(filter_state, duration_filter) do
+    filter_state != %{} or MapSet.size(duration_filter) > 0
+  end
 
   defp category_name_by_id(id, categories) do
     Enum.find_value(categories, fn cat -> if cat.id == id, do: cat.name end)
@@ -245,6 +319,47 @@ defmodule IdeajarWeb.IdeaLive.Index do
       :required -> "#{name} obbligatoria, "
       nil -> "#{name} rimossa, "
     end
+  end
+
+  # Slice 5 step 6 / AA9 — duration live-region prefix:
+  #
+  #   * `<label> attiva, ` when the toggle put `atom` into `new_set`
+  #   * `<label> rimossa, ` when the toggle removed `atom` from `new_set`
+  #
+  # Uses the IT label (not the atom form) so the SR announcement reads
+  # `poche ore attiva, …` instead of `poche_ore attiva, …`.
+  defp duration_action_prefix(new_set, atom) do
+    label = Duration.label(atom)
+
+    if MapSet.member?(new_set, atom),
+      do: "#{label} attiva, ",
+      else: "#{label} rimossa, "
+  end
+
+  # Slice 5 step 6 / AA20 — compound live-region suffix.
+  #
+  # When the action was on one filter group (categoria or durata) and the
+  # OTHER group has at least one active filter, append a short suffix
+  # advertising that compound state. Returns `""` when the other group is
+  # empty (single-axis filter — no compound to announce).
+  #
+  # Four cases:
+  #
+  #   * `:category` action, durations active   → `, filtri durata attivi`
+  #   * `:category` action, durations empty    → `""`
+  #   * `:duration` action, categories active  → `, filtri categoria attivi`
+  #   * `:duration` action, categories empty   → `""`
+  #
+  # `clear_filters` does NOT route through this helper because its prefix
+  # `Filtri rimossi, ` is an absolute statement: both groups are empty
+  # by construction, so the suffix is always `""` and the helper would be
+  # a no-op anyway.
+  defp compound_suffix(_filter_state, duration_filter, :category) do
+    if MapSet.size(duration_filter) > 0, do: ", filtri durata attivi", else: ""
+  end
+
+  defp compound_suffix(filter_state, _duration_filter, :duration) do
+    if filter_state != %{}, do: ", filtri categoria attivi", else: ""
   end
 
   # Tri-state cycle: off → optional → required → off.
