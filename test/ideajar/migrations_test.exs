@@ -67,6 +67,13 @@ defmodule Ideajar.MigrationsTest do
                        __DIR__
                      )
 
+  @add_estimated_cost_migration Ideajar.Repo.Migrations.AddEstimatedCostToIdeas
+  @add_estimated_cost_version 20_260_429_000_001
+  @add_estimated_cost_path Path.expand(
+                             "../../priv/repo/migrations/20260429000001_add_estimated_cost_to_ideas.exs",
+                             __DIR__
+                           )
+
   unless Code.ensure_loaded?(@ideas_migration), do: Code.require_file(@ideas_path)
   unless Code.ensure_loaded?(@categories_migration), do: Code.require_file(@categories_path)
 
@@ -80,6 +87,9 @@ defmodule Ideajar.MigrationsTest do
 
   unless Code.ensure_loaded?(@add_duration_migration),
     do: Code.require_file(@add_duration_path)
+
+  unless Code.ensure_loaded?(@add_estimated_cost_migration),
+    do: Code.require_file(@add_estimated_cost_path)
 
   @canonical_categories [
     {1, "passeggiata"},
@@ -143,6 +153,19 @@ defmodule Ideajar.MigrationsTest do
         Repo,
         "INSERT OR IGNORE INTO schema_migrations (version, inserted_at) VALUES (?, datetime('now'))",
         [@add_duration_version]
+      )
+
+      # Slice 6: same connection-scoped raw-SQL strategy for the
+      # `estimated_cost` column. Restored LAST (after add_duration) to
+      # mirror the production migration order.
+      unless estimated_cost_column_present?() do
+        SQL.query!(Repo, ~s|ALTER TABLE "ideas" ADD COLUMN "estimated_cost" INTEGER|, [])
+      end
+
+      SQL.query!(
+        Repo,
+        "INSERT OR IGNORE INTO schema_migrations (version, inserted_at) VALUES (?, datetime('now'))",
+        [@add_estimated_cost_version]
       )
 
       Ecto.Adapters.SQL.Sandbox.mode(Repo, :manual)
@@ -509,6 +532,135 @@ defmodule Ideajar.MigrationsTest do
     assert rows == [[nil], [nil]]
   end
 
+  # ── add_estimated_cost_to_ideas migration (slice 6) ────────────────
+  #
+  # Same connection-cache hazard as slice 5 (see comment above
+  # `run_add_duration/1`): we drive `change/0` synchronously on the
+  # sandbox-owned connection rather than via `Ecto.Migrator.up/down`.
+
+  defp run_add_estimated_cost(direction) do
+    operation =
+      case direction do
+        :forward -> :up
+        :backward -> :down
+      end
+
+    Ecto.Migration.Runner.run(
+      Repo,
+      Repo.config(),
+      @add_estimated_cost_version,
+      @add_estimated_cost_migration,
+      direction,
+      :change,
+      operation,
+      log: false
+    )
+  end
+
+  defp run_all_pre_estimated_cost_migrations do
+    Ecto.Migrator.up(Repo, @ideas_version, @ideas_migration, log: false)
+    Ecto.Migrator.up(Repo, @categories_version, @categories_migration, log: false)
+    Ecto.Migrator.up(Repo, @seed_categories_version, @seed_categories_migration, log: false)
+    Ecto.Migrator.up(Repo, @wipe_ideas_version, @wipe_ideas_migration, log: false)
+
+    Ecto.Migrator.up(
+      Repo,
+      @idea_categories_version,
+      @idea_categories_migration,
+      log: false
+    )
+
+    run_add_duration(:forward)
+  end
+
+  test "add_estimated_cost_to_ideas migration is reversible and adds an INTEGER NULLABLE column" do
+    run_all_pre_estimated_cost_migrations()
+
+    refute estimated_cost_column_present?()
+
+    run_add_estimated_cost(:forward)
+
+    assert estimated_cost_column_integer_nullable?()
+
+    run_add_estimated_cost(:backward)
+
+    refute estimated_cost_column_present?()
+
+    run_add_estimated_cost(:forward)
+
+    assert estimated_cost_column_integer_nullable?()
+  end
+
+  test "add_estimated_cost_to_ideas migration accepts integer values and NULL on insert" do
+    run_all_pre_estimated_cost_migrations()
+    run_add_estimated_cost(:forward)
+
+    SQL.query!(
+      Repo,
+      "INSERT INTO ideas (title, estimated_cost, inserted_at, updated_at) VALUES (?, ?, ?, ?)",
+      ["Mostra", 100, "2026-04-29 10:00:00", "2026-04-29 10:00:00"]
+    )
+
+    SQL.query!(
+      Repo,
+      "INSERT INTO ideas (title, estimated_cost, inserted_at, updated_at) VALUES (?, ?, ?, ?)",
+      ["Senza prezzo", nil, "2026-04-29 10:01:00", "2026-04-29 10:01:00"]
+    )
+
+    %{rows: rows} =
+      SQL.query!(Repo, "SELECT title, estimated_cost FROM ideas ORDER BY title", [])
+
+    assert rows == [["Mostra", 100], ["Senza prezzo", nil]]
+  end
+
+  test "add_estimated_cost_to_ideas down preserves rows but resets estimated_cost column on next up" do
+    run_all_pre_estimated_cost_migrations()
+    run_add_estimated_cost(:forward)
+
+    SQL.query!(
+      Repo,
+      "INSERT INTO ideas (title, description, url, estimated_cost, inserted_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)",
+      [
+        "Sirolo",
+        "Bella spiaggia",
+        "https://example.com",
+        100,
+        "2026-04-29 10:00:00",
+        "2026-04-29 10:00:00"
+      ]
+    )
+
+    SQL.query!(
+      Repo,
+      "INSERT INTO ideas (title, description, url, estimated_cost, inserted_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)",
+      ["Cinema", "", "", nil, "2026-04-29 10:01:00", "2026-04-29 10:01:00"]
+    )
+
+    run_add_estimated_cost(:backward)
+
+    %{rows: [[count_after_down]]} = SQL.query!(Repo, "SELECT COUNT(*) FROM ideas", [])
+    assert count_after_down == 2
+
+    %{rows: [[title, description, url]]} =
+      SQL.query!(
+        Repo,
+        "SELECT title, description, url FROM ideas WHERE title = ?",
+        ["Sirolo"]
+      )
+
+    assert title == "Sirolo"
+    assert description == "Bella spiaggia"
+    assert url == "https://example.com"
+
+    run_add_estimated_cost(:forward)
+
+    %{rows: rows} =
+      SQL.query!(Repo, "SELECT estimated_cost FROM ideas ORDER BY title", [])
+
+    # SQLite ALTER TABLE DROP COLUMN + add reset = column ripristinata vuota.
+    assert rows == [[nil], [nil]]
+  end
+
   # ── Helpers ────────────────────────────────────────────────────────
 
   defp drop_table(name), do: SQL.query!(Repo, "DROP TABLE IF EXISTS #{name}", [])
@@ -520,7 +672,8 @@ defmodule Ideajar.MigrationsTest do
       @seed_categories_version,
       @wipe_ideas_version,
       @idea_categories_version,
-      @add_duration_version
+      @add_duration_version,
+      @add_estimated_cost_version
     ]
 
     Enum.each(versions, fn v ->
@@ -562,5 +715,27 @@ defmodule Ideajar.MigrationsTest do
   defp duration_column_row do
     %{rows: rows} = SQL.query!(Repo, "PRAGMA table_info(ideas)", [])
     Enum.find(rows, fn row -> Enum.at(row, 1) == "duration" end)
+  end
+
+  defp estimated_cost_column_present? do
+    estimated_cost_column_row() != nil
+  end
+
+  defp estimated_cost_column_integer_nullable? do
+    case estimated_cost_column_row() do
+      nil ->
+        false
+
+      row ->
+        # PRAGMA table_info columns: cid, name, type, notnull, dflt_value, pk
+        type = Enum.at(row, 2)
+        notnull = Enum.at(row, 3)
+        String.upcase(type) == "INTEGER" and notnull == 0
+    end
+  end
+
+  defp estimated_cost_column_row do
+    %{rows: rows} = SQL.query!(Repo, "PRAGMA table_info(ideas)", [])
+    Enum.find(rows, fn row -> Enum.at(row, 1) == "estimated_cost" end)
   end
 end

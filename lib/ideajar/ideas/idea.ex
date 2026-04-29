@@ -20,6 +20,7 @@ defmodule Ideajar.Ideas.Idea do
 
   import Ecto.Changeset
 
+  alias Ideajar.Ideas.Budget
   alias Ideajar.Ideas.Duration
 
   @type t :: %__MODULE__{}
@@ -30,14 +31,16 @@ defmodule Ideajar.Ideas.Idea do
   @url_too_long "Il link non può superare i 2000 caratteri"
   @categories_required "Seleziona almeno una categoria"
   @duration_invalid "Durata non valida"
+  @cost_invalid "Budget non valido"
 
-  @castable_fields [:title, :description, :url, :duration]
+  @castable_fields [:title, :description, :url, :duration, :estimated_cost]
 
   schema "ideas" do
     field :title, :string
     field :description, :string
     field :url, :string
     field :duration, Ecto.Enum, values: Duration.values()
+    field :estimated_cost, :integer
 
     many_to_many :categories, Ideajar.Categories.Category, join_through: "idea_categories"
 
@@ -66,6 +69,8 @@ defmodule Ideajar.Ideas.Idea do
     idea
     |> cast(attrs, @castable_fields)
     |> override_duration_error()
+    |> override_estimated_cost_error()
+    |> validate_inclusion(:estimated_cost, Budget.values(), message: @cost_invalid)
     |> trim_text(:title)
     |> trim_text(:url)
     |> validate_required([:title], message: @title_required)
@@ -84,6 +89,22 @@ defmodule Ideajar.Ideas.Idea do
     case Keyword.get(errors, :duration) do
       {"is invalid", opts} ->
         new_errors = Keyword.put(errors, :duration, {@duration_invalid, opts})
+        %{cs | errors: new_errors}
+
+      _ ->
+        cs
+    end
+  end
+
+  # Parallel to `override_duration_error/1`: the integer cast emits the
+  # generic `"is invalid"` for non-numeric input (`"abc"`, `"<script>"`).
+  # We rewrite to the canonical IT copy `"Budget non valido"` so the form
+  # surfaces the same message users see for out-of-whitelist values
+  # (BB2 — dual-path error coverage).
+  defp override_estimated_cost_error(%Ecto.Changeset{errors: errors} = cs) do
+    case Keyword.get(errors, :estimated_cost) do
+      {"is invalid", opts} ->
+        new_errors = Keyword.put(errors, :estimated_cost, {@cost_invalid, opts})
         %{cs | errors: new_errors}
 
       _ ->

@@ -528,6 +528,139 @@ defmodule Ideajar.IdeasTest do
     end
   end
 
+  describe "changeset/2 — estimated_cost field (slice 6)" do
+    @cost_invalid "Budget non valido"
+
+    test "valid '100' string casts to 100 integer in changes" do
+      mare = by_name("mare")
+
+      cs =
+        Idea.changeset(%Idea{}, %{
+          title: "Foo",
+          url: "",
+          description: "",
+          categories: [mare],
+          estimated_cost: "100"
+        })
+
+      assert cs.valid?
+      assert cs.changes[:estimated_cost] == 100
+    end
+
+    test "estimated_cost: nil leaves :estimated_cost out of changes (NULL ammesso)" do
+      mare = by_name("mare")
+
+      cs =
+        Idea.changeset(%Idea{}, %{
+          title: "Foo",
+          url: "",
+          description: "",
+          categories: [mare],
+          estimated_cost: nil
+        })
+
+      assert cs.valid?
+      refute Map.has_key?(cs.changes, :estimated_cost)
+    end
+
+    test "estimated_cost: '' leaves :estimated_cost out of changes (cast empty to nil)" do
+      mare = by_name("mare")
+
+      cs =
+        Idea.changeset(%Idea{}, %{
+          title: "Foo",
+          url: "",
+          description: "",
+          categories: [mare],
+          estimated_cost: ""
+        })
+
+      assert cs.valid?
+      refute Map.has_key?(cs.changes, :estimated_cost)
+    end
+
+    test "out-of-whitelist '175' is cast to 175 then rejected via validate_inclusion" do
+      mare = by_name("mare")
+
+      cs =
+        Idea.changeset(%Idea{}, %{
+          title: "Foo",
+          url: "",
+          description: "",
+          categories: [mare],
+          estimated_cost: "175"
+        })
+
+      refute cs.valid?
+      assert {@cost_invalid, _opts} = Keyword.fetch!(cs.errors, :estimated_cost)
+    end
+
+    test "negative out-of-whitelist '-50' is cast to -50 then rejected via validate_inclusion" do
+      mare = by_name("mare")
+
+      cs =
+        Idea.changeset(%Idea{}, %{
+          title: "Foo",
+          url: "",
+          description: "",
+          categories: [mare],
+          estimated_cost: "-50"
+        })
+
+      refute cs.valid?
+      assert {@cost_invalid, _opts} = Keyword.fetch!(cs.errors, :estimated_cost)
+    end
+
+    test "non-numeric 'abc' fails the integer cast and override rewrites to canonical message" do
+      mare = by_name("mare")
+
+      cs =
+        Idea.changeset(%Idea{}, %{
+          title: "Foo",
+          url: "",
+          description: "",
+          categories: [mare],
+          estimated_cost: "abc"
+        })
+
+      refute cs.valid?
+      assert {@cost_invalid, _opts} = Keyword.fetch!(cs.errors, :estimated_cost)
+    end
+
+    test "XSS-like '<script>' fails the integer cast and override rewrites to canonical message" do
+      mare = by_name("mare")
+
+      cs =
+        Idea.changeset(%Idea{}, %{
+          title: "Foo",
+          url: "",
+          description: "",
+          categories: [mare],
+          estimated_cost: "<script>"
+        })
+
+      refute cs.valid?
+      assert {@cost_invalid, _opts} = Keyword.fetch!(cs.errors, :estimated_cost)
+    end
+
+    test "non-interference pin: cost cast failure + empty title surfaces both canonical errors" do
+      mare = by_name("mare")
+
+      cs =
+        Idea.changeset(%Idea{}, %{
+          title: "",
+          url: "",
+          description: "",
+          categories: [mare],
+          estimated_cost: "abc"
+        })
+
+      refute cs.valid?
+      assert {@title_required, _} = Keyword.fetch!(cs.errors, :title)
+      assert {@cost_invalid, _} = Keyword.fetch!(cs.errors, :estimated_cost)
+    end
+  end
+
   describe "list_ideas/1 with :durations opt (slice 5 step 5)" do
     # Background fixture matching the spec: 6 ideas across all 5 durations
     # plus one NULL-duration idea (Bagno improvviso) used as the regression

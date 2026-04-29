@@ -38,7 +38,16 @@ defmodule Ideajar.Ideas.IdeaTest do
   describe "schema" do
     test "lists the expected fields" do
       assert Idea.__schema__(:fields) ==
-               [:id, :title, :description, :url, :duration, :inserted_at, :updated_at]
+               [
+                 :id,
+                 :title,
+                 :description,
+                 :url,
+                 :duration,
+                 :estimated_cost,
+                 :inserted_at,
+                 :updated_at
+               ]
     end
   end
 
