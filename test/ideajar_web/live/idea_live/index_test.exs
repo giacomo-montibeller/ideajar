@@ -2505,4 +2505,211 @@ defmodule IdeajarWeb.IdeaLive.IndexTest do
       refute status =~ "filtri durata attivi"
     end
   end
+
+  # ── Slice 5 Step 8: form/filter isolation + new-idea-outside-filter ──
+  #
+  # Each test in this block is a regression pin: the architecture already
+  # guarantees the invariant (separate assigns, no cross-handler state
+  # mutation). The tests prevent future drift — they should pass on the
+  # current implementation without any GREEN code.
+  describe "form/filter isolation and new-idea-outside-filter (slice 5 step 8)" do
+    # F14 — filter durata survives form submit. Pinning: cycle weekend on,
+    # submit a valid idea with a *different* duration; @duration_filter must
+    # remain MapSet.new([:weekend]) and the new idea must be persisted but
+    # absent from the filtered render.
+    test "F14: filter durata survives form submit (regression pin)", %{conn: conn} do
+      _ = seed_6_lv_ideas_with_durations()
+      view = mount_authenticated(conn)
+
+      view |> cycle_duration(:weekend)
+      pre = :sys.get_state(view.pid).socket.assigns
+      assert pre.duration_filter == MapSet.new([:weekend])
+
+      view |> open_form()
+      render_click(view, "toggle_form_duration", %{"duration" => "giornata"})
+      html = submit(view, %{title: "GiornataIdea"})
+
+      assigns = :sys.get_state(view.pid).socket.assigns
+      assert assigns.duration_filter == MapSet.new([:weekend])
+      assert Repo.get_by(Idea, title: "GiornataIdea")
+      refute html =~ "GiornataIdea"
+    end
+
+    # F15 — new idea outside duration filter is hidden. Pinning: pre-submit
+    # only Sirolo matches (the seeded :weekend idea); after creating a
+    # :giornata idea the filtered list is unchanged and the live-region
+    # count tracks length(@ideas) post-save (still 1, prefix reset to nil).
+    test "F15: new :giornata idea hidden when :weekend filter active (regression pin)",
+         %{conn: conn} do
+      _ = seed_6_lv_ideas_with_durations()
+      view = mount_authenticated(conn)
+
+      pre_html = view |> cycle_duration(:weekend) |> render()
+      assert pre_html =~ "Sirolo"
+      pre_assigns = :sys.get_state(view.pid).socket.assigns
+      pre_count = length(pre_assigns.ideas)
+      assert pre_count == 1
+
+      view |> open_form()
+      render_click(view, "toggle_form_duration", %{"duration" => "giornata"})
+      html = submit(view, %{title: "GiornataExtra"})
+
+      # Filter still active, list unchanged: only Sirolo visible.
+      assert html =~ "Sirolo"
+      refute html =~ "GiornataExtra"
+
+      assigns = :sys.get_state(view.pid).socket.assigns
+      assert length(assigns.ideas) == pre_count
+      # handle_save_result/3 resets the action prefix; live-region just shows
+      # the post-save count (1 idea), proving it was NOT incremented.
+      assert extract_filter_status(html) == "1 idea"
+      assert Repo.get_by(Idea, title: "GiornataExtra")
+    end
+
+    # F16 — new idea with NULL duration hidden when filter active. Pinning:
+    # AA7 NULL exclusion holds for ideas created *while* the filter is on,
+    # not just for pre-existing seeded ones.
+    test "F16: new NULL-duration idea hidden when :weekend filter active (regression pin)",
+         %{conn: conn} do
+      _ = seed_6_lv_ideas_with_durations()
+      view = mount_authenticated(conn)
+
+      view |> cycle_duration(:weekend)
+      total_before = length(Ideajar.Ideas.list_ideas([]))
+
+      view |> open_form()
+      # No form-duration chip pressed → @selected_duration stays nil →
+      # maybe_inject_duration leaves params untouched → idea persisted with
+      # duration: nil.
+      html = submit(view, %{title: "SenzaDurata"})
+
+      total_after = length(Ideajar.Ideas.list_ideas([]))
+      assert total_after == total_before + 1
+
+      persisted = Repo.get_by(Idea, title: "SenzaDurata")
+      assert persisted
+      assert persisted.duration == nil
+
+      refute html =~ "SenzaDurata"
+
+      assigns = :sys.get_state(view.pid).socket.assigns
+      assert assigns.duration_filter == MapSet.new([:weekend])
+    end
+
+    # Isolation #4 — clear_filters does NOT touch @selected_duration nor the
+    # form chip's aria-pressed state. Form duration belongs to the form;
+    # @duration_filter belongs to the filter row; clear_filters only acts
+    # on the latter.
+    test "isolation: clear_filters does not touch form @selected_duration (regression pin)",
+         %{conn: conn} do
+      _ = seed_6_lv_ideas_with_durations()
+      view = mount_authenticated(conn) |> open_form()
+      render_click(view, "toggle_form_duration", %{"duration" => "weekend"})
+
+      pre_assigns = :sys.get_state(view.pid).socket.assigns
+      assert pre_assigns.selected_duration == :weekend
+
+      view |> cycle_duration(:giornata)
+      html = render_click(view, "clear_filters")
+
+      assigns = :sys.get_state(view.pid).socket.assigns
+      assert assigns.selected_duration == :weekend
+      assert assigns.duration_filter == MapSet.new()
+
+      [weekend_form_btn] =
+        Regex.run(
+          ~r{<button[^>]*id="form-duration-chip-weekend"[^>]*>},
+          html
+        ) || [nil] |> List.wrap()
+
+      assert weekend_form_btn
+      assert weekend_form_btn =~ ~s(aria-pressed="true")
+    end
+
+    # Isolation #5 — toggle_duration_filter does NOT touch the form's
+    # @selected_duration. The two state slots live side by side and never
+    # cross.
+    test "isolation: toggle_duration_filter does not touch form @selected_duration (regression pin)",
+         %{conn: conn} do
+      _ = seed_6_lv_ideas_with_durations()
+      view = mount_authenticated(conn) |> open_form()
+      render_click(view, "toggle_form_duration", %{"duration" => "weekend"})
+
+      pre_assigns = :sys.get_state(view.pid).socket.assigns
+      assert pre_assigns.selected_duration == :weekend
+
+      html = view |> cycle_duration(:giornata) |> render()
+
+      assigns = :sys.get_state(view.pid).socket.assigns
+      assert assigns.selected_duration == :weekend
+      assert assigns.duration_filter == MapSet.new([:giornata])
+
+      [weekend_form_btn] =
+        Regex.run(
+          ~r{<button[^>]*id="form-duration-chip-weekend"[^>]*>},
+          html
+        ) || [nil] |> List.wrap()
+
+      assert weekend_form_btn
+      assert weekend_form_btn =~ ~s(aria-pressed="true")
+
+      [giornata_filter_btn] =
+        Regex.run(
+          ~r{<button[^>]*id="filter-duration-chip-giornata"[^>]*>},
+          html
+        ) || [nil] |> List.wrap()
+
+      assert giornata_filter_btn
+      assert giornata_filter_btn =~ ~s(data-duration-filter-state="on")
+    end
+
+    # Refresh — @duration_filter is process-local state. A fresh mount
+    # (simulating a page refresh) starts with both @duration_filter and
+    # @filter_state empty. Parallel to slice 4 F9 for filter_state.
+    test "refresh resets @duration_filter to MapSet.new() (regression pin)", %{conn: conn} do
+      _ = seed_6_lv_ideas_with_durations()
+      view = mount_authenticated(conn)
+      view |> cycle_duration(:weekend)
+      pre = :sys.get_state(view.pid).socket.assigns
+      assert pre.duration_filter == MapSet.new([:weekend])
+
+      # Fresh mount via a brand-new live_isolated call — equivalent to a
+      # page refresh from the user's perspective.
+      {:ok, fresh_view, _html} =
+        live_isolated(conn, Index, session: @authenticated_session)
+
+      assigns = :sys.get_state(fresh_view.pid).socket.assigns
+      assert assigns.duration_filter == MapSet.new()
+      assert assigns.filter_state == %{}
+    end
+
+    # F14 + clear_filters cycle — submitting a valid idea while a duration
+    # filter is on persists the idea but hides it; a subsequent
+    # clear_filters then surfaces it (and every other seeded idea).
+    test "F14 + clear_filters: hidden new idea reappears after Mostra tutte (regression pin)",
+         %{conn: conn} do
+      _ = seed_6_lv_ideas_with_durations()
+      view = mount_authenticated(conn)
+
+      view |> cycle_duration(:weekend)
+      view |> open_form()
+      render_click(view, "toggle_form_duration", %{"duration" => "giornata"})
+      hidden_html = submit(view, %{title: "PostFilterIdea"})
+
+      refute hidden_html =~ "PostFilterIdea"
+      assert Repo.get_by(Idea, title: "PostFilterIdea")
+
+      cleared_html = render_click(view, "clear_filters")
+
+      assigns = :sys.get_state(view.pid).socket.assigns
+      assert assigns.duration_filter == MapSet.new()
+      assert assigns.filter_state == %{}
+
+      assert cleared_html =~ "PostFilterIdea"
+      # All seeded ideas plus the new one are visible after Mostra tutte.
+      for title <- ["Sirolo", "Uffizi", "Stadio", "Bagno improvviso", "Cinema", "Bivacco"] do
+        assert cleared_html =~ title, "Expected #{title} to reappear after clear_filters"
+      end
+    end
+  end
 end
