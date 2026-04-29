@@ -79,9 +79,9 @@ Modificabili tramite seed/migration in fase di rilascio.
 
 ## Decisione su filtri non applicabili
 
-Per il filtro **durata** (slice 5): un'idea con `duration: nil` viene **esclusa** quando ≥1 chip durata è on. Razionale: chi filtra per durata sta restringendo attivamente; un'idea senza durata stimata non è "sicuramente non weekend" ma "non confermata weekend" → fuori dal match.
+Per i filtri **durata** (slice 5) e **budget** (slice 6): un'idea con valore NULL viene **esclusa** quando ≥1 chip del rispettivo filtro è on. Pattern uniforme. Razionale: chi filtra sta restringendo attivamente; un'idea senza valore non è "sicuramente non match" ma "non confermata match" → fuori.
 
-Per filtri futuri (`estimated_cost` slice 6, `distanza` slice 7) la decisione sarà rivalutata caso per caso nello spec della slice corrispondente.
+Per filtri futuri (`distanza` slice 7, `text search` slice 8) la decisione sarà rivalutata caso per caso, ma il default è NULL-exclude.
 
 ## Punti di forza dell'approccio LiveView per questo caso d'uso
 - I filtri (categoria × durata × costo × distanza × testo) si compongono server-side sulla stessa query Ecto.

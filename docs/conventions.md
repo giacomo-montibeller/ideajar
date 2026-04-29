@@ -66,6 +66,8 @@ Stringhe aggiunte in slice 3 (categories on ideas):
 
 Stringhe aggiunte in slice 4 (filter by category):
 
+> **DEPRECATED slice 6** — il filter-status live-region è stato rimosso completamente. Le righe `Live-region *` sotto non sono più renderizzate dal template (decisione UX consapevole post-slice 5: l'announce era percepito come noise). Sono mantenute qui solo per traccia storica.
+
 | Elemento                          | Testo IT                                              |
 |-----------------------------------|-------------------------------------------------------|
 | Bottone reset filtro              | `Mostra tutte`                                        |
@@ -75,14 +77,16 @@ Stringhe aggiunte in slice 4 (filter by category):
 | Aria-label chip filter off        | `<nome>`                                              |
 | Aria-label chip filter optional   | `<nome> opzionale`                                    |
 | Aria-label chip filter obbligatoria | `<nome> obbligatoria`                               |
-| Live-region prefix optional       | `<nome> opzionale, `                                  |
-| Live-region prefix required       | `<nome> obbligatoria, `                               |
-| Live-region prefix off            | `<nome> rimossa, `                                    |
-| Live-region prefix clear          | `Filtri rimossi, `                                    |
-| Live-region count singolare       | `1 idea`                                              |
-| Live-region count plurale         | `<N> idee` (incluso `0 idee`)                         |
+| Live-region prefix optional (deprecated slice 6 — live-region rimosso) | `<nome> opzionale, ` |
+| Live-region prefix required (deprecated slice 6 — live-region rimosso) | `<nome> obbligatoria, ` |
+| Live-region prefix off (deprecated slice 6 — live-region rimosso)      | `<nome> rimossa, ` |
+| Live-region prefix clear (deprecated slice 6 — live-region rimosso)    | `Filtri rimossi, ` |
+| Live-region count singolare (deprecated slice 6 — live-region rimosso) | `1 idea` |
+| Live-region count plurale (deprecated slice 6 — live-region rimosso)   | `<N> idee` (incluso `0 idee`) |
 
 Stringhe aggiunte in slice 5 (duration on ideas):
+
+> **DEPRECATED slice 6** — il filter-status live-region è stato rimosso completamente. Le righe `Live-region *` sotto non sono più renderizzate dal template (decisione UX consapevole post-slice 5). Sono mantenute qui solo per traccia storica.
 
 | Elemento                                   | Testo IT                                                          |
 |--------------------------------------------|-------------------------------------------------------------------|
@@ -101,11 +105,32 @@ Stringhe aggiunte in slice 5 (duration on ideas):
 | Helper text NULL-exclusion                 | `Le idee senza durata sono nascoste quando un filtro è attivo.`   |
 | Aria-label filter chip off                 | `<label>`                                                         |
 | Aria-label filter chip on                  | `<label> attiva`                                                  |
-| Live-region action prefix on               | `<label> attiva, `                                                |
-| Live-region action prefix off              | `<label> rimossa, `                                               |
-| Live-region compound suffix categoria      | `, filtri categoria attivi`                                       |
-| Live-region compound suffix durata         | `, filtri durata attivi`                                          |
+| Live-region action prefix on (deprecated slice 6 — live-region rimosso)  | `<label> attiva, `      |
+| Live-region action prefix off (deprecated slice 6 — live-region rimosso) | `<label> rimossa, `     |
+| Live-region compound suffix categoria (deprecated slice 6 — live-region rimosso) | `, filtri categoria attivi` |
+| Live-region compound suffix durata (deprecated slice 6 — live-region rimosso)    | `, filtri durata attivi`    |
 | Badge durata su idea card                  | `<label>` (label IT, non atom)                                    |
+
+Stringhe aggiunte in slice 6 (budget on ideas):
+
+| Elemento                                   | Testo IT                                                          |
+|--------------------------------------------|-------------------------------------------------------------------|
+| Label fieldset budget (form)               | `Budget` (no asterisco — opzionale)                               |
+| Helper text form budget                    | (nessuno — campo opzionale)                                       |
+| Chip budget 1 (value 0)                    | `gratis`                                                          |
+| Chip budget 2 (value 20)                   | `fino a 20€`                                                      |
+| Chip budget 3 (value 50)                   | `fino a 50€`                                                      |
+| Chip budget 4 (value 100)                  | `fino a 100€`                                                     |
+| Chip budget 5 (value 200)                  | `fino a 200€`                                                     |
+| Chip budget 6 (value 500)                  | `fino a 500€`                                                     |
+| Chip budget 7 (value 1000)                 | `oltre 1000€`                                                     |
+| Errore budget invalido                     | `Budget non valido`                                               |
+| Sub-label filter Budget (visivo)           | `Budget`                                                          |
+| Aria-label sub-block budget (SR)           | `Filtra per budget`                                               |
+| Helper text NULL-exclusion                 | `Le idee senza prezzo sono nascoste quando un filtro è attivo.`   |
+| Aria-label filter chip off                 | `<label>` (es. `gratis`, `fino a 100€`, `oltre 1000€`)            |
+| Aria-label filter chip on                  | `<label> attiva` (es. `gratis attiva`, `fino a 100€ attiva`, `oltre 1000€ attiva`) |
+| Badge budget su idea card                  | `<label>` (uguale al chip label)                                  |
 
 Nuova copy aggiunta da slice future va appesa qui per evitare drift.
 

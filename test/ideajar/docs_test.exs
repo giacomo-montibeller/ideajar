@@ -250,4 +250,71 @@ defmodule Ideajar.DocsTest do
              "duration paragraph still marked as 'Decisione UX aperta'"
     end
   end
+
+  describe "docs/conventions.md — slice 6 UI copy" do
+    setup do
+      {:ok, content: File.read!(Path.join(File.cwd!(), "docs/conventions.md"))}
+    end
+
+    test "lists every canonical UI copy string introduced in slice 6", %{content: content} do
+      slice_6_strings = [
+        # form fieldset label + filter sub-label
+        "Budget",
+        "gratis",
+        "fino a 20€",
+        "fino a 50€",
+        "fino a 100€",
+        "fino a 200€",
+        "fino a 500€",
+        "oltre 1000€",
+        "Budget non valido",
+        "Filtra per budget",
+        "Le idee senza prezzo sono nascoste quando un filtro è attivo.",
+        # aria-label suffix per chip on (used in 'gratis attiva', 'fino a X attiva', etc.)
+        "attiva"
+      ]
+
+      for needle <- slice_6_strings do
+        assert content =~ needle, "missing slice-6 UI copy in conventions.md: #{needle}"
+      end
+    end
+  end
+
+  describe "docs/conventions.md — live-region deprecation (slice 6)" do
+    setup do
+      {:ok, content: File.read!(Path.join(File.cwd!(), "docs/conventions.md"))}
+    end
+
+    test "marks the slice 4/5 live-region strings as deprecated", %{content: content} do
+      # The deprecation marker should appear near the slice 4 + slice 5
+      # live-region copy tables. Acceptable forms: "(deprecated slice 6 —
+      # live-region rimosso)", "DEPRECATED slice 6", or similar.
+      assert content =~ ~r/deprecated/i, "missing deprecation marker in conventions.md"
+      assert content =~ ~r/live[ -]region/i, "deprecation context should mention live-region"
+    end
+  end
+
+  describe "CONTEXT.md — slice 6 NULL-exclude uniform" do
+    setup do
+      {:ok, content: File.read!(Path.join(File.cwd!(), "CONTEXT.md"))}
+    end
+
+    test "documents NULL-exclude uniformity for both duration and budget filters",
+         %{content: content} do
+      # Should mention both 'durata' (slice 5) and 'budget' (slice 6) in the
+      # same context, with NULL-exclude pattern documented as uniform.
+      assert content =~ ~r/durata/i
+      assert content =~ ~r/budget/i
+      assert content =~ ~r/(NULL|nil).*esclus/i, "NULL-exclude pattern not documented"
+    end
+
+    test "no longer carries the slice 5 'NULL-pass per budget da rivalutare' open framing",
+         %{content: content} do
+      # Slice 5 step 9 had documented the duration-specific NULL-exclude with
+      # deferred decision for budget. Slice 6 step 10 closes this — the
+      # framing should now be uniform, not deferred.
+      refute content =~ ~r/(da rivalutare|aperta).*budget/i,
+             "CONTEXT.md still treats budget NULL-handling as open"
+    end
+  end
 end
