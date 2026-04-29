@@ -229,6 +229,7 @@ defmodule IdeajarWeb.IdeaLive.Index do
      socket
      |> assign(:filter_state, %{})
      |> assign(:duration_filter, MapSet.new())
+     |> assign(:cost_filter, nil)
      |> reload_ideas()}
   end
 

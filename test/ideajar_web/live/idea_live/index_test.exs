@@ -3546,4 +3546,391 @@ defmodule IdeajarWeb.IdeaLive.IndexTest do
       refute filter_chip_100 =~ "aria-pressed"
     end
   end
+
+  # ── Slice 6 Step 9: clear_filters extension + combined 3-way + isolation ──
+  #
+  # Most tests in this block are regression pins: the architecture is already
+  # correct from steps 6–8 (combined AND in `Ideas.list_ideas/1`, separate
+  # form/filter assigns, `filter_active?/3` covering all three groups). The
+  # only behavioural change in step 9 is the `clear_filters` handler being
+  # extended to also reset `@cost_filter`. The remaining tests prevent
+  # future drift.
+  describe "clear_filters and combined filters (slice 6 step 9)" do
+    # Combined seeder — ideas with categories + duration + cost, so the
+    # 3-way AND can be exercised concretely. Mirrors the priced variant
+    # used in step 8 with durations layered on for F13.
+    defp insert_idea_full!(title, category_names, duration, cost, %DateTime{} = at) do
+      cats = Enum.map(category_names, &CategoriesFixtures.category_by_name!/1)
+
+      idea =
+        %Idea{title: title, duration: duration, estimated_cost: cost}
+        |> Ecto.Changeset.change()
+        |> Ecto.Changeset.put_assoc(:categories, cats)
+        |> Repo.insert!()
+
+      Repo.update!(
+        Ecto.Changeset.change(idea, inserted_at: at, updated_at: at),
+        force: true
+      )
+    end
+
+    defp seed_6_lv_ideas_full do
+      %{
+        sirolo:
+          insert_idea_full!(
+            "Sirolo",
+            ["mare", "viaggio"],
+            :weekend,
+            200,
+            ~U[2026-04-27 10:00:00Z]
+          ),
+        parigi:
+          insert_idea_full!(
+            "Parigi",
+            ["viaggio"],
+            :weekend,
+            1000,
+            ~U[2026-04-27 10:01:00Z]
+          ),
+        uffizi:
+          insert_idea_full!(
+            "Uffizi",
+            ["museo", "cultura"],
+            :giornata,
+            50,
+            ~U[2026-04-27 10:02:00Z]
+          ),
+        stadio:
+          insert_idea_full!(
+            "Stadio",
+            ["sport"],
+            :poche_ore,
+            100,
+            ~U[2026-04-27 10:03:00Z]
+          ),
+        cinema:
+          insert_idea_full!(
+            "Cinema",
+            ["cinema", "cultura"],
+            :mezza_giornata,
+            20,
+            ~U[2026-04-27 10:04:00Z]
+          ),
+        bagno:
+          insert_idea_full!(
+            "Bagno",
+            ["mare"],
+            nil,
+            nil,
+            ~U[2026-04-27 10:05:00Z]
+          )
+      }
+    end
+
+    # 1. F16 — clear_filters resets ALL three filter groups (categoria +
+    # durata + budget) and the list returns to all 6 ideas. The categoria
+    # and durata reset is regression-pinned by slice 5 step 7; the budget
+    # reset is the actual GREEN of step 9.
+    test "clear_filters resets filter_state, duration_filter AND cost_filter (F16)",
+         %{conn: conn} do
+      _ = seed_6_lv_ideas_full()
+      view = mount_authenticated(conn)
+      mare = CategoriesFixtures.category_by_name!("mare")
+
+      view |> cycle_duration(:weekend)
+      view |> cycle_filter("mare") |> cycle_filter("mare")
+      view |> cycle_budget(100)
+
+      pre = :sys.get_state(view.pid).socket.assigns
+      assert pre.filter_state == %{mare.id => :required}
+      assert pre.duration_filter == MapSet.new([:weekend])
+      assert pre.cost_filter == 100
+
+      html = render_click(view, "clear_filters")
+
+      assigns = :sys.get_state(view.pid).socket.assigns
+      assert assigns.filter_state == %{}
+      assert assigns.duration_filter == MapSet.new()
+      assert assigns.cost_filter == nil
+
+      for title <- ["Sirolo", "Parigi", "Uffizi", "Stadio", "Cinema", "Bagno"] do
+        assert html =~ title, "Expected #{title} after clear_filters"
+      end
+    end
+
+    # 2. S7 — idempotency: calling clear_filters when ALL three groups are
+    # already empty must not crash and must leave each at its empty
+    # representation. Extends the slice 5 step 7 idempotency pin to budget.
+    test "clear_filters is idempotent when all three groups are already empty (S7)",
+         %{conn: conn} do
+      _ = seed_6_lv_ideas_full()
+      view = mount_authenticated(conn)
+
+      pre = :sys.get_state(view.pid).socket.assigns
+      assert pre.filter_state == %{}
+      assert pre.duration_filter == MapSet.new()
+      assert pre.cost_filter == nil
+
+      render_click(view, "clear_filters")
+
+      assigns = :sys.get_state(view.pid).socket.assigns
+      assert assigns.filter_state == %{}
+      assert assigns.duration_filter == MapSet.new()
+      assert assigns.cost_filter == nil
+      assert Process.alive?(view.pid)
+    end
+
+    # 3. F13 — combined 3-way AND across categoria + durata + budget.
+    # viaggio:required + weekend + cost <= 500 → Sirolo only.
+    #   * Parigi: viaggio + weekend, but cost 1000 > 500 → excluded
+    #   * Bagno: NULL duration AND NULL cost → excluded twice over
+    #   * Uffizi/Stadio/Cinema: lack viaggio → excluded
+    test "viaggio required + weekend + cost <= 500: only Sirolo matches (F13 3-way AND)",
+         %{conn: conn} do
+      _ = seed_6_lv_ideas_full()
+      view = mount_authenticated(conn)
+
+      view |> cycle_filter("viaggio") |> cycle_filter("viaggio")
+      view |> cycle_duration(:weekend)
+      html = view |> cycle_budget(500) |> render()
+
+      assert html =~ "Sirolo"
+      refute html =~ "Parigi"
+      refute html =~ "Uffizi"
+      refute html =~ "Stadio"
+      refute html =~ "Cinema"
+      refute html =~ "Bagno"
+    end
+
+    # 4. Combined 3-way no-match → empty-filter state (NOT workspace-empty).
+    # passeggiata is a category none of the seeded ideas carry; layering
+    # duration + budget on top keeps the filtered list empty. The empty-
+    # filter copy must appear with its single Mostra tutte affordance.
+    test "passeggiata required + weekend + cost=100 → empty-filter state (combined no-match)",
+         %{conn: conn} do
+      _ = seed_6_lv_ideas_full()
+      view = mount_authenticated(conn)
+
+      view |> cycle_filter("passeggiata") |> cycle_filter("passeggiata")
+      view |> cycle_duration(:weekend)
+      html = view |> cycle_budget(100) |> render()
+
+      assert html =~ "Nessuna idea per i filtri attivi."
+      assert html =~ ~s(data-testid="empty-filter-state")
+      assert html =~ "Mostra tutte"
+      refute html =~ "Nessuna idea ancora. Aggiungine una qui sopra."
+    end
+
+    # 5a. F10 extended to 3-way: combined active + non-empty list →
+    # exactly ONE Mostra tutte under the filter row, none in the empty
+    # branch (the list isn't empty). Pinned in slice 5 step 7 for 2-way;
+    # extended here to cover budget as the third group.
+    test "combined 3-way active + non-empty list: exactly one Mostra tutte under filter row",
+         %{conn: conn} do
+      _ = seed_6_lv_ideas_full()
+      view = mount_authenticated(conn)
+
+      view |> cycle_filter("viaggio") |> cycle_filter("viaggio")
+      view |> cycle_duration(:weekend)
+      html = view |> cycle_budget(500) |> render()
+
+      count = Regex.scan(~r/Mostra tutte/, html) |> length()
+      assert count == 1
+      assert html =~ ~s(id="mostra-tutte")
+      refute html =~ ~s(id="mostra-tutte-empty")
+    end
+
+    # 5b. Combined 3-way active + empty list → exactly ONE Mostra tutte
+    # INSIDE the empty-filter message, none under the filter row.
+    test "combined 3-way active + empty list: exactly one Mostra tutte inside empty-filter state",
+         %{conn: conn} do
+      _ = seed_6_lv_ideas_full()
+      view = mount_authenticated(conn)
+
+      view |> cycle_filter("passeggiata") |> cycle_filter("passeggiata")
+      view |> cycle_duration(:weekend)
+      html = view |> cycle_budget(100) |> render()
+
+      count = Regex.scan(~r/Mostra tutte/, html) |> length()
+      assert count == 1
+      assert html =~ ~s(id="mostra-tutte-empty")
+      refute html =~ ~s(id="mostra-tutte")
+    end
+
+    # 6. F19 — budget filter survives form submission. Cycle cost=200 on,
+    # open the form, submit a valid idea with cost=100; @cost_filter must
+    # remain 200 and the new idea must be both persisted AND visible in
+    # the filtered list (cost 100 ≤ 200).
+    test "F19: cost_filter survives form submit (regression pin)", %{conn: conn} do
+      _ = seed_6_lv_ideas_full()
+      view = mount_authenticated(conn)
+
+      view |> cycle_budget(200)
+      pre = :sys.get_state(view.pid).socket.assigns
+      assert pre.cost_filter == 200
+
+      view |> open_form()
+      render_click(view, "toggle_form_budget", %{"cost" => "100"})
+      html = submit(view, %{title: "BudgetSurvivor"})
+
+      assigns = :sys.get_state(view.pid).socket.assigns
+      assert assigns.cost_filter == 200
+      persisted = Repo.get_by(Idea, title: "BudgetSurvivor")
+      assert persisted
+      assert persisted.estimated_cost == 100
+      assert html =~ "BudgetSurvivor"
+    end
+
+    # 7. F20 — new idea outside the active budget filter is hidden. With
+    # cost_filter=50 on, submitting an idea with cost=200 persists it but
+    # leaves it out of the rendered list (200 > 50).
+    test "F20: new idea with cost=200 hidden when cost_filter=50 active (regression pin)",
+         %{conn: conn} do
+      _ = seed_6_lv_ideas_full()
+      view = mount_authenticated(conn)
+
+      view |> cycle_budget(50)
+
+      view |> open_form()
+      render_click(view, "toggle_form_budget", %{"cost" => "200"})
+      html = submit(view, %{title: "OltreFiltro"})
+
+      assigns = :sys.get_state(view.pid).socket.assigns
+      assert assigns.cost_filter == 50
+      persisted = Repo.get_by(Idea, title: "OltreFiltro")
+      assert persisted
+      assert persisted.estimated_cost == 200
+      refute html =~ "OltreFiltro"
+    end
+
+    # 8. F20 — new NULL-cost idea hidden when cost_filter is on. Mirrors
+    # the AA7 / step 8 NULL-exclude invariant for budget specifically:
+    # ideas created *while* the filter is active are subject to the same
+    # uniform NULL-exclude rule as pre-existing ones.
+    test "F20: new NULL-cost idea hidden when cost_filter=50 active (NULL-exclude regression pin)",
+         %{conn: conn} do
+      _ = seed_6_lv_ideas_full()
+      view = mount_authenticated(conn)
+
+      view |> cycle_budget(50)
+      total_before = length(Ideajar.Ideas.list_ideas([]))
+
+      view |> open_form()
+      # No form-budget chip pressed → @selected_cost stays nil →
+      # maybe_inject_budget leaves params untouched → idea persisted with
+      # estimated_cost: nil.
+      html = submit(view, %{title: "SenzaPrezzo"})
+
+      total_after = length(Ideajar.Ideas.list_ideas([]))
+      assert total_after == total_before + 1
+
+      persisted = Repo.get_by(Idea, title: "SenzaPrezzo")
+      assert persisted
+      assert persisted.estimated_cost == nil
+
+      refute html =~ "SenzaPrezzo"
+
+      assigns = :sys.get_state(view.pid).socket.assigns
+      assert assigns.cost_filter == 50
+    end
+
+    # 9. Isolation — clear_filters does NOT touch the form's @selected_cost
+    # nor the form chip's aria-pressed state. The form budget belongs to
+    # the form sub-block; @cost_filter belongs to the filter row;
+    # clear_filters only acts on the latter. Parallel to slice 5 step 8
+    # isolation #4.
+    test "isolation: clear_filters does not touch form @selected_cost (regression pin)",
+         %{conn: conn} do
+      _ = seed_6_lv_ideas_full()
+      view = mount_authenticated(conn) |> open_form()
+      render_click(view, "toggle_form_budget", %{"cost" => "100"})
+
+      pre = :sys.get_state(view.pid).socket.assigns
+      assert pre.selected_cost == 100
+
+      view |> cycle_budget(200)
+      html = render_click(view, "clear_filters")
+
+      assigns = :sys.get_state(view.pid).socket.assigns
+      assert assigns.selected_cost == 100
+      assert assigns.cost_filter == nil
+
+      [hundred_form_btn] =
+        Regex.run(
+          ~r{<button[^>]*id="form-budget-chip-100"[^>]*>},
+          html
+        ) || [nil] |> List.wrap()
+
+      assert hundred_form_btn
+      assert hundred_form_btn =~ ~s(aria-pressed="true")
+    end
+
+    # 10. Isolation — toggle_budget_filter does NOT touch the form's
+    # @selected_cost. The two state slots live side by side and never
+    # cross. Parallel to slice 5 step 8 isolation #5.
+    test "isolation: toggle_budget_filter does not touch form @selected_cost (regression pin)",
+         %{conn: conn} do
+      _ = seed_6_lv_ideas_full()
+      view = mount_authenticated(conn) |> open_form()
+      render_click(view, "toggle_form_budget", %{"cost" => "100"})
+
+      pre = :sys.get_state(view.pid).socket.assigns
+      assert pre.selected_cost == 100
+
+      html = view |> cycle_budget(200) |> render()
+
+      assigns = :sys.get_state(view.pid).socket.assigns
+      assert assigns.selected_cost == 100
+      assert assigns.cost_filter == 200
+
+      [hundred_form_btn] =
+        Regex.run(
+          ~r{<button[^>]*id="form-budget-chip-100"[^>]*>},
+          html
+        ) || [nil] |> List.wrap()
+
+      assert hundred_form_btn
+      assert hundred_form_btn =~ ~s(aria-pressed="true")
+
+      [twohundred_filter_btn] =
+        Regex.run(
+          ~r{<button[^>]*id="filter-budget-chip-200"[^>]*>},
+          html
+        ) || [nil] |> List.wrap()
+
+      assert twohundred_filter_btn
+      assert twohundred_filter_btn =~ ~s(data-budget-filter-state="on")
+    end
+
+    # 11. Refresh — @cost_filter is process-local state. A fresh mount
+    # (simulating a page refresh) starts with the filter cleared, even if
+    # a prior LV had it active. Parallel to slice 5 step 8 refresh pin
+    # for @duration_filter.
+    test "refresh resets @cost_filter to nil (regression pin)", %{conn: conn} do
+      _ = seed_6_lv_ideas_full()
+      view = mount_authenticated(conn)
+      view |> cycle_budget(100)
+      pre = :sys.get_state(view.pid).socket.assigns
+      assert pre.cost_filter == 100
+
+      {:ok, fresh_view, _html} =
+        live_isolated(conn, Index, session: @authenticated_session)
+
+      assigns = :sys.get_state(fresh_view.pid).socket.assigns
+      assert assigns.cost_filter == nil
+      assert assigns.duration_filter == MapSet.new()
+      assert assigns.filter_state == %{}
+    end
+
+    # 12. Strategic W2 — pin the arity change of `filter_active?`. After
+    # slice 6 step 8 the helper is `/3` (categoria + durata + budget); the
+    # `/2` form was deleted in the same step. This test makes the change
+    # explicit so a future regression that re-introduces `/2` (or drops
+    # an argument from a template call site) fails loudly here in
+    # addition to the HEEx compile error.
+    test "filter_active?/3 is exported and /2 is not (arity regression pin)" do
+      assert function_exported?(IdeajarWeb.IdeaLive.Index, :filter_active?, 3)
+      refute function_exported?(IdeajarWeb.IdeaLive.Index, :filter_active?, 2)
+    end
+  end
 end
