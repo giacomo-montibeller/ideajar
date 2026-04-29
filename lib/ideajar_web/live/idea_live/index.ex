@@ -49,20 +49,6 @@ defmodule IdeajarWeb.IdeaLive.Index do
      socket
      |> assign(:filter_state, %{})
      |> assign(:duration_filter, MapSet.new())
-     # Live-region split (slice 5 step 6 / AA20):
-     #
-     #   * `@last_filter_action_prefix` — action-only part such as
-     #     `"weekend attiva, "` or `"Filtri rimossi, "`. `nil` until the
-     #     user first interacts with the filter row.
-     #   * `@last_filter_action_suffix` — compound-state suffix such as
-     #     `", filtri categoria attivi"`. Empty string when the *other*
-     #     filter group is empty (no compound).
-     #
-     # The template interleaves prefix + count + suffix at render time
-     # because the count is derived from `length(@ideas)` after each
-     # event. See `compound_suffix/3`.
-     |> assign(:last_filter_action_prefix, nil)
-     |> assign(:last_filter_action_suffix, "")
      |> assign(:categories, Categories.list_categories())
      |> assign(:form_visible?, false)
      |> reset_categories()
@@ -167,16 +153,11 @@ defmodule IdeajarWeb.IdeaLive.Index do
   def handle_event("cycle_filter", %{"id" => raw_id}, socket) when is_binary(raw_id) do
     case parse_known_category_id(raw_id, socket.assigns.categories) do
       {:ok, id} ->
-        category_name = category_name_by_id(id, socket.assigns.categories)
         new_state = cycle_state(socket.assigns.filter_state, id)
-        new_action_prefix = action_prefix(new_state, id, category_name)
-        new_suffix = compound_suffix(new_state, socket.assigns.duration_filter, :category)
 
         {:noreply,
          socket
          |> assign(:filter_state, new_state)
-         |> assign(:last_filter_action_prefix, new_action_prefix)
-         |> assign(:last_filter_action_suffix, new_suffix)
          |> reload_ideas()}
 
       :error ->
@@ -202,14 +183,9 @@ defmodule IdeajarWeb.IdeaLive.Index do
             do: MapSet.delete(current, atom),
             else: MapSet.put(current, atom)
 
-        new_prefix = duration_action_prefix(new_set, atom)
-        new_suffix = compound_suffix(socket.assigns.filter_state, new_set, :duration)
-
         {:noreply,
          socket
          |> assign(:duration_filter, new_set)
-         |> assign(:last_filter_action_prefix, new_prefix)
-         |> assign(:last_filter_action_suffix, new_suffix)
          |> reload_ideas()}
 
       :error ->
@@ -227,8 +203,6 @@ defmodule IdeajarWeb.IdeaLive.Index do
      socket
      |> assign(:filter_state, %{})
      |> assign(:duration_filter, MapSet.new())
-     |> assign(:last_filter_action_prefix, "Filtri rimossi, ")
-     |> assign(:last_filter_action_suffix, "")
      |> reload_ideas()}
   end
 
@@ -288,8 +262,6 @@ defmodule IdeajarWeb.IdeaLive.Index do
     {:noreply,
      socket
      |> assign(:form_visible?, false)
-     |> assign(:last_filter_action_prefix, nil)
-     |> assign(:last_filter_action_suffix, "")
      |> reset_categories()
      |> reset_duration()
      |> reset_budget()
@@ -364,61 +336,6 @@ defmodule IdeajarWeb.IdeaLive.Index do
   """
   def filter_active?(filter_state, duration_filter) do
     filter_state != %{} or MapSet.size(duration_filter) > 0
-  end
-
-  defp category_name_by_id(id, categories) do
-    Enum.find_value(categories, fn cat -> if cat.id == id, do: cat.name end)
-  end
-
-  # Builds the live-region prefix that describes the action just applied
-  # to the chip with `id`. Read directly from the post-cycle state.
-  defp action_prefix(filter_state, id, name) do
-    case Map.get(filter_state, id) do
-      :optional -> "#{name} opzionale, "
-      :required -> "#{name} obbligatoria, "
-      nil -> "#{name} rimossa, "
-    end
-  end
-
-  # Slice 5 step 6 / AA9 — duration live-region prefix:
-  #
-  #   * `<label> attiva, ` when the toggle put `atom` into `new_set`
-  #   * `<label> rimossa, ` when the toggle removed `atom` from `new_set`
-  #
-  # Uses the IT label (not the atom form) so the SR announcement reads
-  # `poche ore attiva, …` instead of `poche_ore attiva, …`.
-  defp duration_action_prefix(new_set, atom) do
-    label = Duration.label(atom)
-
-    if MapSet.member?(new_set, atom),
-      do: "#{label} attiva, ",
-      else: "#{label} rimossa, "
-  end
-
-  # Slice 5 step 6 / AA20 — compound live-region suffix.
-  #
-  # When the action was on one filter group (categoria or durata) and the
-  # OTHER group has at least one active filter, append a short suffix
-  # advertising that compound state. Returns `""` when the other group is
-  # empty (single-axis filter — no compound to announce).
-  #
-  # Four cases:
-  #
-  #   * `:category` action, durations active   → `, filtri durata attivi`
-  #   * `:category` action, durations empty    → `""`
-  #   * `:duration` action, categories active  → `, filtri categoria attivi`
-  #   * `:duration` action, categories empty   → `""`
-  #
-  # `clear_filters` does NOT route through this helper because its prefix
-  # `Filtri rimossi, ` is an absolute statement: both groups are empty
-  # by construction, so the suffix is always `""` and the helper would be
-  # a no-op anyway.
-  defp compound_suffix(_filter_state, duration_filter, :category) do
-    if MapSet.size(duration_filter) > 0, do: ", filtri durata attivi", else: ""
-  end
-
-  defp compound_suffix(filter_state, _duration_filter, :duration) do
-    if filter_state != %{}, do: ", filtri categoria attivi", else: ""
   end
 
   # Tri-state cycle: off → optional → required → off.

@@ -167,15 +167,6 @@
       </button>
     </section>
 
-    <div
-      role="status"
-      aria-live="polite"
-      id="filter-status"
-      class="text-sm text-base-content/70"
-    >
-      {@last_filter_action_prefix}{IdeajarWeb.Pluralization.idee_count(length(@ideas))}{@last_filter_action_suffix}
-    </div>
-
     <p
       :if={@ideas == [] and not filter_active?(@filter_state, @duration_filter)}
       class="text-base-content/70"

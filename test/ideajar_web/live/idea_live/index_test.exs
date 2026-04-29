@@ -1249,116 +1249,6 @@ defmodule IdeajarWeb.IdeaLive.IndexTest do
     end
   end
 
-  describe "live-region count + last action (slice 4)" do
-    test "initial render includes a polite live-region with id filter-status",
-         %{conn: conn} do
-      _ = seed_5_lv_ideas()
-      {:ok, _view, html} = live_isolated(conn, Index, session: @authenticated_session)
-
-      assert html =~ ~s(id="filter-status")
-      assert html =~ ~s(role="status")
-      assert html =~ ~s(aria-live="polite")
-      assert html =~ "5 idee"
-    end
-
-    test "no filter active: live-region has no action prefix", %{conn: conn} do
-      _ = seed_5_lv_ideas()
-      {:ok, _view, html} = live_isolated(conn, Index, session: @authenticated_session)
-
-      assert html =~ extract_filter_status(html)
-      status = extract_filter_status(html)
-      assert status == "5 idee"
-    end
-
-    test "cycle to optional adds 'opzionale,' prefix and updates count",
-         %{conn: conn} do
-      _ = seed_5_lv_ideas()
-      {:ok, view, _html} = live_isolated(conn, Index, session: @authenticated_session)
-
-      html = view |> cycle_filter("mare") |> render()
-      assert extract_filter_status(html) == "mare opzionale, 2 idee"
-    end
-
-    test "cycle to required swaps the prefix to 'obbligatoria,'", %{conn: conn} do
-      _ = seed_5_lv_ideas()
-      {:ok, view, _html} = live_isolated(conn, Index, session: @authenticated_session)
-
-      view |> cycle_filter("mare")
-      html = view |> cycle_filter("mare") |> render()
-      assert extract_filter_status(html) == "mare obbligatoria, 2 idee"
-    end
-
-    test "cycle back to off uses 'rimossa,' prefix", %{conn: conn} do
-      _ = seed_5_lv_ideas()
-      {:ok, view, _html} = live_isolated(conn, Index, session: @authenticated_session)
-
-      view |> cycle_filter("mare") |> cycle_filter("mare")
-      html = view |> cycle_filter("mare") |> render()
-      assert extract_filter_status(html) == "mare rimossa, 5 idee"
-    end
-
-    test "Mostra tutte produces 'Filtri rimossi,' prefix", %{conn: conn} do
-      _ = seed_5_lv_ideas()
-      {:ok, view, _html} = live_isolated(conn, Index, session: @authenticated_session)
-
-      view |> cycle_filter("mare")
-      html = render_click(view, "clear_filters")
-      assert extract_filter_status(html) == "Filtri rimossi, 5 idee"
-    end
-
-    test "singular boundary: filter producing 1 result shows '1 idea'",
-         %{conn: conn} do
-      _ = seed_5_lv_ideas()
-      {:ok, view, _html} = live_isolated(conn, Index, session: @authenticated_session)
-
-      # mare required + sport required → only Bagno (1 idea)
-      view |> cycle_filter("mare") |> cycle_filter("mare")
-      html = view |> cycle_filter("sport") |> cycle_filter("sport") |> render()
-      assert extract_filter_status(html) == "sport obbligatoria, 1 idea"
-    end
-
-    test "DOM node identity stable across cycles", %{conn: conn} do
-      _ = seed_5_lv_ideas()
-      {:ok, view, _html} = live_isolated(conn, Index, session: @authenticated_session)
-
-      for _ <- 1..3 do
-        html = view |> cycle_filter("mare") |> render()
-        # Exactly one filter-status element in every render
-        count = Regex.scan(~r/id="filter-status"/, html) |> length()
-        assert count == 1
-      end
-    end
-
-    # F11/A16 lifecycle: form save success resets @last_filter_action to nil
-    test "form save success clears last action prefix from the live-region",
-         %{conn: conn} do
-      _ = seed_5_lv_ideas()
-      view = mount_authenticated(conn) |> open_form()
-      view |> cycle_filter("mare")
-
-      # Sanity: prefix is present after cycle
-      pre_save_html = render(view)
-      assert extract_filter_status(pre_save_html) =~ "opzionale,"
-
-      # Submit: idea is created, prefix is cleared
-      submit(view, %{title: "Nuova"})
-      post_save_html = render(view)
-
-      status = extract_filter_status(post_save_html)
-      refute status =~ "opzionale,"
-      refute status =~ "obbligatoria,"
-      refute status =~ "rimossa,"
-      refute status =~ "Filtri rimossi,"
-    end
-  end
-
-  defp extract_filter_status(html) do
-    case Regex.run(~r{<div[^>]*id="filter-status"[^>]*>(.*?)</div>}s, html) do
-      [_, inner] -> inner |> String.trim()
-      _ -> nil
-    end
-  end
-
   describe "clear_filters handler (slice 4)" do
     # Scenario: "Mostra tutte" resets the filter state but leaves chips visible
     test "clear_filters resets @filter_state to %{}", %{conn: conn} do
@@ -2378,68 +2268,6 @@ defmodule IdeajarWeb.IdeaLive.IndexTest do
       assert piu_giorni_btn =~ ~s(data-duration-filter-state="on")
     end
 
-    # 11. Live-region prefix on, no compound (A5)
-    test "live-region: cycle weekend on, no category filter → 'weekend attiva, 1 idea'",
-         %{conn: conn} do
-      _ = seed_6_lv_ideas_with_durations()
-      view = mount_authenticated(conn)
-
-      html = view |> cycle_duration(:weekend) |> render()
-
-      assert extract_filter_status(html) == "weekend attiva, 1 idea"
-    end
-
-    # 12. Live-region prefix off
-    test "live-region: cycle weekend off → 'weekend rimossa, 6 idee'", %{conn: conn} do
-      _ = seed_6_lv_ideas_with_durations()
-      view = mount_authenticated(conn)
-
-      view |> cycle_duration(:weekend)
-      html = view |> cycle_duration(:weekend) |> render()
-
-      assert extract_filter_status(html) == "weekend rimossa, 6 idee"
-    end
-
-    # 13. Compound suffix on durata-action (A13/AA20)
-    test "live-region compound: category mare required + cycle weekend on → suffix 'filtri categoria attivi'",
-         %{conn: conn} do
-      _ = seed_6_lv_ideas_with_durations()
-      view = mount_authenticated(conn)
-
-      # Cycle mare to required (twice through cycle_filter)
-      view |> cycle_filter("mare") |> cycle_filter("mare")
-      html = view |> cycle_duration(:weekend) |> render()
-
-      assert extract_filter_status(html) ==
-               "weekend attiva, 1 idea, filtri categoria attivi"
-    end
-
-    # 14. Compound suffix on categoria-action (A13/AA20)
-    test "live-region compound: duration weekend on + cycle category mare to required → suffix 'filtri durata attivi'",
-         %{conn: conn} do
-      _ = seed_6_lv_ideas_with_durations()
-      view = mount_authenticated(conn)
-
-      view |> cycle_duration(:weekend)
-      view |> cycle_filter("mare")
-      html = view |> cycle_filter("mare") |> render()
-
-      assert extract_filter_status(html) ==
-               "mare obbligatoria, 1 idea, filtri durata attivi"
-    end
-
-    # 15. Filtri rimossi no suffix
-    test "live-region: with both groups active, click 'Mostra tutte' → 'Filtri rimossi, 6 idee' (no suffix)",
-         %{conn: conn} do
-      _ = seed_6_lv_ideas_with_durations()
-      view = mount_authenticated(conn)
-
-      view |> cycle_duration(:weekend) |> cycle_filter("mare")
-      html = render_click(view, "clear_filters")
-
-      assert extract_filter_status(html) == "Filtri rimossi, 6 idee"
-    end
-
     # 16. Hostile filter duration uniform list (S1, S2)
     for value <- ["schifoso", "", "WEEKEND", "poche_ora", "poche ore"] do
       test "toggle_duration_filter with hostile string #{inspect(value)} is a no-op",
@@ -2507,8 +2335,9 @@ defmodule IdeajarWeb.IdeaLive.IndexTest do
   # combined-filter case (`Mostra tutte` rendered exactly once).
   describe "clear_filters and combined filters (slice 5 step 7)" do
     # 1. F12 — clear_filters resets BOTH @filter_state and @duration_filter,
-    # the list returns to all 6 ideas, and the live-region announces the
-    # canonical 'Filtri rimossi, 6 idee' with NO compound suffix.
+    # and the list returns to all 6 ideas. (Slice 6 step 7 removed the
+    # live-region; the assigns + DOM list re-render are the substantive
+    # invariants.)
     test "clear_filters resets both filter_state (categoria) and duration_filter (durata)",
          %{conn: conn} do
       _ = seed_6_lv_ideas_with_durations()
@@ -2534,8 +2363,6 @@ defmodule IdeajarWeb.IdeaLive.IndexTest do
       for title <- ["Sirolo", "Uffizi", "Stadio", "Bagno improvviso", "Cinema", "Bivacco"] do
         assert html =~ title, "Expected #{title} after clear_filters"
       end
-
-      assert extract_filter_status(html) == "Filtri rimossi, 6 idee"
     end
 
     # 2. S7 — idempotency: calling clear_filters when both groups are already
@@ -2654,24 +2481,6 @@ defmodule IdeajarWeb.IdeaLive.IndexTest do
       assert html =~ ~s(id="mostra-tutte")
       refute html =~ ~s(id="mostra-tutte-empty")
     end
-
-    # 7. AA20 regression: clear_filters live-region NEVER carries a compound
-    # suffix because both groups are empty by construction post-clear.
-    test "clear_filters live-region has no compound suffix even when both groups were active",
-         %{conn: conn} do
-      _ = seed_6_lv_ideas_with_durations()
-      view = mount_authenticated(conn)
-
-      view |> cycle_duration(:weekend)
-      view |> cycle_filter("mare") |> cycle_filter("mare")
-
-      html = render_click(view, "clear_filters")
-
-      status = extract_filter_status(html)
-      assert status == "Filtri rimossi, 6 idee"
-      refute status =~ "filtri categoria attivi"
-      refute status =~ "filtri durata attivi"
-    end
   end
 
   # ── Slice 5 Step 8: form/filter isolation + new-idea-outside-filter ──
@@ -2705,8 +2514,8 @@ defmodule IdeajarWeb.IdeaLive.IndexTest do
 
     # F15 — new idea outside duration filter is hidden. Pinning: pre-submit
     # only Sirolo matches (the seeded :weekend idea); after creating a
-    # :giornata idea the filtered list is unchanged and the live-region
-    # count tracks length(@ideas) post-save (still 1, prefix reset to nil).
+    # :giornata idea the filtered list is unchanged. (Slice 6 step 7 removed
+    # the live-region; @ideas length and DOM contents carry the invariant.)
     test "F15: new :giornata idea hidden when :weekend filter active (regression pin)",
          %{conn: conn} do
       _ = seed_6_lv_ideas_with_durations()
@@ -2728,9 +2537,6 @@ defmodule IdeajarWeb.IdeaLive.IndexTest do
 
       assigns = :sys.get_state(view.pid).socket.assigns
       assert length(assigns.ideas) == pre_count
-      # handle_save_result/3 resets the action prefix; live-region just shows
-      # the post-save count (1 idea), proving it was NOT incremented.
-      assert extract_filter_status(html) == "1 idea"
       assert Repo.get_by(Idea, title: "GiornataExtra")
     end
 
@@ -3232,6 +3038,59 @@ defmodule IdeajarWeb.IdeaLive.IndexTest do
         Regex.scan(~r{<button[^>]*id="form-budget-chip-\d+"[^>]*tabindex[^>]*>}, html)
 
       assert offenders == []
+    end
+  end
+
+  # ── Slice 6 Step 7: filter-status live-region removal cascade ──
+  #
+  # The slice-4/slice-5 `<div role="status" aria-live="polite" id="filter-status">`
+  # is removed entirely (BB9, A5, D-LR1). The chip aria-pressed state and the
+  # `Mostra tutte` affordance carry the announce-the-filter-state burden;
+  # the redundant live-region was over-engineered for a 2-user IT-only app.
+  #
+  # These tests are positive-of-absence: they assert the live-region is NOT
+  # present at mount, after cycle_filter, after toggle_duration_filter, and
+  # after clear_filters. The filter-row aria-live="polite" (slice 2 success
+  # flash sits in its own live-region — unrelated) is NOT asserted against.
+  describe "filter-status live-region removed (slice 6 step 7)" do
+    test "mount: no element with id=\"filter-status\" exists in the DOM",
+         %{conn: conn} do
+      _ = seed_5_lv_ideas()
+      {:ok, _view, html} = live_isolated(conn, Index, session: @authenticated_session)
+
+      refute html =~ ~r/id="filter-status"/
+    end
+
+    test "mount: no role=\"status\" element appears inside the filter-row section",
+         %{conn: conn} do
+      _ = seed_5_lv_ideas()
+      {:ok, _view, html} = live_isolated(conn, Index, session: @authenticated_session)
+
+      [filter_row] =
+        Regex.run(
+          ~r{<section[^>]*data-testid="filter-row".*?</section>}s,
+          html
+        ) || [nil] |> List.wrap()
+
+      assert filter_row
+      refute filter_row =~ ~r/role="status"/
+      refute filter_row =~ ~r/aria-live="polite"/
+    end
+
+    test "after cycle_filter / toggle_duration_filter / clear_filters: no role=\"status\" filter announcement appears",
+         %{conn: conn} do
+      _ = seed_5_lv_ideas()
+      view = mount_authenticated(conn)
+
+      html_after_cycle = view |> cycle_filter("mare") |> render()
+      refute html_after_cycle =~ ~r/id="filter-status"/
+
+      html_after_duration = view |> cycle_duration(:weekend) |> render()
+      refute html_after_duration =~ ~r/id="filter-status"/
+
+      html_after_clear = render_click(view, "clear_filters")
+      refute html_after_clear =~ ~r/id="filter-status"/
+      refute html_after_clear =~ "Filtri rimossi"
     end
   end
 end
