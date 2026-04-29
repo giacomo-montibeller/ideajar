@@ -49,6 +49,7 @@ defmodule IdeajarWeb.IdeaLive.Index do
      socket
      |> assign(:filter_state, %{})
      |> assign(:duration_filter, MapSet.new())
+     |> assign(:cost_filter, nil)
      |> assign(:categories, Categories.list_categories())
      |> assign(:form_visible?, false)
      |> reset_categories()
@@ -198,6 +199,31 @@ defmodule IdeajarWeb.IdeaLive.Index do
   # uniform list in `index_test.exs` (slice 5 step 6 RED #16).
   def handle_event("toggle_duration_filter", _params, socket), do: {:noreply, socket}
 
+  # Slice 6 step 8: binary 2-state budget filter (single-select). Click on
+  # the currently-active bucket toggles back to nil; click on a different
+  # bucket swaps the single selection (F14 cycle, F15 swap). Membership-gated
+  # parse via `Budget.parse/1`; hostile payloads (out-of-whitelist integers,
+  # non-numeric strings, non-string types) land in the catchall as no-ops (S1).
+  def handle_event("toggle_budget_filter", %{"cost" => raw}, socket)
+      when is_binary(raw) do
+    case Budget.parse(raw) do
+      {:ok, val} ->
+        new_value = if socket.assigns.cost_filter == val, do: nil, else: val
+
+        {:noreply,
+         socket
+         |> assign(:cost_filter, new_value)
+         |> reload_ideas()}
+
+      :error ->
+        {:noreply, socket}
+    end
+  end
+
+  # Catchall for hostile or malformed phx-value-cost payloads on the filter
+  # row (non-string types, missing key). Pinned by S1 hostile uniform list.
+  def handle_event("toggle_budget_filter", _params, socket), do: {:noreply, socket}
+
   def handle_event("clear_filters", _params, socket) do
     {:noreply,
      socket
@@ -301,41 +327,44 @@ defmodule IdeajarWeb.IdeaLive.Index do
   defp reset_budget(socket), do: assign(socket, :selected_cost, nil)
 
   # Re-loads the ideas list from the context using the filter opts derived
-  # from `@filter_state` and `@duration_filter`. Called on mount + after
-  # every event that may change either the filter or the underlying ideas
-  # (cycle, clear, save, toggle_duration_filter).
+  # from `@filter_state`, `@duration_filter` and `@cost_filter`. Called on
+  # mount + after every event that may change either the filter or the
+  # underlying ideas (cycle, clear, save, toggle_duration_filter,
+  # toggle_budget_filter).
   defp reload_ideas(socket) do
     opts =
       derive_filter_opts(
         socket.assigns.filter_state,
-        socket.assigns.duration_filter
+        socket.assigns.duration_filter,
+        socket.assigns.cost_filter
       )
 
     assign(socket, :ideas, Ideas.list_ideas(opts))
   end
 
-  defp derive_filter_opts(filter_state, duration_filter) do
+  defp derive_filter_opts(filter_state, duration_filter, cost_filter) do
     filter_state
     |> Enum.reduce([required: [], optional: []], fn
       {id, :required}, acc -> Keyword.update!(acc, :required, &[id | &1])
       {id, :optional}, acc -> Keyword.update!(acc, :optional, &[id | &1])
     end)
     |> Keyword.put(:durations, MapSet.to_list(duration_filter))
+    |> Keyword.put(:max_cost, cost_filter)
   end
 
   @doc """
   Returns true when at least one filter is active across categories
-  (`@filter_state`) or durations (`@duration_filter`). Used by the
-  template to decide whether to render the `Mostra tutte` reset button
-  and the empty-filter message.
+  (`@filter_state`), durations (`@duration_filter`) or budget (`@cost_filter`).
+  Used by the template to decide whether to render the `Mostra tutte`
+  reset button and the empty-filter message.
 
-  Slice 5 step 6 extends this from `/1` (categoria-only) to `/2` (categoria
-  + durata) so the empty-filter affordance fires even when the only
-  active filter is on duration. Slice 5 step 7 adds combined-filter
-  scenarios on top of this.
+  Slice 5 step 6 extended this from `/1` (categoria-only) to `/2` (categoria
+  + durata). Slice 6 step 8 extends to `/3` (categoria + durata + budget)
+  so the empty-filter affordance fires even when the only active filter
+  is on budget. The arity change is pinned in slice 6 step 9.
   """
-  def filter_active?(filter_state, duration_filter) do
-    filter_state != %{} or MapSet.size(duration_filter) > 0
+  def filter_active?(filter_state, duration_filter, cost_filter) do
+    filter_state != %{} or MapSet.size(duration_filter) > 0 or not is_nil(cost_filter)
   end
 
   # Tri-state cycle: off → optional → required → off.

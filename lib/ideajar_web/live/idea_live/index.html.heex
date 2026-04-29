@@ -156,8 +156,27 @@
           tabindex={if idx == 0, do: 0, else: -1}
         />
       </div>
+      <p class="text-xs">Budget</p>
+      <p class="text-xs text-base-content/70">
+        Le idee senza prezzo sono nascoste quando un filtro è attivo.
+      </p>
+      <div
+        id="filter-budgets-group"
+        role="group"
+        aria-label="Filtra per budget"
+        data-roving-tabindex-group="filter-budgets"
+        phx-hook="RovingTabindex"
+        class="flex flex-wrap gap-2"
+      >
+        <BudgetChip.filter_chip
+          :for={{cost, idx} <- Enum.with_index(Ideajar.Ideas.Budget.values())}
+          cost={cost}
+          state={if @cost_filter == cost, do: :on, else: :off}
+          tabindex={if idx == 0, do: 0, else: -1}
+        />
+      </div>
       <button
-        :if={filter_active?(@filter_state, @duration_filter) and @ideas != []}
+        :if={filter_active?(@filter_state, @duration_filter, @cost_filter) and @ideas != []}
         id="mostra-tutte"
         type="button"
         phx-click="clear_filters"
@@ -168,14 +187,14 @@
     </section>
 
     <p
-      :if={@ideas == [] and not filter_active?(@filter_state, @duration_filter)}
+      :if={@ideas == [] and not filter_active?(@filter_state, @duration_filter, @cost_filter)}
       class="text-base-content/70"
     >
       Nessuna idea ancora. Aggiungine una qui sopra.
     </p>
 
     <div
-      :if={@ideas == [] and filter_active?(@filter_state, @duration_filter)}
+      :if={@ideas == [] and filter_active?(@filter_state, @duration_filter, @cost_filter)}
       data-testid="empty-filter-state"
       class="rounded-box border border-base-300 p-4 space-y-3"
     >

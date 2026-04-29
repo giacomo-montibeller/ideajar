@@ -55,6 +55,55 @@ defmodule IdeajarWeb.Components.BudgetChip do
   end
 
   attr :cost, :integer, required: true, values: Budget.values()
+  attr :state, :atom, default: :off, values: [:off, :on]
+  attr :tabindex, :integer, default: -1
+
+  @doc """
+  Slice 6 step 8 binary 2-state filter chip rendered in the filter row's
+  budget sub-block. ARIA contract:
+
+    * `aria-label="<label>"` when off
+    * `aria-label="<label> attiva"` when on (BB14 — uniform suffix even
+      for the boundary buckets `gratis` and `oltre 1000€`)
+    * `data-budget-filter-state="off|on"` (no `aria-pressed` — that
+      primitive is reserved for the form-side `form_chip/1`; the two
+      contracts are mutually exclusive at the type level — S6)
+    * Hero-check icon rendered only when `:on`
+
+  The `tabindex` attr defaults to `-1` so the caller can wire roving
+  tabindex semantics (one chip per group is `tabindex="0"`, the rest
+  `-1`). The DOM id `filter-budget-chip-<value>` is namespaced so it
+  cannot collide with `form-budget-chip-<value>` when the form is open
+  and the filter is active simultaneously (BB12, A10).
+  """
+  def filter_chip(assigns) do
+    ~H"""
+    <button
+      id={"filter-budget-chip-#{@cost}"}
+      type="button"
+      aria-label={filter_chip_aria_label(@cost, @state)}
+      data-budget-filter-state={Atom.to_string(@state)}
+      tabindex={@tabindex}
+      phx-click="toggle_budget_filter"
+      phx-value-cost={Integer.to_string(@cost)}
+      class={[ChipBase.chip_base_class(), filter_chip_state_class(@state)]}
+    >
+      <.icon :if={@state == :on} name="hero-check" class="size-4" />
+      {Budget.label(@cost)}
+    </button>
+    """
+  end
+
+  defp filter_chip_aria_label(cost, :off), do: Budget.label(cost)
+  defp filter_chip_aria_label(cost, :on), do: "#{Budget.label(cost)} attiva"
+
+  defp filter_chip_state_class(:off),
+    do: "bg-base-100 text-base-content border-base-300 hover:border-base-content/50"
+
+  defp filter_chip_state_class(:on),
+    do: "bg-success text-success-content border-success"
+
+  attr :cost, :integer, required: true, values: Budget.values()
 
   @doc """
   Read-only badge rendered inside the idea card to advertise the persisted
