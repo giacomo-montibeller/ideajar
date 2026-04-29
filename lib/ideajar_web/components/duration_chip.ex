@@ -30,6 +30,7 @@ defmodule IdeajarWeb.Components.DurationChip do
   import IdeajarWeb.CoreComponents, only: [icon: 1]
 
   alias Ideajar.Ideas.Duration
+  alias IdeajarWeb.Components.ChipBase
 
   attr :duration, :atom, required: true, values: Duration.values()
   attr :pressed?, :boolean, default: false
@@ -43,7 +44,7 @@ defmodule IdeajarWeb.Components.DurationChip do
       phx-click="toggle_form_duration"
       phx-value-duration={Atom.to_string(@duration)}
       class={[
-        chip_base_class(),
+        ChipBase.chip_base_class(),
         if(@pressed?,
           do: "bg-primary text-primary-content border-primary",
           else: "bg-base-100 text-base-content border-base-300 hover:border-base-content/50"
@@ -54,10 +55,6 @@ defmodule IdeajarWeb.Components.DurationChip do
       {Duration.label(@duration)}
     </button>
     """
-  end
-
-  defp chip_base_class do
-    "min-h-11 min-w-11 px-3 py-2 rounded-full border-2 inline-flex items-center gap-1 text-sm"
   end
 
   attr :duration, :atom, required: true, values: Duration.values()
@@ -91,7 +88,7 @@ defmodule IdeajarWeb.Components.DurationChip do
       tabindex={@tabindex}
       phx-click="toggle_duration_filter"
       phx-value-duration={Atom.to_string(@duration)}
-      class={[chip_base_class(), filter_chip_state_class(@state)]}
+      class={[ChipBase.chip_base_class(), filter_chip_state_class(@state)]}
     >
       <.icon :if={@state == :on} name="hero-check" class="size-4" />
       {Duration.label(@duration)}

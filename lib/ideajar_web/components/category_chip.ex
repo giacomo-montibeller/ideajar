@@ -36,6 +36,8 @@ defmodule IdeajarWeb.Components.CategoryChip do
 
   import IdeajarWeb.CoreComponents, only: [icon: 1]
 
+  alias IdeajarWeb.Components.ChipBase
+
   attr :id, :integer, required: true
   attr :name, :string, required: true
   attr :selected?, :boolean, required: true
@@ -52,7 +54,7 @@ defmodule IdeajarWeb.Components.CategoryChip do
       phx-click="toggle_category"
       phx-value-id={@id}
       class={[
-        chip_base_class(),
+        ChipBase.chip_base_class(),
         if(@selected?,
           do: "bg-primary text-primary-content border-primary",
           else: "bg-base-100 text-base-content border-base-300 hover:border-base-content/50"
@@ -82,17 +84,13 @@ defmodule IdeajarWeb.Components.CategoryChip do
       tabindex={@tabindex}
       phx-click="cycle_filter"
       phx-value-id={@id}
-      class={[chip_base_class(), filter_chip_state_class(@state)]}
+      class={[ChipBase.chip_base_class(), filter_chip_state_class(@state)]}
     >
       <.icon :if={@state == :optional} name="hero-check" class="size-4" />
       <.icon :if={@state == :required} name="hero-lock-closed" class="size-4" />
       {@name}
     </button>
     """
-  end
-
-  defp chip_base_class do
-    "min-h-11 min-w-11 px-3 py-2 rounded-full border-2 inline-flex items-center gap-1 text-sm"
   end
 
   defp filter_chip_aria_label(name, :off), do: name
