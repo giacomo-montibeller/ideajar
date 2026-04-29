@@ -3,8 +3,9 @@ defmodule IdeajarWeb.Components.ChipBase do
   Shared visual base class for the chip family components.
 
   Slice 6 R5-2 extraction. Previously duplicated as `defp chip_base_class/0`
-  in CategoryChip + DurationChip; now single source so future chip families
-  (BudgetChip slice 6, distance/budget chips slice 7+) reuse uniformly.
+  in CategoryChip + DurationChip; now a single source reused by all three
+  current chip families (CategoryChip, DurationChip, BudgetChip). Future
+  families (e.g. distance chips slice 7+) should call this same function.
   """
 
   @spec chip_base_class() :: String.t()

@@ -9,14 +9,17 @@ defmodule IdeajarWeb.Components.BudgetChip do
   `integer | nil`) re-renders only one chip with `pressed?: true`.
   There is no DOM-level coupling between chips.
 
-  Step 8 (slice 6) will add `filter_chip/1` here with a separate ARIA
-  contract (`data-budget-filter-state` rather than `aria-pressed`), a
-  separate DOM id namespace (`filter-budget-chip-<value>`) and a
-  separate event (`toggle_budget_filter`). The two ARIA contracts are
-  deliberately encoded as two distinct functions so the type system
-  enforces mutual exclusion (S6): a caller cannot pass `state` to
-  `form_chip/1` because the attr does not exist there, and `pressed?`
-  cannot reach `filter_chip/1` for the same reason.
+  `filter_chip/1` (slice 6 step 8) carries a separate ARIA contract
+  (`data-budget-filter-state` rather than `aria-pressed`), a separate
+  DOM id namespace (`filter-budget-chip-<value>`) and a separate event
+  (`toggle_budget_filter`). The two ARIA contracts are deliberately
+  encoded as two distinct functions so the type system enforces mutual
+  exclusion (S6): a caller cannot pass `state` to `form_chip/1` because
+  the attr does not exist there, and `pressed?` cannot reach
+  `filter_chip/1` for the same reason.
+
+  `budget_badge/1` (slice 6 step 5) renders a read-only badge on idea
+  cards when `idea.estimated_cost != nil` (including `0` / "gratis").
 
   The chip class string is shared with the other chip families via
   `IdeajarWeb.Components.ChipBase.chip_base_class/0` (R5-2).

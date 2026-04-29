@@ -23,7 +23,7 @@ Webapp per raccogliere idee di attività nel tempo libero (passeggiata al lago, 
 
 ## Modello dati
 
-Stato attuale (slice 2 + 3 implementate):
+Stato attuale (slice 2-6 implementate):
 
 ```
 ideas
@@ -31,6 +31,10 @@ ideas
   title              string, required, max 200, trimmed
   description        text, optional, no length cap
   url                text, optional, max 2000, trimmed, http(s):// only
+  duration           enum atom, optional (slice 5)
+                     [poche_ore, mezza_giornata, giornata, weekend, piu_giorni]
+  estimated_cost     integer, optional (slice 6)
+                     bucket whitelist [0, 20, 50, 100, 200, 500, 1000]
   inserted_at, updated_at
 
 categories            seed da codice, non CRUD
@@ -44,8 +48,7 @@ idea_categories       many-to-many (composite PK)
   category_id        FK categories, ON DELETE RESTRICT
 ```
 
-Slice future estenderanno `ideas` con `lat, lng, location_name` (slice 6),
-`duration` enum (slice 5), `estimated_cost` (slice 5).
+Slice future estenderanno `ideas` con `lat, lng, location_name` (slice 7).
 
 Nota: `created_by` **non** presente — irrilevante per due utenti che condividono lo spazio.
 

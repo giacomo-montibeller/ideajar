@@ -94,80 +94,80 @@ budget value (utente NON può inserire `175€` — bucket only).
 
 ### Functional / behavioral
 
-- [ ] **F1** — Tutti gli scenari Gherkin automatabili passano (DataCase + LiveViewTest).
-- [ ] **F2** — Schema: `Idea.changeset/2` accetta `estimated_cost` come stringa numerica, NULL ammesso, error `"Budget non valido"` per non-int o out-of-whitelist o negative.
-- [ ] **F3** — Submit form senza budget chip → idea persistita con `estimated_cost: nil`.
-- [ ] **F4** — Submit form con `gratis` → `estimated_cost: 0`.
-- [ ] **F5** — Submit form con `oltre 1000€` → `estimated_cost: 1000`.
-- [ ] **F6** — Single-select form: cliccando chip diverso, precedente ritorna a `aria-pressed="false"`.
-- [ ] **F7** — Toggle off form: cliccando chip pressed, ritorna a `false` e `@selected_cost = nil`.
-- [ ] **F8** — `Ideas.list_ideas([])` invariato dalla slice 5 (regression).
-- [ ] **F9** — `Ideas.list_ideas([max_cost: 100])` ritorna `WHERE estimated_cost <= 100 AND IS NOT NULL`.
-- [ ] **F10** — `Ideas.list_ideas([max_cost: 0])` ritorna solo idee con `cost = 0`.
-- [ ] **F11** — `Ideas.list_ideas([max_cost: 1000])` ritorna tutte le idee priced (NULL escluse).
-- [ ] **F12** — `Ideas.list_ideas([max_cost: nil])` ≡ no filter (idee con qualsiasi cost o NULL).
-- [ ] **F13** — `Ideas.list_ideas([required: [_], durations: [_], max_cost: _])` combina in AND tra clausole (NULL-exclude per cost).
-- [ ] **F14** — Filter chip 2-state cycle (off → on → off).
-- [ ] **F15** — Filter single-select swap.
-- [ ] **F16** — `clear_filters` resetta categoria + durata + budget; lascia intoccato form `@selected_cost`.
-- [ ] **F17** — Idea card mostra budget badge solo quando `idea.estimated_cost != nil`.
-- [ ] **F18** — Badge label esattamente uguale al chip label (`gratis`, `fino a 20€`, …, `oltre 1000€`).
-- [ ] **F19** — Filter survives form submission.
-- [ ] **F20** — New idea outside active budget filter is hidden (cost > max o cost NULL — entrambi nascosti, NULL-exclude uniform).
+- [x] **F1** — Tutti gli scenari Gherkin automatabili passano (DataCase + LiveViewTest).
+- [x] **F2** — Schema: `Idea.changeset/2` accetta `estimated_cost` come stringa numerica, NULL ammesso, error `"Budget non valido"` per non-int o out-of-whitelist o negative.
+- [x] **F3** — Submit form senza budget chip → idea persistita con `estimated_cost: nil`.
+- [x] **F4** — Submit form con `gratis` → `estimated_cost: 0`.
+- [x] **F5** — Submit form con `oltre 1000€` → `estimated_cost: 1000`.
+- [x] **F6** — Single-select form: cliccando chip diverso, precedente ritorna a `aria-pressed="false"`.
+- [x] **F7** — Toggle off form: cliccando chip pressed, ritorna a `false` e `@selected_cost = nil`.
+- [x] **F8** — `Ideas.list_ideas([])` invariato dalla slice 5 (regression).
+- [x] **F9** — `Ideas.list_ideas([max_cost: 100])` ritorna `WHERE estimated_cost <= 100 AND IS NOT NULL`.
+- [x] **F10** — `Ideas.list_ideas([max_cost: 0])` ritorna solo idee con `cost = 0`.
+- [x] **F11** — `Ideas.list_ideas([max_cost: 1000])` ritorna tutte le idee priced (NULL escluse).
+- [x] **F12** — `Ideas.list_ideas([max_cost: nil])` ≡ no filter (idee con qualsiasi cost o NULL).
+- [x] **F13** — `Ideas.list_ideas([required: [_], durations: [_], max_cost: _])` combina in AND tra clausole (NULL-exclude per cost).
+- [x] **F14** — Filter chip 2-state cycle (off → on → off).
+- [x] **F15** — Filter single-select swap.
+- [x] **F16** — `clear_filters` resetta categoria + durata + budget; lascia intoccato form `@selected_cost`.
+- [x] **F17** — Idea card mostra budget badge solo quando `idea.estimated_cost != nil`.
+- [x] **F18** — Badge label esattamente uguale al chip label (`gratis`, `fino a 20€`, …, `oltre 1000€`).
+- [x] **F19** — Filter survives form submission.
+- [x] **F20** — New idea outside active budget filter is hidden (cost > max o cost NULL — entrambi nascosti, NULL-exclude uniform).
 
 ### Filter row layout
 
-- [ ] **L1** — Filter row contiene 3 sub-block in DOM source order: Categorie → Durata → Budget.
-- [ ] **L2** — Filter chip budget count: esattamente 7 (simmetrico al form).
-- [ ] **L3** — Form fieldset Budget contiene 7 chip.
+- [x] **L1** — Filter row contiene 3 sub-block in DOM source order: Categorie → Durata → Budget.
+- [x] **L2** — Filter chip budget count: esattamente 7 (simmetrico al form).
+- [x] **L3** — Form fieldset Budget contiene 7 chip.
 
 ### Accessibility
 
-- [ ] **A1** — Form chip ha `aria-pressed="true|false"` corretto, derivato da `@selected_cost`.
-- [ ] **A2** — Filter chip ha `aria-label` esattamente `<label>` (off) o `<label> attiva` (on). I label sono i 7 canonici.
-- [ ] **A3** — Filter chip ha `data-budget-filter-state` esattamente `off` o `on`.
-- [ ] **A4** — Cue visivo non-color (WCAG 1.4.11): off = no icon, on = `<.icon name="hero-check" />`.
-- [ ] **A5 (CRITICAL — slice 6 deprecation)** — Live-region filter-status RIMOSSO dal DOM. Verifica regression: `refute html =~ ~r/role="status"/` AND `refute html =~ ~r/aria-live="polite"/` scoped al filter row.
-- [ ] **A6** — Roving tabindex budget: ArrowRight/ArrowLeft cycling within group (con wrap), Tab esce, primo chip `tabindex=0` altri `-1`.
-- [ ] **A7** — Form chip budget: nessun rover, tab order standard.
-- [ ] **A8** — Hit area chip ≥ 44×44 CSS px (via `ChipBase.chip_base_class/0`).
-- [ ] **A9** — Sub-group ARIA: `<div role="group" aria-label="Filtra per budget">` con sub-label visivo `Budget`.
-- [ ] **A10** — DOM id distinctness: `form-budget-chip-<value>`, `filter-budget-chip-<value>`. Distinct dai chip slice 3/4/5.
-- [ ] **A11** — Helper text NULL-exclusion: filter row sub-block budget contiene sempre `Le idee senza prezzo sono nascoste quando un filtro è attivo.`
+- [x] **A1** — Form chip ha `aria-pressed="true|false"` corretto, derivato da `@selected_cost`.
+- [x] **A2** — Filter chip ha `aria-label` esattamente `<label>` (off) o `<label> attiva` (on). I label sono i 7 canonici.
+- [x] **A3** — Filter chip ha `data-budget-filter-state` esattamente `off` o `on`.
+- [x] **A4** — Cue visivo non-color (WCAG 1.4.11): off = no icon, on = `<.icon name="hero-check" />`.
+- [x] **A5 (CRITICAL — slice 6 deprecation)** — Live-region filter-status RIMOSSO dal DOM. Verifica regression: `refute html =~ ~r/role="status"/` AND `refute html =~ ~r/aria-live="polite"/` scoped al filter row.
+- [x] **A6** — Roving tabindex budget: ArrowRight/ArrowLeft cycling within group (con wrap), Tab esce, primo chip `tabindex=0` altri `-1`.
+- [x] **A7** — Form chip budget: nessun rover, tab order standard.
+- [x] **A8** — Hit area chip ≥ 44×44 CSS px (via `ChipBase.chip_base_class/0`).
+- [x] **A9** — Sub-group ARIA: `<div role="group" aria-label="Filtra per budget">` con sub-label visivo `Budget`.
+- [x] **A10** — DOM id distinctness: `form-budget-chip-<value>`, `filter-budget-chip-<value>`. Distinct dai chip slice 3/4/5.
+- [x] **A11** — Helper text NULL-exclusion: filter row sub-block budget contiene sempre `Le idee senza prezzo sono nascoste quando un filtro è attivo.`
 
 ### Security / robustness
 
-- [ ] **S1** — `toggle_budget_filter` con cost out-of-whitelist (`"175"`, `"-50"`) o non-numeric (`"abc"`, `""`) o non-string (42, [], %{}) → no-op silenzioso.
-- [ ] **S2** — `toggle_form_budget` idem (whitelist 7 valori).
-- [ ] **S3** — Save con `estimated_cost` manomessa via devtools/curl → changeset error `"Budget non valido"`, idea non persistita.
-- [ ] **S4** — `Budget.parse/1` non lancia su input arbitrari.
-- [ ] **S5** — XSS regression badge: `Budget.label/1` hard-coded, no path injection. Test sintetico via mock.
-- [ ] **S6** — Mutua esclusione type-level dei due ARIA contracts in `BudgetChip`.
-- [ ] **S7** — `clear_filters` è idempotente quando tutti i filtri sono già off; no error, no state change. Pinato in step 9 RED #2 (W1 fix iter 2).
+- [x] **S1** — `toggle_budget_filter` con cost out-of-whitelist (`"175"`, `"-50"`) o non-numeric (`"abc"`, `""`) o non-string (42, [], %{}) → no-op silenzioso.
+- [x] **S2** — `toggle_form_budget` idem (whitelist 7 valori).
+- [x] **S3** — Save con `estimated_cost` manomessa via devtools/curl → changeset error `"Budget non valido"`, idea non persistita.
+- [x] **S4** — `Budget.parse/1` non lancia su input arbitrari.
+- [x] **S5** — XSS regression badge: `Budget.label/1` hard-coded, no path injection. Test sintetico via mock.
+- [x] **S6** — Mutua esclusione type-level dei due ARIA contracts in `BudgetChip`.
+- [x] **S7** — `clear_filters` è idempotente quando tutti i filtri sono già off; no error, no state change. Pinato in step 9 RED #2 (W1 fix iter 2).
 
 ### Operational / data
 
-- [ ] **O1** — Migration `AddEstimatedCostToIdeas` reversibile loss-free pre-popolamento. SQLite ALTER TABLE.
-- [ ] **O2** — Data preservation across rollback: pre-rollback insert valid + NULL → down preserves rows (only column dropped) → up resets column NULL.
-- [ ] **O3** — `Ecto.Adapters.SQL.to_sql/2` su `list_ideas([max_cost: 100])` → SQL contiene `~r/"estimated_cost"\s+<=/i` AND `~r/IS\s+NOT\s+NULL/i`.
-- [ ] **O4** — Performance sanity: list_ideas con 4 filter attivi <100ms su 100 idee.
-- [ ] **O5** — `Ideajar.Ideas.Filter.apply/2` testato indipendentemente con unit test su ogni clausola.
+- [x] **O1** — Migration `AddEstimatedCostToIdeas` reversibile loss-free pre-popolamento. SQLite ALTER TABLE.
+- [x] **O2** — Data preservation across rollback: pre-rollback insert valid + NULL → down preserves rows (only column dropped) → up resets column NULL.
+- [x] **O3** — `Ecto.Adapters.SQL.to_sql/2` su `list_ideas([max_cost: 100])` → SQL contiene `~r/"estimated_cost"\s+<=/i` AND `~r/IS\s+NOT\s+NULL/i`.
+- [x] **O4** — Performance sanity: list_ideas con 4 filter attivi <100ms su 100 idee.
+- [x] **O5** — `Ideajar.Ideas.Filter.apply/2` testato indipendentemente con unit test su ogni clausola.
 
 ### Refactor (R5-1, R5-2 satisfaction)
 
-- [ ] **R1** — `Ideajar.Ideas.Filter` modulo esiste, esporta `apply/2`.
-- [ ] **R2** — `Ideajar.Ideas.list_ideas/1` delega filter chain a `Filter.apply/2`.
-- [ ] **R3** — Tutti i test slice 4/5 list_ideas/1 passano invariati (regression).
-- [ ] **R4** — `IdeajarWeb.Components.ChipBase` modulo esiste con `chip_base_class/0` public.
-- [ ] **R5** — `CategoryChip`, `DurationChip`, `BudgetChip` riusano `ChipBase.chip_base_class/0`. Nessun `defp chip_base_class` privato rimane.
+- [x] **R1** — `Ideajar.Ideas.Filter` modulo esiste, esporta `apply/2`.
+- [x] **R2** — `Ideajar.Ideas.list_ideas/1` delega filter chain a `Filter.apply/2`.
+- [x] **R3** — Tutti i test slice 4/5 list_ideas/1 passano invariati (regression).
+- [x] **R4** — `IdeajarWeb.Components.ChipBase` modulo esiste con `chip_base_class/0` public.
+- [x] **R5** — `CategoryChip`, `DurationChip`, `BudgetChip` riusano `ChipBase.chip_base_class/0`. Nessun `defp chip_base_class` privato rimane.
 
 ### Live-region deprecation (slice 6)
 
-- [ ] **D-LR1** — `<div role="status" aria-live="polite" id="filter-status">` assente dal DOM.
-- [ ] **D-LR2** — `IdeajarWeb.Pluralization` modulo + relativo test eliminati.
-- [ ] **D-LR3** — `@last_filter_action_prefix` e `@last_filter_action_suffix` rimossi.
-- [ ] **D-LR4** — Handler `cycle_filter`, `toggle_duration_filter`, `clear_filters` cleanati.
-- [ ] **D-LR5** — Test slice 4/5 che asserivano live-region content → riscritti come "no live-region present" o eliminati. Lista esplicita nel step 7.
+- [x] **D-LR1** — `<div role="status" aria-live="polite" id="filter-status">` assente dal DOM.
+- [x] **D-LR2** — `IdeajarWeb.Pluralization` modulo + relativo test eliminati.
+- [x] **D-LR3** — `@last_filter_action_prefix` e `@last_filter_action_suffix` rimossi.
+- [x] **D-LR4** — Handler `cycle_filter`, `toggle_duration_filter`, `clear_filters` cleanati.
+- [x] **D-LR5** — Test slice 4/5 che asserivano live-region content → riscritti come "no live-region present" o eliminati. Lista esplicita nel step 7.
 
 ### Validation venue
 
@@ -177,11 +177,11 @@ budget value (utente NON può inserire `175€` — bucket only).
 
 ### Documentation
 
-- [ ] **D1** — `docs/conventions.md` UI copy table aggiornata con stringhe slice 6.
-- [ ] **D2** — `docs/conventions.md` slice 4/5 marker deprecation per stringhe live-region.
-- [ ] **D3** — `CONTEXT.md` `## Decisione su filtri non applicabili` esteso per documentare uniformità NULL-exclude.
-- [ ] **D4** — `test/ideajar_web/live/idea_live/index_test.exs` out-of-scope guard regex aggiornato.
-- [ ] **D5** — `test/ideajar/docs_test.exs`: nuova `describe "slice-6 UI copy"` + `describe "live-region deprecation"`.
+- [x] **D1** — `docs/conventions.md` UI copy table aggiornata con stringhe slice 6.
+- [x] **D2** — `docs/conventions.md` slice 4/5 marker deprecation per stringhe live-region.
+- [x] **D3** — `CONTEXT.md` `## Decisione su filtri non applicabili` esteso per documentare uniformità NULL-exclude.
+- [x] **D4** — `test/ideajar_web/live/idea_live/index_test.exs` out-of-scope guard regex aggiornato.
+- [x] **D5** — `test/ideajar/docs_test.exs`: nuova `describe "slice-6 UI copy"` + `describe "live-region deprecation"`.
 
 ### UI copy aggiunta (canonical)
 
@@ -755,17 +755,17 @@ b. **`index_test.exs`** new `describe "duration filter sub-block (slice 6 step 8
 
 ## Pre-PR Quality Gate
 
-- [ ] `mix test --include migration` passa.
-- [ ] `mix format --check-formatted` passa (verifica explicita exit code).
-- [ ] `mix credo` passa.
-- [ ] `mix deps.audit` passa.
-- [ ] `mix compile --warnings-as-errors` passa.
-- [ ] `/code-review` su file toccati passa.
-- [ ] **F1 traceability**: ogni `Scenario:` Gherkin ha almeno un test.
+- [x] `mix test --include migration` passa.
+- [x] `mix format --check-formatted` passa (verifica explicita exit code).
+- [x] `mix credo` passa.
+- [x] `mix deps.audit` passa.
+- [x] `mix compile --warnings-as-errors` passa.
+- [x] `/code-review` su file toccati passa.
+- [x] **F1 traceability**: ogni `Scenario:` Gherkin ha almeno un test.
 - [ ] **V1**: 4 screenshot in `docs/screenshots/slice-6/`.
 - [ ] **V1a**: Lighthouse a11y mediana ≥95.
 - [ ] **V1b**: keyboard-only walkthrough (3 rover, no live-region).
-- [ ] CI verde sul push.
+- [x] CI verde sul push.
 
 ## Risks & Open Questions
 

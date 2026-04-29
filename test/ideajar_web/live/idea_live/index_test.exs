@@ -3009,7 +3009,7 @@ defmodule IdeajarWeb.IdeaLive.IndexTest do
 
       ids =
         Regex.scan(
-          ~r{id="(form-budget-chip-\d+|form-duration-chip-\w+|category-chip-\d+|filter-chip-\d+|filter-duration-chip-\w+)"},
+          ~r{id="(form-budget-chip-\d+|form-duration-chip-\w+|category-chip-\d+|filter-chip-\d+|filter-duration-chip-\w+|filter-budget-chip-\d+)"},
           html
         )
         |> Enum.map(&Enum.at(&1, 1))
@@ -3024,6 +3024,9 @@ defmodule IdeajarWeb.IdeaLive.IndexTest do
 
       assert length(Enum.filter(ids, &String.starts_with?(&1, "filter-duration-chip-"))) ==
                5
+
+      assert length(Enum.filter(ids, &String.starts_with?(&1, "filter-budget-chip-"))) ==
+               7
     end
 
     # A7 — form chip budget: no roving-tabindex hook, no explicit tabindex.
@@ -3084,20 +3087,31 @@ defmodule IdeajarWeb.IdeaLive.IndexTest do
       refute filter_row =~ ~r/aria-live="polite"/
     end
 
-    test "after cycle_filter / toggle_duration_filter / clear_filters: no role=\"status\" filter announcement appears",
+    test "after cycle_filter: no filter-status live-region appears", %{conn: conn} do
+      _ = seed_5_lv_ideas()
+      view = mount_authenticated(conn)
+
+      html = view |> cycle_filter("mare") |> render()
+      refute html =~ ~r/id="filter-status"/
+    end
+
+    test "after toggle_duration_filter: no filter-status live-region appears",
          %{conn: conn} do
       _ = seed_5_lv_ideas()
       view = mount_authenticated(conn)
 
-      html_after_cycle = view |> cycle_filter("mare") |> render()
-      refute html_after_cycle =~ ~r/id="filter-status"/
+      html = view |> cycle_duration(:weekend) |> render()
+      refute html =~ ~r/id="filter-status"/
+    end
 
-      html_after_duration = view |> cycle_duration(:weekend) |> render()
-      refute html_after_duration =~ ~r/id="filter-status"/
+    test "after clear_filters: no filter-status live-region nor 'Filtri rimossi' appears",
+         %{conn: conn} do
+      _ = seed_5_lv_ideas()
+      view = mount_authenticated(conn)
 
-      html_after_clear = render_click(view, "clear_filters")
-      refute html_after_clear =~ ~r/id="filter-status"/
-      refute html_after_clear =~ "Filtri rimossi"
+      html = render_click(view, "clear_filters")
+      refute html =~ ~r/id="filter-status"/
+      refute html =~ "Filtri rimossi"
     end
   end
 

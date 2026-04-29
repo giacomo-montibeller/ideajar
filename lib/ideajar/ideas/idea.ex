@@ -10,6 +10,17 @@ defmodule Ideajar.Ideas.Idea do
   category" at the application level (SQLite cannot express the rule
   natively for many-to-many).
 
+  Slice 5 adds an optional `:duration` enum (`Ecto.Enum` whitelisted by
+  `Ideajar.Ideas.Duration`); cast failures rewrite to the canonical
+  `"Durata non valida"` via `override_duration_error/1`.
+
+  Slice 6 adds an optional `:estimated_cost` integer with bucket whitelist
+  `Ideajar.Ideas.Budget.values/0`. Validation uses a dual-path strategy:
+  cast failures (non-numeric strings, e.g. `"abc"`, `"<script>"`) are
+  rewritten by `override_estimated_cost_error/1`; valid integers outside
+  the whitelist (e.g. `175`, `-50`) are rejected by `validate_inclusion/3`.
+  Both paths surface the canonical `"Budget non valido"` error.
+
   Note on the type mapping: the SQLite migration uses `:text` for description
   and url so that values longer than 255 characters are stored without
   truncation. Ecto's `:string` here just means "binary" — the on-disk column is
@@ -60,6 +71,11 @@ defmodule Ideajar.Ideas.Idea do
     * `:categories` — at least one required (slice 3). Caller must inject
       already-resolved `%Category{}` structs under the `:categories` (or
       `"categories"`) key; the changeset itself does no DB lookup.
+    * `:duration` — optional (slice 5). Whitelist via `Ecto.Enum` values
+      from `Duration.values/0`; canonical error `"Durata non valida"`.
+    * `:estimated_cost` — optional (slice 6). Bucket whitelist via
+      `Budget.values/0`. Canonical error `"Budget non valido"` for both
+      cast failures and out-of-whitelist integers.
 
   Errors do not short-circuit: a submit with both an invalid title and an
   invalid url surfaces both messages.
