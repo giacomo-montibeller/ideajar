@@ -1911,6 +1911,174 @@ defmodule IdeajarWeb.IdeaLive.IndexTest do
     end
   end
 
+  describe "idea card budget badge (slice 6 step 5)" do
+    # F17 — present: an idea with estimated_cost renders a badge with the IT
+    # label.
+    test "idea with estimated_cost: 100 renders <span data-testid=idea-budget-badge> with 'fino a 100€'",
+         %{conn: conn} do
+      mare = CategoriesFixtures.category_by_name!("mare")
+
+      assert {:ok, _idea} =
+               Ideajar.Ideas.create_idea(%{
+                 title: "Sirolo",
+                 category_ids: [mare.id],
+                 estimated_cost: "100"
+               })
+
+      {:ok, _view, html} =
+        live_isolated(conn, Index, session: @authenticated_session)
+
+      [_full, inner] =
+        Regex.run(
+          ~r{<span[^>]*data-testid="idea-budget-badge"[^>]*>(.*?)</span>}s,
+          html
+        )
+
+      assert String.trim(inner) == "fino a 100€"
+    end
+
+    # F17 — absent: an idea without estimated_cost renders no badge for it.
+    test "idea without estimated_cost renders NO data-testid=idea-budget-badge element",
+         %{conn: conn} do
+      mare = CategoriesFixtures.category_by_name!("mare")
+
+      assert {:ok, _idea} =
+               Ideajar.Ideas.create_idea(%{
+                 title: "Bagno improvviso",
+                 category_ids: [mare.id]
+               })
+
+      {:ok, _view, html} =
+        live_isolated(conn, Index, session: @authenticated_session)
+
+      refute html =~ ~s(data-testid="idea-budget-badge")
+    end
+
+    # F17 — gratis (cost = 0) is NOT NULL and must render the badge.
+    # This is the critical edge case: `:if={idea.estimated_cost}` would still
+    # render in HEEx because `0` is truthy in Elixir, but using
+    # `:if={not is_nil(idea.estimated_cost)}` makes the intent explicit and
+    # robust against future template helper boolean-coercion changes.
+    test "idea with estimated_cost: 0 (gratis) DOES render the badge",
+         %{conn: conn} do
+      mare = CategoriesFixtures.category_by_name!("mare")
+
+      assert {:ok, _idea} =
+               Ideajar.Ideas.create_idea(%{
+                 title: "Caffè al volo",
+                 category_ids: [mare.id],
+                 estimated_cost: "0"
+               })
+
+      {:ok, _view, html} =
+        live_isolated(conn, Index, session: @authenticated_session)
+
+      [_full, inner] =
+        Regex.run(
+          ~r{<span[^>]*data-testid="idea-budget-badge"[^>]*>(.*?)</span>}s,
+          html
+        )
+
+      assert String.trim(inner) == "gratis"
+    end
+
+    # Multiple ideas: only those with estimated_cost set render a badge.
+    # 3 ideas (cost=100, cost=0, no cost) → exactly 2 budget badges.
+    test "three ideas (cost=100, cost=0, no cost) render exactly two budget badges",
+         %{conn: conn} do
+      mare = CategoriesFixtures.category_by_name!("mare")
+
+      assert {:ok, _} =
+               Ideajar.Ideas.create_idea(%{
+                 title: "Sirolo",
+                 category_ids: [mare.id],
+                 estimated_cost: "100"
+               })
+
+      assert {:ok, _} =
+               Ideajar.Ideas.create_idea(%{
+                 title: "Caffè al volo",
+                 category_ids: [mare.id],
+                 estimated_cost: "0"
+               })
+
+      assert {:ok, _} =
+               Ideajar.Ideas.create_idea(%{
+                 title: "Bagno improvviso",
+                 category_ids: [mare.id]
+               })
+
+      {:ok, _view, html} =
+        live_isolated(conn, Index, session: @authenticated_session)
+
+      badges = Regex.scan(~r/data-testid="idea-budget-badge"/, html)
+      assert length(badges) == 2
+    end
+
+    # F18 — each canonical Budget bucket renders its IT label in the badge.
+    for cost <- Ideajar.Ideas.Budget.values() do
+      label = Ideajar.Ideas.Budget.label(cost)
+
+      test "estimated_cost #{inspect(cost)} renders the IT label #{inspect(label)} in the badge",
+           %{conn: conn} do
+        mare = CategoriesFixtures.category_by_name!("mare")
+
+        assert {:ok, _} =
+                 Ideajar.Ideas.create_idea(%{
+                   title: "T-#{unquote(Integer.to_string(cost))}",
+                   category_ids: [mare.id],
+                   estimated_cost: unquote(Integer.to_string(cost))
+                 })
+
+        {:ok, _view, html} =
+          live_isolated(conn, Index, session: @authenticated_session)
+
+        [_full, inner] =
+          Regex.run(
+            ~r{<span[^>]*data-testid="idea-budget-badge"[^>]*>(.*?)</span>}s,
+            html
+          )
+
+        assert String.trim(inner) == unquote(label)
+      end
+    end
+
+    # Position pin — the budget badge appears AFTER <.duration_badge> in the
+    # idea card DOM source order (parallel to slice 5 step 4 position pin
+    # which placed the duration badge after the categories list).
+    test "budget badge appears after duration badge within the idea card",
+         %{conn: conn} do
+      mare = CategoriesFixtures.category_by_name!("mare")
+
+      assert {:ok, _} =
+               Ideajar.Ideas.create_idea(%{
+                 title: "Sirolo",
+                 category_ids: [mare.id],
+                 duration: "weekend",
+                 estimated_cost: "200"
+               })
+
+      {:ok, _view, html} =
+        live_isolated(conn, Index, session: @authenticated_session)
+
+      duration_pos =
+        case :binary.match(html, ~s(data-testid="idea-duration-badge")) do
+          {pos, _} -> pos
+          :nomatch -> nil
+        end
+
+      budget_pos =
+        case :binary.match(html, ~s(data-testid="idea-budget-badge")) do
+          {pos, _} -> pos
+          :nomatch -> nil
+        end
+
+      assert is_integer(duration_pos)
+      assert is_integer(budget_pos)
+      assert duration_pos < budget_pos
+    end
+  end
+
   # ── Slice 5 Step 6: duration filter sub-block ─────────────────────────
   defp insert_idea_with_categories_and_duration!(
          title,

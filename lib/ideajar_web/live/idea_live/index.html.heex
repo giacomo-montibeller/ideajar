@@ -240,6 +240,10 @@
           </li>
         </ul>
         <.duration_badge :if={idea.duration} duration={idea.duration} />
+        <BudgetChip.budget_badge
+          :if={not is_nil(idea.estimated_cost)}
+          cost={idea.estimated_cost}
+        />
       </li>
     </ul>
   </section>
