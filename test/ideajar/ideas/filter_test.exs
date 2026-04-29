@@ -91,4 +91,77 @@ defmodule Ideajar.Ideas.FilterTest do
       assert ids == Enum.sort([bagno.id, sirolo.id])
     end
   end
+
+  describe "apply/2 — :max_cost clause (slice 6 step 6, BB8)" do
+    defp insert_idea_with_cost!(title, cost, %DateTime{} = at) do
+      mare = by_name("mare")
+
+      idea =
+        %Idea{title: title, estimated_cost: cost}
+        |> Ecto.Changeset.change()
+        |> Ecto.Changeset.put_assoc(:categories, [mare])
+        |> Repo.insert!()
+
+      Repo.update!(
+        Ecto.Changeset.change(idea, inserted_at: at, updated_at: at),
+        force: true
+      )
+    end
+
+    test "max_cost: nil returns the query unchanged (clause inactive)" do
+      # nil means clause inactive — emitted SQL must equal the no-op SQL
+      # (which itself equals the input base query SQL). This is the F12
+      # pin at the Filter unit-test layer.
+      query = base_query()
+
+      assert Repo.to_sql(:all, Filter.apply(query, max_cost: nil)) ==
+               Repo.to_sql(:all, query)
+    end
+
+    test "max_cost: 100 emits estimated_cost <= 100 AND a NULL-exclude predicate" do
+      # O3 SQL emission pin via direct Filter.apply/2 call. The regex is
+      # case-insensitive with whitespace tolerance to stay robust across
+      # ecto_sqlite3 quoting styles (BB15). ecto_sqlite3 currently emits
+      # `not is_nil/1` as `NOT (... IS NULL)` rather than `IS NOT NULL`,
+      # so we accept either canonical form — both are semantically the
+      # NULL-exclude predicate we intend.
+      query = base_query()
+      {sql, params} = Repo.to_sql(:all, Filter.apply(query, max_cost: 100))
+
+      assert sql =~ ~r/"estimated_cost"\s+<=/i
+
+      # NULL-exclude predicate present in either of the two canonical
+      # forms ecto adapters emit for `not is_nil(field)`.
+      assert sql =~ ~r/IS\s+NOT\s+NULL/i or
+               sql =~ ~r/NOT\s*\([^)]*"estimated_cost"\s+IS\s+NULL/i
+
+      # Forbid an `OR ... IS NULL` permissive branch (NULL-pass leak).
+      # The emitted `NOT (... IS NULL)` predicate is allowed because the
+      # `NOT` precedes — we look for an `IS NULL` not preceded by `NOT (`
+      # at any distance and not preceded by `IS NOT`.
+      refute sql =~ ~r/\bOR\b[^()]*IS\s+NULL/i
+
+      # The 100 threshold is parameterized, not inlined.
+      assert 100 in params
+    end
+
+    test "max_cost: 100 DB roundtrip excludes NULL and over-threshold ideas" do
+      # Direct unit test on `apply_max_cost` via `Filter.apply/2` with only
+      # `:max_cost` opt + DB roundtrip. Combines the SQL emission pin with
+      # the runtime semantics: cost ≤ 100 AND cost IS NOT NULL.
+      cheap = insert_idea_with_cost!("Cheap", 50, ~U[2026-04-27 10:00:00Z])
+      boundary = insert_idea_with_cost!("Boundary", 100, ~U[2026-04-27 10:01:00Z])
+      _expensive = insert_idea_with_cost!("Expensive", 500, ~U[2026-04-27 10:02:00Z])
+      _null_cost = insert_idea_with_cost!("Sconosciuto", nil, ~U[2026-04-27 10:03:00Z])
+
+      ids =
+        base_query()
+        |> Filter.apply(max_cost: 100)
+        |> Repo.all()
+        |> Enum.map(& &1.id)
+        |> Enum.sort()
+
+      assert ids == Enum.sort([cheap.id, boundary.id])
+    end
+  end
 end

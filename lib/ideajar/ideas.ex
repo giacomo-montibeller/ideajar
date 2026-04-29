@@ -17,6 +17,12 @@ defmodule Ideajar.Ideas do
   slice 6 step 6) can land without growing this context past its
   single-responsibility line. Behaviour is identical — the 3 clauses
   moved verbatim.
+
+  Slice 6 step 6 adds the `:max_cost` opt to `list_ideas/1` (BB8). When
+  an integer is given, only ideas with `estimated_cost <= ^max AND
+  estimated_cost IS NOT NULL` are returned (NULL-exclude uniforme con
+  AA7 durations). `nil` (or omitting the opt) leaves NULL-cost ideas
+  in the result.
   """
 
   import Ecto.Query
@@ -31,13 +37,18 @@ defmodule Ideajar.Ideas do
   descending as a deterministic tie-breaker. Each idea has its
   `:categories` association preloaded and sorted by `display_order` ASC.
 
-  Accepted opts (each defaults to an empty list = clause inactive):
+  Accepted opts (each defaults to its inactive value):
 
     * `:required` — `[integer]`, AND across category ids (slice 4)
     * `:optional` — `[integer]`, OR across category ids (slice 4)
     * `:durations` — `[atom]`, OR across duration atoms (slice 5).
       When non-empty, ideas with `duration: nil` are EXCLUDED — see AA7.
       An empty list (or omitting the opt) leaves NULL ideas in the result.
+    * `:max_cost` — `integer | nil`, cumulative budget cap (slice 6).
+      When an integer is given, only ideas with `estimated_cost <= ^max
+      AND estimated_cost IS NOT NULL` are returned (NULL-exclude uniforme
+      con AA7). `nil` (or omitting the opt) leaves NULL-cost ideas in
+      the result.
 
   `list_ideas/0` and `list_ideas([])` are equivalent (regression-pinned).
   """

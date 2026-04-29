@@ -857,6 +857,209 @@ defmodule Ideajar.IdeasTest do
     end
   end
 
+  describe "list_ideas/1 with :max_cost opt (slice 6 step 6)" do
+    # Background fixture matching the spec: 6 ideas across the 5 priced
+    # tiers plus one NULL-cost idea (Bagno improvviso). Used to pin the
+    # F8-F13 acceptance criteria and the AA7-uniform NULL-exclude semantics
+    # of the `:max_cost` clause (slice 6 BB8).
+    defp seed_6_ideas_with_costs do
+      %{
+        caffe:
+          insert_idea_with_categories_duration_and_cost!(
+            "Caffè al volo",
+            [by_name("passeggiata")],
+            :poche_ore,
+            0,
+            ~U[2026-04-27 10:00:00Z]
+          ),
+        sirolo:
+          insert_idea_with_categories_duration_and_cost!(
+            "Sirolo",
+            [by_name("mare"), by_name("viaggio")],
+            :weekend,
+            200,
+            ~U[2026-04-27 10:01:00Z]
+          ),
+        uffizi:
+          insert_idea_with_categories_duration_and_cost!(
+            "Uffizi",
+            [by_name("museo"), by_name("cultura")],
+            :giornata,
+            50,
+            ~U[2026-04-27 10:02:00Z]
+          ),
+        stadio:
+          insert_idea_with_categories_duration_and_cost!(
+            "Stadio",
+            [by_name("sport")],
+            :mezza_giornata,
+            100,
+            ~U[2026-04-27 10:03:00Z]
+          ),
+        parigi:
+          insert_idea_with_categories_duration_and_cost!(
+            "Parigi 4 giorni",
+            [by_name("viaggio"), by_name("cultura")],
+            :piu_giorni,
+            1000,
+            ~U[2026-04-27 10:04:00Z]
+          ),
+        bagno:
+          insert_idea_with_categories_duration_and_cost!(
+            "Bagno improvviso",
+            [by_name("mare")],
+            nil,
+            nil,
+            ~U[2026-04-27 10:05:00Z]
+          )
+      }
+    end
+
+    test "F8 regression: list_ideas([]) returns all 6 ideas (NULL-pass implicit)" do
+      _ = seed_6_ideas_with_costs()
+
+      titles = Ideas.list_ideas([]) |> Enum.map(& &1.title) |> Enum.sort()
+
+      assert titles ==
+               [
+                 "Bagno improvviso",
+                 "Caffè al volo",
+                 "Parigi 4 giorni",
+                 "Sirolo",
+                 "Stadio",
+                 "Uffizi"
+               ]
+    end
+
+    test "F9 cumulative ≤100: max_cost: 100 returns only ideas with cost ≤ 100, NULL excluded" do
+      _ = seed_6_ideas_with_costs()
+
+      result = Ideas.list_ideas(max_cost: 100)
+      titles = result |> Enum.map(& &1.title) |> Enum.sort()
+
+      assert titles == ["Caffè al volo", "Stadio", "Uffizi"]
+      # Pin: NULL-cost idea Bagno improvviso is EXCLUDED (uniform with AA7).
+      refute Enum.any?(result, &(&1.title == "Bagno improvviso"))
+      # Pin: priced ideas above the threshold are excluded.
+      refute Enum.any?(result, &(&1.title == "Sirolo"))
+      refute Enum.any?(result, &(&1.title == "Parigi 4 giorni"))
+    end
+
+    test "F10 gratis only: max_cost: 0 returns only the cost=0 idea" do
+      _ = seed_6_ideas_with_costs()
+
+      titles = Ideas.list_ideas(max_cost: 0) |> Enum.map(& &1.title)
+
+      assert titles == ["Caffè al volo"]
+    end
+
+    test "F11 all priced: max_cost: 1000 returns 5 priced ideas, NULL excluded" do
+      _ = seed_6_ideas_with_costs()
+
+      result = Ideas.list_ideas(max_cost: 1000)
+      titles = result |> Enum.map(& &1.title) |> Enum.sort()
+
+      assert titles ==
+               ["Caffè al volo", "Parigi 4 giorni", "Sirolo", "Stadio", "Uffizi"]
+
+      refute Enum.any?(result, &(&1.title == "Bagno improvviso"))
+    end
+
+    test "F12 nil = no filter: max_cost: nil returns all 6 (NULL incluse)" do
+      _ = seed_6_ideas_with_costs()
+
+      titles = Ideas.list_ideas(max_cost: nil) |> Enum.map(& &1.title) |> Enum.sort()
+
+      assert titles ==
+               [
+                 "Bagno improvviso",
+                 "Caffè al volo",
+                 "Parigi 4 giorni",
+                 "Sirolo",
+                 "Stadio",
+                 "Uffizi"
+               ]
+    end
+
+    test "NULL strict exclusion edge: only NULL-cost idea in DB returns []" do
+      _ =
+        insert_idea_with_categories_duration_and_cost!(
+          "Bagno improvviso",
+          [by_name("mare")],
+          nil,
+          nil,
+          ~U[2026-04-27 10:00:00Z]
+        )
+
+      assert Ideas.list_ideas(max_cost: 100) == []
+    end
+
+    test "F13 combined 3-way AND: required + durations + max_cost → only Sirolo" do
+      _ = seed_6_ideas_with_costs()
+      viaggio = by_name("viaggio")
+
+      titles =
+        Ideas.list_ideas(required: [viaggio.id], durations: [:weekend], max_cost: 500)
+        |> Enum.map(& &1.title)
+
+      # Sirolo (mare+viaggio, weekend, 200) is the only match.
+      # Parigi excluded by max_cost (1000 > 500).
+      # Bagno excluded by NULL-cost (uniform AA7) AND durations (NULL duration).
+      assert titles == ["Sirolo"]
+    end
+
+    test "slice-4 regression: required: [mare_id] still returns Sirolo + Bagno" do
+      _ = seed_6_ideas_with_costs()
+      mare = by_name("mare")
+
+      titles =
+        Ideas.list_ideas(required: [mare.id])
+        |> Enum.map(& &1.title)
+        |> Enum.sort()
+
+      assert titles == ["Bagno improvviso", "Sirolo"]
+    end
+
+    test "slice-4 regression: optional: [sport_id, cultura_id] still works (OR)" do
+      _ = seed_6_ideas_with_costs()
+      sport = by_name("sport")
+      cultura = by_name("cultura")
+
+      titles =
+        Ideas.list_ideas(optional: [sport.id, cultura.id])
+        |> Enum.map(& &1.title)
+        |> Enum.sort()
+
+      assert titles == ["Parigi 4 giorni", "Stadio", "Uffizi"]
+    end
+
+    test "slice-5 regression: durations: [:weekend] still excludes NULL-duration" do
+      _ = seed_6_ideas_with_costs()
+
+      result = Ideas.list_ideas(durations: [:weekend])
+      titles = Enum.map(result, & &1.title)
+
+      assert titles == ["Sirolo"]
+      refute Enum.any?(result, &(&1.title == "Bagno improvviso"))
+    end
+
+    test "O3 SQL emission pin: max_cost clause emits estimated_cost <= AND a NULL-exclude predicate" do
+      # ecto_sqlite3 emits `not is_nil/1` as `NOT (... IS NULL)` rather
+      # than `IS NOT NULL`. Both forms are semantically the NULL-exclude
+      # predicate; we accept either to stay robust to adapter style (BB15).
+      query = Ideas.build_query(max_cost: 100)
+      {sql, _params} = Repo.to_sql(:all, query)
+
+      assert sql =~ ~r/"estimated_cost"\s+<=/i
+
+      assert sql =~ ~r/IS\s+NOT\s+NULL/i or
+               sql =~ ~r/NOT\s*\([^)]*"estimated_cost"\s+IS\s+NULL/i
+
+      # Forbid an `OR ... IS NULL` permissive branch (NULL-pass leak).
+      refute sql =~ ~r/\bOR\b[^()]*IS\s+NULL/i
+    end
+  end
+
   defp insert_idea_with_categories!(title, cats, %DateTime{} = at) do
     idea =
       %Idea{title: title}
@@ -874,6 +1077,25 @@ defmodule Ideajar.IdeasTest do
   defp insert_idea_with_categories_and_duration!(title, cats, duration, %DateTime{} = at) do
     idea =
       %Idea{title: title, duration: duration}
+      |> Ecto.Changeset.change()
+      |> Ecto.Changeset.put_assoc(:categories, cats)
+      |> Repo.insert!()
+
+    Repo.update!(
+      Ecto.Changeset.change(idea, inserted_at: at, updated_at: at),
+      force: true
+    )
+  end
+
+  defp insert_idea_with_categories_duration_and_cost!(
+         title,
+         cats,
+         duration,
+         estimated_cost,
+         %DateTime{} = at
+       ) do
+    idea =
+      %Idea{title: title, duration: duration, estimated_cost: estimated_cost}
       |> Ecto.Changeset.change()
       |> Ecto.Changeset.put_assoc(:categories, cats)
       |> Repo.insert!()
