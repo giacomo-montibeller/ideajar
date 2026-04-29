@@ -2331,4 +2331,178 @@ defmodule IdeajarWeb.IdeaLive.IndexTest do
       refute filter_weekend =~ "aria-pressed"
     end
   end
+
+  # ── Slice 5 Step 7: clear_filters extension + combined filter scenarios ──
+  #
+  # Pins F9 (combined AND), F12 (clear_filters resets BOTH groups), S7
+  # (idempotency on already-empty filters), and slice-4 F10 extended to the
+  # combined-filter case (`Mostra tutte` rendered exactly once).
+  describe "clear_filters and combined filters (slice 5 step 7)" do
+    # 1. F12 — clear_filters resets BOTH @filter_state and @duration_filter,
+    # the list returns to all 6 ideas, and the live-region announces the
+    # canonical 'Filtri rimossi, 6 idee' with NO compound suffix.
+    test "clear_filters resets both filter_state (categoria) and duration_filter (durata)",
+         %{conn: conn} do
+      _ = seed_6_lv_ideas_with_durations()
+      view = mount_authenticated(conn)
+      mare = CategoriesFixtures.category_by_name!("mare")
+
+      # Activate both groups: weekend duration on + mare required (2 cycles).
+      view |> cycle_duration(:weekend)
+      view |> cycle_filter("mare") |> cycle_filter("mare")
+
+      # Sanity: both groups are non-empty pre-clear.
+      pre = :sys.get_state(view.pid).socket.assigns
+      assert pre.duration_filter == MapSet.new([:weekend])
+      assert pre.filter_state == %{mare.id => :required}
+
+      html = render_click(view, "clear_filters")
+
+      assigns = :sys.get_state(view.pid).socket.assigns
+      assert assigns.filter_state == %{}
+      assert assigns.duration_filter == MapSet.new()
+
+      # Every seeded idea is back in the list.
+      for title <- ["Sirolo", "Uffizi", "Stadio", "Bagno improvviso", "Cinema", "Bivacco"] do
+        assert html =~ title, "Expected #{title} after clear_filters"
+      end
+
+      assert extract_filter_status(html) == "Filtri rimossi, 6 idee"
+    end
+
+    # 2. S7 — idempotency: calling clear_filters when both groups are already
+    # empty must not crash and must leave both at their empty representation.
+    test "clear_filters is idempotent when both groups are already empty (S7)",
+         %{conn: conn} do
+      _ = seed_6_lv_ideas_with_durations()
+      view = mount_authenticated(conn)
+
+      pre = :sys.get_state(view.pid).socket.assigns
+      assert pre.filter_state == %{}
+      assert pre.duration_filter == MapSet.new()
+
+      render_click(view, "clear_filters")
+
+      assigns = :sys.get_state(view.pid).socket.assigns
+      assert assigns.filter_state == %{}
+      assert assigns.duration_filter == MapSet.new()
+      assert Process.alive?(view.pid)
+    end
+
+    # 3. F9 — combined filters compose as AND across categoria + durata.
+    # Sirolo (viaggio + :weekend) is the ONLY match. Bagno improvviso (NULL
+    # duration) is excluded by the durata filter; Uffizi/Stadio/Cinema/Bivacco
+    # lack the viaggio category.
+    test "cycle category viaggio required + duration weekend on → only Sirolo (F9)",
+         %{conn: conn} do
+      _ = seed_6_lv_ideas_with_durations()
+      view = mount_authenticated(conn)
+
+      view |> cycle_filter("viaggio") |> cycle_filter("viaggio")
+      html = view |> cycle_duration(:weekend) |> render()
+
+      assert html =~ "Sirolo"
+      refute html =~ "Uffizi"
+      refute html =~ "Stadio"
+      refute html =~ "Bagno improvviso"
+      refute html =~ "Cinema"
+      refute html =~ "Bivacco"
+    end
+
+    # 4. Combined filter with zero matches → empty-filter state, NOT
+    # workspace-empty. No idea in the fixture has the passeggiata category,
+    # so passeggiata-required already empties the list; adding the weekend
+    # duration on top keeps it empty.
+    test "passeggiata required + weekend on → empty-filter state (combined)",
+         %{conn: conn} do
+      _ = seed_6_lv_ideas_with_durations()
+      view = mount_authenticated(conn)
+
+      view |> cycle_filter("passeggiata") |> cycle_filter("passeggiata")
+      html = view |> cycle_duration(:weekend) |> render()
+
+      assert html =~ "Nessuna idea per i filtri attivi."
+      assert html =~ ~s(data-testid="empty-filter-state")
+      assert html =~ "Mostra tutte"
+      # Workspace-empty copy must NOT appear when at least one filter is on.
+      refute html =~ "Nessuna idea ancora. Aggiungine una qui sopra."
+    end
+
+    # 5a. Slice-4 F10 extended: combined filter active + non-empty list →
+    # exactly ONE Mostra tutte under the filter row, none inside the empty-
+    # message (the list isn't empty).
+    test "combined filter active + non-empty list: exactly one Mostra tutte under filter row",
+         %{conn: conn} do
+      _ = seed_6_lv_ideas_with_durations()
+      view = mount_authenticated(conn)
+
+      # mare required (2 cycles) + weekend on → Sirolo matches
+      view |> cycle_filter("mare") |> cycle_filter("mare")
+      html = view |> cycle_duration(:weekend) |> render()
+
+      count = Regex.scan(~r/Mostra tutte/, html) |> length()
+      assert count == 1
+      assert html =~ ~s(id="mostra-tutte")
+      refute html =~ ~s(id="mostra-tutte-empty")
+    end
+
+    # 5b. Combined filter active + empty list → exactly ONE Mostra tutte
+    # INSIDE the empty-message, none under the filter row.
+    test "combined filter active + empty list: exactly one Mostra tutte inside empty-filter state",
+         %{conn: conn} do
+      _ = seed_6_lv_ideas_with_durations()
+      view = mount_authenticated(conn)
+
+      view |> cycle_filter("passeggiata") |> cycle_filter("passeggiata")
+      html = view |> cycle_duration(:weekend) |> render()
+
+      count = Regex.scan(~r/Mostra tutte/, html) |> length()
+      assert count == 1
+      assert html =~ ~s(id="mostra-tutte-empty")
+      refute html =~ ~s(id="mostra-tutte")
+    end
+
+    # 5c. No filter active anywhere → zero Mostra tutte buttons (regression
+    # against the helper signature change).
+    test "no filter active: zero Mostra tutte buttons", %{conn: conn} do
+      _ = seed_6_lv_ideas_with_durations()
+      {:ok, _view, html} = live_isolated(conn, Index, session: @authenticated_session)
+
+      count = Regex.scan(~r/Mostra tutte/, html) |> length()
+      assert count == 0
+    end
+
+    # 6. Regression for slice-4 F10: Mostra tutte must render when ONLY the
+    # durata filter is active (slice-4 F10 only covered category-only).
+    test "duration-only filter active + non-empty list: Mostra tutte rendered under filter row",
+         %{conn: conn} do
+      _ = seed_6_lv_ideas_with_durations()
+      view = mount_authenticated(conn)
+
+      html = view |> cycle_duration(:weekend) |> render()
+
+      count = Regex.scan(~r/Mostra tutte/, html) |> length()
+      assert count == 1
+      assert html =~ ~s(id="mostra-tutte")
+      refute html =~ ~s(id="mostra-tutte-empty")
+    end
+
+    # 7. AA20 regression: clear_filters live-region NEVER carries a compound
+    # suffix because both groups are empty by construction post-clear.
+    test "clear_filters live-region has no compound suffix even when both groups were active",
+         %{conn: conn} do
+      _ = seed_6_lv_ideas_with_durations()
+      view = mount_authenticated(conn)
+
+      view |> cycle_duration(:weekend)
+      view |> cycle_filter("mare") |> cycle_filter("mare")
+
+      html = render_click(view, "clear_filters")
+
+      status = extract_filter_status(html)
+      assert status == "Filtri rimossi, 6 idee"
+      refute status =~ "filtri categoria attivi"
+      refute status =~ "filtri durata attivi"
+    end
+  end
 end
