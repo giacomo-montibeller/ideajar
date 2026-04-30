@@ -125,8 +125,8 @@
         <button
           type="button"
           aria-haspopup="dialog"
+          phx-click={JS.exec("showModal", to: "#location-map-dialog")}
           class="btn btn-secondary btn-sm min-h-11 min-w-11"
-          disabled
         >
           📍 Apri mappa
         </button>
@@ -144,6 +144,54 @@
         Salva
       </button>
     </.form>
+
+    <%!--
+      Slice 7a step 6 — HTML5 <dialog> map picker shell.
+      Always rendered (independent of @form_visible?) so the
+      `JS.exec("showModal", ...)` from the form's "📍 Apri mappa"
+      button always has a target node. Closed at mount: no `open`
+      attribute. CC18: NO `phx-click` on the <dialog> itself —
+      bubbling child clicks would close it; the close button + Esc
+      are the only dismiss paths.
+    --%>
+    <dialog
+      id="location-map-dialog"
+      aria-labelledby="location-map-title"
+      class="rounded-box border border-base-300 bg-base-100 p-0 backdrop:bg-black/40"
+    >
+      <div class="flex flex-col gap-2 p-4 h-full w-full sm:w-[32rem]">
+        <div class="flex items-center justify-between">
+          <h2 id="location-map-title" class="text-base font-semibold">Scegli posizione</h2>
+          <button
+            type="button"
+            aria-label="Chiudi"
+            phx-click={JS.exec("close", to: "#location-map-dialog")}
+            class="btn btn-ghost btn-sm min-h-11 min-w-11 text-base-content/60"
+          >
+            ✕
+          </button>
+        </div>
+        <div
+          id="form-map-picker"
+          phx-hook="LeafletMap"
+          data-default-center="[43.5, 12.5]"
+          data-default-zoom="6"
+          class="h-96 w-full sm:h-96 grow"
+        >
+        </div>
+        <p class="text-xs text-base-content/70">
+          ©
+          <a
+            href="https://www.openstreetmap.org/copyright"
+            target="_blank"
+            rel="noopener noreferrer"
+            class="link"
+          >
+            OpenStreetMap
+          </a>
+        </p>
+      </div>
+    </dialog>
 
     <section
       data-testid="filter-row"

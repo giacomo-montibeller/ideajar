@@ -237,10 +237,13 @@ defmodule IdeajarWeb.IdeaLive.IndexTest do
       html = submit(view, %{title: "Cinema stasera"})
 
       assert html =~ "Cinema stasera"
-      # `target="_blank"` is unique to the idea-card external link; the layout
-      # links never use it, so its absence proves we did not render a link
-      # block for this title-only idea.
-      refute html =~ ~s(target="_blank")
+      # The idea-card external link carries a distinctive aria-label
+      # ("Apri link in una nuova scheda") — no other link in the layout
+      # uses it, so its absence proves we did not render a link block
+      # for this title-only idea. (We can no longer use `target="_blank"`
+      # as the proxy because slice 7a step 6 added an OSM attribution
+      # link in the location-map dialog that legitimately uses it.)
+      refute html =~ ~s(aria-label="Apri link in una nuova scheda")
       # Description block is gated by data-testid so we don't depend on
       # Tailwind class names for behaviour assertions.
       refute html =~ ~s(data-testid="idea-description")
@@ -4173,7 +4176,7 @@ defmodule IdeajarWeb.IdeaLive.IndexTest do
       assert input_tag =~ ~s(maxlength="200")
     end
 
-    test "opening the form renders the disabled '📍 Apri mappa' button with aria-haspopup=\"dialog\"",
+    test "opening the form renders the '📍 Apri mappa' button with aria-haspopup=\"dialog\"",
          %{conn: conn} do
       view = mount_authenticated(conn) |> open_form()
       html = render(view)
@@ -4190,7 +4193,10 @@ defmodule IdeajarWeb.IdeaLive.IndexTest do
 
       assert open_map_btn, "Expected an 'Apri mappa' button inside the Posizione fieldset"
       assert open_map_btn =~ ~s(aria-haspopup="dialog")
-      assert open_map_btn =~ "disabled"
+      # Slice 7a step 6 enables the button (was `disabled` after step 4).
+      # The behaviour test for the wired phx-click lives in the step 6
+      # describe block ("'📍 Apri mappa' button is enabled and wired to ...").
+      refute open_map_btn =~ ~r/\bdisabled\b/
     end
 
     test "no location set: 'Rimuovi posizione' button is NOT rendered",
@@ -4368,6 +4374,233 @@ defmodule IdeajarWeb.IdeaLive.IndexTest do
       assert durata_idx < budget_idx
       assert budget_idx < posizione_idx
       assert posizione_idx < salva_idx
+    end
+  end
+
+  describe "map picker dialog shell + assets (slice 7a step 6)" do
+    # ── Hook + asset registration tests (CC4, CC8, CC9) ────────────
+
+    test "vendor leaflet JS exists" do
+      assert File.exists?("assets/vendor/leaflet.js"),
+             "Expected assets/vendor/leaflet.js to be vendored (Leaflet 1.9.4 UMD)"
+    end
+
+    test "vendor leaflet CSS exists" do
+      assert File.exists?("assets/vendor/leaflet.css"),
+             "Expected assets/vendor/leaflet.css to be vendored"
+    end
+
+    test "vendor leaflet JS and CSS are mirrored under priv/static so Plug.Static can serve them" do
+      assert File.exists?("priv/static/assets/vendor/leaflet.js"),
+             "Expected priv/static/assets/vendor/leaflet.js (mirrored by mix assets.build)"
+
+      assert File.exists?("priv/static/assets/vendor/leaflet.css"),
+             "Expected priv/static/assets/vendor/leaflet.css (mirrored by mix assets.build)"
+    end
+
+    test "leaflet_map.js hook file exists with the expected wiring" do
+      assert File.exists?("assets/js/hooks/leaflet_map.js"),
+             "Expected assets/js/hooks/leaflet_map.js"
+
+      js = File.read!("assets/js/hooks/leaflet_map.js")
+      assert js =~ "export const LeafletMap"
+      assert js =~ "mounted()"
+      assert js =~ "window.L"
+
+      assert js =~ ~s(pushEvent("set_location") or js =~ ~s(pushEvent('set_location'),
+             "Hook must pushEvent set_location with click coords"
+
+      assert js =~ "destroyed()"
+    end
+
+    test "app.js imports + registers LeafletMap and listens for phx:close-dialog" do
+      app_js = File.read!("assets/js/app.js")
+
+      assert app_js =~ "LeafletMap",
+             "Expected LeafletMap to be imported and registered as a hook in app.js"
+
+      assert app_js =~ "phx:close-dialog",
+             "Expected app.js to install a global phx:close-dialog listener that calls dialog.close()"
+    end
+
+    test "leaflet CSS is imported by the app stylesheet" do
+      css = File.read!("assets/css/app.css")
+
+      assert css =~ "leaflet.css" or css =~ "leaflet",
+             "Expected assets/css/app.css to import the vendored leaflet stylesheet"
+    end
+
+    # ── Template DOM structure tests (CC7, CC18, CC21) ─────────────
+
+    test "mount: renders <dialog id=\"location-map-dialog\"> closed (no `open` attribute)",
+         %{conn: conn} do
+      view = mount_authenticated(conn)
+      html = render(view)
+
+      [dialog_open_tag] =
+        Regex.run(~r{<dialog[^>]*id="location-map-dialog"[^>]*>}, html) ||
+          [nil] |> List.wrap()
+
+      assert dialog_open_tag,
+             "Expected <dialog id=\"location-map-dialog\"> to be present in the rendered DOM"
+
+      refute dialog_open_tag =~ ~r/\bopen\b/,
+             "Dialog must mount closed: the `open` attribute must not be present"
+    end
+
+    test "dialog has aria-labelledby pointing at the dialog title (A4)", %{conn: conn} do
+      view = mount_authenticated(conn)
+      html = render(view)
+
+      [dialog_open_tag] =
+        Regex.run(~r{<dialog[^>]*id="location-map-dialog"[^>]*>}, html) ||
+          [nil] |> List.wrap()
+
+      assert dialog_open_tag =~ ~s(aria-labelledby="location-map-title")
+    end
+
+    test "dialog contains <h2 id=\"location-map-title\">Scegli posizione</h2>",
+         %{conn: conn} do
+      view = mount_authenticated(conn)
+      html = render(view)
+
+      [_full, dialog_inner] =
+        Regex.run(
+          ~r{<dialog[^>]*id="location-map-dialog"[^>]*>(.*?)</dialog>}s,
+          html
+        ) || [nil, nil]
+
+      assert dialog_inner,
+             "Expected to extract the inner content of the location-map-dialog"
+
+      assert dialog_inner =~
+               ~r{<h2[^>]*id="location-map-title"[^>]*>\s*Scegli posizione\s*</h2>}
+    end
+
+    test "dialog contains the Leaflet hook host with default-center [43.5, 12.5] and default-zoom 6 (CC21)",
+         %{conn: conn} do
+      view = mount_authenticated(conn)
+      html = render(view)
+
+      [_, dialog_inner] =
+        Regex.run(
+          ~r{<dialog[^>]*id="location-map-dialog"[^>]*>(.*?)</dialog>}s,
+          html
+        ) || [nil, nil]
+
+      assert dialog_inner
+
+      [hook_div] =
+        Regex.run(~r{<div[^>]*id="form-map-picker"[^>]*>}, dialog_inner) ||
+          [nil] |> List.wrap()
+
+      assert hook_div, "Expected <div id=\"form-map-picker\"> hook host inside the dialog"
+      assert hook_div =~ ~s(phx-hook="LeafletMap")
+      assert hook_div =~ ~s(data-default-center="[43.5, 12.5]")
+      assert hook_div =~ ~s(data-default-zoom="6")
+    end
+
+    test "dialog contains a close button with aria-label Chiudi wired to JS.exec(close, ...) (A5)",
+         %{conn: conn} do
+      view = mount_authenticated(conn)
+      html = render(view)
+
+      [_, dialog_inner] =
+        Regex.run(
+          ~r{<dialog[^>]*id="location-map-dialog"[^>]*>(.*?)</dialog>}s,
+          html
+        ) || [nil, nil]
+
+      assert dialog_inner
+
+      [close_btn] =
+        Regex.run(
+          ~r{<button[^>]*aria-label="Chiudi"[^>]*>[^<]*</button>}s,
+          dialog_inner
+        ) || [nil] |> List.wrap()
+
+      assert close_btn, "Expected a close button with aria-label=\"Chiudi\" inside the dialog"
+
+      # phx-click should be present and target #location-map-dialog with a "close" exec.
+      assert close_btn =~ "phx-click",
+             "Expected the close button to carry a phx-click attribute"
+
+      # JS.exec serialises to a JSON-ish payload that contains both the verb
+      # ("exec" + "close") and the target ("#location-map-dialog"). We pin
+      # both fragments without committing to a specific quoting strategy.
+      assert close_btn =~ "exec" and close_btn =~ "close",
+             "Expected the close button phx-click to encode JS.exec(\"close\", ...)"
+
+      assert close_btn =~ "#location-map-dialog",
+             "Expected the close button phx-click to target #location-map-dialog"
+    end
+
+    test "dialog contains an OSM attribution link to openstreetmap.org/copyright",
+         %{conn: conn} do
+      view = mount_authenticated(conn)
+      html = render(view)
+
+      [_, dialog_inner] =
+        Regex.run(
+          ~r{<dialog[^>]*id="location-map-dialog"[^>]*>(.*?)</dialog>}s,
+          html
+        ) || [nil, nil]
+
+      assert dialog_inner
+      assert dialog_inner =~ "https://www.openstreetmap.org/copyright"
+      assert dialog_inner =~ "OpenStreetMap"
+    end
+
+    test "'📍 Apri mappa' button is enabled and wired to JS.exec(\"showModal\", ...) (U3)",
+         %{conn: conn} do
+      view = mount_authenticated(conn) |> open_form()
+      html = render(view)
+
+      [pos_block] =
+        Regex.run(~r{<legend[^>]*>\s*Posizione\s*</legend>.*?</fieldset>}s, html) ||
+          [nil] |> List.wrap()
+
+      assert pos_block
+
+      [open_map_btn] =
+        Regex.run(~r{<button[^>]*>[^<]*Apri mappa[^<]*</button>}s, pos_block) ||
+          [nil] |> List.wrap()
+
+      assert open_map_btn, "Expected an 'Apri mappa' button inside the Posizione fieldset"
+
+      refute open_map_btn =~ ~r/\bdisabled\b/,
+             "Step 6 enables the 'Apri mappa' button — the disabled attribute must be gone"
+
+      assert open_map_btn =~ "phx-click",
+             "Expected 'Apri mappa' to carry a phx-click attribute (JS.exec showModal)"
+
+      # `JS.exec("showModal", to: "#...")` serialises to a JSON-ish
+      # phx-click payload that contains the verb tag `exec` and the
+      # method name `showModal` (HTML-escaped to `&quot;showModal&quot;`).
+      assert open_map_btn =~ "exec" and open_map_btn =~ "showModal",
+             "Expected 'Apri mappa' phx-click to encode JS.exec(\"showModal\", ...)"
+
+      assert open_map_btn =~ "#location-map-dialog"
+      assert open_map_btn =~ ~s(aria-haspopup="dialog")
+    end
+
+    # CC18: HTML5 showModal() does NOT close on backdrop click. We MUST NOT add
+    # a phx-click listener on the <dialog> element itself — that would close
+    # the dialog whenever a child click bubbles up. The close button + Esc are
+    # the only dismiss paths.
+    test "<dialog> opening tag does NOT carry phx-click (CC18 backdrop no-handler)",
+         %{conn: conn} do
+      view = mount_authenticated(conn)
+      html = render(view)
+
+      [dialog_open_tag] =
+        Regex.run(~r{<dialog[^>]*id="location-map-dialog"[^>]*>}, html) ||
+          [nil] |> List.wrap()
+
+      assert dialog_open_tag
+
+      refute dialog_open_tag =~ "phx-click",
+             "CC18: the <dialog> element itself must NOT have phx-click — bubbling child clicks would close the dialog. Backdrop click must NOT close (use the explicit close button or Esc)."
     end
   end
 end

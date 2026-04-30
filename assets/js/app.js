@@ -24,13 +24,14 @@ import {Socket} from "phoenix"
 import {LiveSocket} from "phoenix_live_view"
 import {hooks as colocatedHooks} from "phoenix-colocated/ideajar"
 import {RovingTabindex} from "./hooks/roving_tabindex"
+import {LeafletMap} from "./hooks/leaflet_map"
 import topbar from "../vendor/topbar"
 
 const csrfToken = document.querySelector("meta[name='csrf-token']").getAttribute("content")
 const liveSocket = new LiveSocket("/live", Socket, {
   longPollFallbackMs: 2500,
   params: {_csrf_token: csrfToken},
-  hooks: {...colocatedHooks, RovingTabindex},
+  hooks: {...colocatedHooks, RovingTabindex, LeafletMap},
 })
 
 // Show progress bar on live navigation and form submits
@@ -47,6 +48,20 @@ window.addEventListener("phx:ideajar:focus", e => {
   if (!target) return
   const node = document.querySelector(target)
   if (node) node.focus()
+})
+
+// Slice 7a — server-driven dismissal of HTML5 <dialog> elements. The
+// LiveView emits `push_event("phx:close-dialog", %{id: "..."})` from
+// post-handler code (e.g. after a successful `set_location` reverse
+// geocode). We bridge the event to the native `dialog.close()` call
+// here so the close path stays a single line of LV code (no extra
+// JS.exec dance) and so testing the dismissal is just an
+// `assert_push_event` from the server side.
+window.addEventListener("phx:close-dialog", e => {
+  const id = e.detail && e.detail.id
+  if (!id) return
+  const dialog = document.getElementById(id)
+  if (dialog && typeof dialog.close === "function") dialog.close()
 })
 
 // connect if there are any LiveViews on the page
