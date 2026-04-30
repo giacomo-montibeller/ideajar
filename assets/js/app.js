@@ -50,13 +50,23 @@ window.addEventListener("phx:ideajar:focus", e => {
   if (node) node.focus()
 })
 
-// Slice 7a — server-driven dismissal of HTML5 <dialog> elements. The
-// LiveView emits `push_event("phx:close-dialog", %{id: "..."})` from
-// post-handler code (e.g. after a successful `set_location` reverse
-// geocode). We bridge the event to the native `dialog.close()` call
-// here so the close path stays a single line of LV code (no extra
-// JS.exec dance) and so testing the dismissal is just an
-// `assert_push_event` from the server side.
+// Slice 7a — bridge HTML5 <dialog> open/close to native methods. Used by:
+//   * server push_event("phx:close-dialog", %{id: "..."}) from post-handler
+//     code (e.g. after a successful set_location reverse geocode);
+//   * client JS.dispatch from button phx-click (Apri mappa / Chiudi). The
+//     event bubbles to window from the button; we resolve the dialog by
+//     `detail.id` so both server and client paths share the same listener.
+//
+// Phoenix.LiveView.JS does not expose a primitive that calls element DOM
+// methods like showModal()/close() directly (JS.exec is for command attrs,
+// not method invocation), so this small bridge is the documented pattern.
+window.addEventListener("phx:open-dialog", e => {
+  const id = e.detail && e.detail.id
+  if (!id) return
+  const dialog = document.getElementById(id)
+  if (dialog && typeof dialog.showModal === "function") dialog.showModal()
+})
+
 window.addEventListener("phx:close-dialog", e => {
   const id = e.detail && e.detail.id
   if (!id) return

@@ -4413,11 +4413,14 @@ defmodule IdeajarWeb.IdeaLive.IndexTest do
       assert js =~ "destroyed()"
     end
 
-    test "app.js imports + registers LeafletMap and listens for phx:close-dialog" do
+    test "app.js imports + registers LeafletMap and bridges phx:open-dialog / phx:close-dialog" do
       app_js = File.read!("assets/js/app.js")
 
       assert app_js =~ "LeafletMap",
              "Expected LeafletMap to be imported and registered as a hook in app.js"
+
+      assert app_js =~ "phx:open-dialog",
+             "Expected app.js to install a global phx:open-dialog listener that calls dialog.showModal()"
 
       assert app_js =~ "phx:close-dialog",
              "Expected app.js to install a global phx:close-dialog listener that calls dialog.close()"
@@ -4500,7 +4503,7 @@ defmodule IdeajarWeb.IdeaLive.IndexTest do
       assert hook_div =~ ~s(data-default-zoom="6")
     end
 
-    test "dialog contains a close button with aria-label Chiudi wired to JS.exec(close, ...) (A5)",
+    test "dialog contains a close button with aria-label Chiudi wired to phx:close-dialog (A5)",
          %{conn: conn} do
       view = mount_authenticated(conn)
       html = render(view)
@@ -4521,18 +4524,18 @@ defmodule IdeajarWeb.IdeaLive.IndexTest do
 
       assert close_btn, "Expected a close button with aria-label=\"Chiudi\" inside the dialog"
 
-      # phx-click should be present and target #location-map-dialog with a "close" exec.
+      # JS.dispatch("phx:close-dialog", detail: %{id: "..."}) serialises to a
+      # JSON-ish payload containing the verb "dispatch", the event name
+      # "phx:close-dialog" and the dialog id (HTML-escaped). The window
+      # listener in app.js bridges this CustomEvent to dialog.close().
       assert close_btn =~ "phx-click",
              "Expected the close button to carry a phx-click attribute"
 
-      # JS.exec serialises to a JSON-ish payload that contains both the verb
-      # ("exec" + "close") and the target ("#location-map-dialog"). We pin
-      # both fragments without committing to a specific quoting strategy.
-      assert close_btn =~ "exec" and close_btn =~ "close",
-             "Expected the close button phx-click to encode JS.exec(\"close\", ...)"
+      assert close_btn =~ "dispatch" and close_btn =~ "phx:close-dialog",
+             "Expected the close button phx-click to encode JS.dispatch(\"phx:close-dialog\", ...)"
 
-      assert close_btn =~ "#location-map-dialog",
-             "Expected the close button phx-click to target #location-map-dialog"
+      assert close_btn =~ "location-map-dialog",
+             "Expected the close button phx-click to carry the dialog id"
     end
 
     test "dialog contains an OSM attribution link to openstreetmap.org/copyright",
@@ -4551,7 +4554,7 @@ defmodule IdeajarWeb.IdeaLive.IndexTest do
       assert dialog_inner =~ "OpenStreetMap"
     end
 
-    test "'📍 Apri mappa' button is enabled and wired to JS.exec(\"showModal\", ...) (U3)",
+    test "'📍 Apri mappa' button is enabled and wired to phx:open-dialog (U3)",
          %{conn: conn} do
       view = mount_authenticated(conn) |> open_form()
       html = render(view)
@@ -4572,15 +4575,16 @@ defmodule IdeajarWeb.IdeaLive.IndexTest do
              "Step 6 enables the 'Apri mappa' button — the disabled attribute must be gone"
 
       assert open_map_btn =~ "phx-click",
-             "Expected 'Apri mappa' to carry a phx-click attribute (JS.exec showModal)"
+             "Expected 'Apri mappa' to carry a phx-click attribute"
 
-      # `JS.exec("showModal", to: "#...")` serialises to a JSON-ish
-      # phx-click payload that contains the verb tag `exec` and the
-      # method name `showModal` (HTML-escaped to `&quot;showModal&quot;`).
-      assert open_map_btn =~ "exec" and open_map_btn =~ "showModal",
-             "Expected 'Apri mappa' phx-click to encode JS.exec(\"showModal\", ...)"
+      # JS.dispatch("phx:open-dialog", detail: %{id: "..."}) serialises to a
+      # JSON-ish payload containing the verb "dispatch", the event name
+      # "phx:open-dialog" and the dialog id (HTML-escaped). The window
+      # listener in app.js bridges this CustomEvent to dialog.showModal().
+      assert open_map_btn =~ "dispatch" and open_map_btn =~ "phx:open-dialog",
+             "Expected 'Apri mappa' phx-click to encode JS.dispatch(\"phx:open-dialog\", ...)"
 
-      assert open_map_btn =~ "#location-map-dialog"
+      assert open_map_btn =~ "location-map-dialog"
       assert open_map_btn =~ ~s(aria-haspopup="dialog")
     end
 

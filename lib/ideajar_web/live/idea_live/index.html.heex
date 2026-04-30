@@ -125,7 +125,7 @@
         <button
           type="button"
           aria-haspopup="dialog"
-          phx-click={JS.exec("showModal", to: "#location-map-dialog")}
+          phx-click={JS.dispatch("phx:open-dialog", detail: %{id: "location-map-dialog"})}
           class="btn btn-secondary btn-sm min-h-11 min-w-11"
         >
           📍 Apri mappa
@@ -165,7 +165,7 @@
           <button
             type="button"
             aria-label="Chiudi"
-            phx-click={JS.exec("close", to: "#location-map-dialog")}
+            phx-click={JS.dispatch("phx:close-dialog", detail: %{id: "location-map-dialog"})}
             class="btn btn-ghost btn-sm min-h-11 min-w-11 text-base-content/60"
           >
             ✕
