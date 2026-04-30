@@ -661,6 +661,246 @@ defmodule Ideajar.IdeasTest do
     end
   end
 
+  describe "location fields (slice 7a step 3)" do
+    @location_incomplete "Posizione incompleta"
+    @location_invalid "Posizione non valida"
+    @location_name_too_long "Il nome del luogo non può superare i 200 caratteri"
+
+    defp location_changeset(attrs) do
+      mare = by_name("mare")
+
+      base = %{
+        title: "Foo",
+        url: "",
+        description: "",
+        categories: [mare]
+      }
+
+      Idea.changeset(%Idea{}, Map.merge(base, attrs))
+    end
+
+    test "valid changeset when all 3 location fields are nil (state a)" do
+      cs = location_changeset(%{location_name: nil, lat: nil, lng: nil})
+      assert cs.valid?
+    end
+
+    test "valid changeset with only location_name set, lat/lng nil (state b)" do
+      cs =
+        location_changeset(%{
+          location_name: "Casa di nonna",
+          lat: nil,
+          lng: nil
+        })
+
+      assert cs.valid?
+    end
+
+    test "valid changeset with all 3 fields set (state c)" do
+      cs =
+        location_changeset(%{
+          location_name: "Sirolo, AN",
+          lat: 43.5,
+          lng: 13.6
+        })
+
+      assert cs.valid?
+    end
+
+    test "rejects lat without lng with 'Posizione incompleta'" do
+      cs =
+        location_changeset(%{
+          location_name: "X",
+          lat: 43.5,
+          lng: nil
+        })
+
+      refute cs.valid?
+      assert {@location_incomplete, _} = Keyword.fetch!(cs.errors, :location_name)
+    end
+
+    test "rejects lng without lat with 'Posizione incompleta'" do
+      cs =
+        location_changeset(%{
+          location_name: "X",
+          lat: nil,
+          lng: 13.6
+        })
+
+      refute cs.valid?
+      assert {@location_incomplete, _} = Keyword.fetch!(cs.errors, :location_name)
+    end
+
+    test "rejects coords without location_name with 'Posizione incompleta' (D1)" do
+      cs =
+        location_changeset(%{
+          location_name: nil,
+          lat: 43.5,
+          lng: 13.6
+        })
+
+      refute cs.valid?
+      assert {@location_incomplete, _} = Keyword.fetch!(cs.errors, :location_name)
+    end
+
+    test "rejects empty-string location_name + coords (post-trim) with 'Posizione incompleta'" do
+      cs =
+        location_changeset(%{
+          location_name: "",
+          lat: 43.5,
+          lng: 13.6
+        })
+
+      refute cs.valid?
+      assert {@location_incomplete, _} = Keyword.fetch!(cs.errors, :location_name)
+    end
+
+    test "rejects lat=91 (out of range) with 'Posizione non valida'" do
+      cs =
+        location_changeset(%{
+          location_name: "X",
+          lat: 91,
+          lng: 13.6
+        })
+
+      refute cs.valid?
+      assert {@location_invalid, _} = Keyword.fetch!(cs.errors, :lat)
+    end
+
+    test "rejects lat=-91 (out of range) with 'Posizione non valida'" do
+      cs =
+        location_changeset(%{
+          location_name: "X",
+          lat: -91,
+          lng: 13.6
+        })
+
+      refute cs.valid?
+      assert {@location_invalid, _} = Keyword.fetch!(cs.errors, :lat)
+    end
+
+    test "rejects lng=181 (out of range) with 'Posizione non valida'" do
+      cs =
+        location_changeset(%{
+          location_name: "X",
+          lat: 43.5,
+          lng: 181
+        })
+
+      refute cs.valid?
+      assert {@location_invalid, _} = Keyword.fetch!(cs.errors, :lng)
+    end
+
+    test "rejects lng=-181 (out of range) with 'Posizione non valida'" do
+      cs =
+        location_changeset(%{
+          location_name: "X",
+          lat: 43.5,
+          lng: -181
+        })
+
+      refute cs.valid?
+      assert {@location_invalid, _} = Keyword.fetch!(cs.errors, :lng)
+    end
+
+    test "rejects lat='abc' cast failure with 'Posizione non valida' (override)" do
+      cs =
+        location_changeset(%{
+          location_name: "X",
+          lat: "abc",
+          lng: 13.6
+        })
+
+      refute cs.valid?
+      assert {@location_invalid, _} = Keyword.fetch!(cs.errors, :lat)
+    end
+
+    test "rejects lng='<script>' cast failure with 'Posizione non valida' (override)" do
+      cs =
+        location_changeset(%{
+          location_name: "X",
+          lat: 43.5,
+          lng: "<script>"
+        })
+
+      refute cs.valid?
+      assert {@location_invalid, _} = Keyword.fetch!(cs.errors, :lng)
+    end
+
+    test "rejects location_name with 201 chars" do
+      cs =
+        location_changeset(%{
+          location_name: String.duplicate("a", 201),
+          lat: nil,
+          lng: nil
+        })
+
+      refute cs.valid?
+      assert {@location_name_too_long, _} = Keyword.fetch!(cs.errors, :location_name)
+    end
+
+    test "trims surrounding whitespace from location_name" do
+      cs =
+        location_changeset(%{
+          location_name: " Sirolo  ",
+          lat: nil,
+          lng: nil
+        })
+
+      assert cs.valid?
+      assert cs.changes[:location_name] == "Sirolo"
+    end
+
+    test "schema introspection: location_name is :string, lat/lng are :float" do
+      assert Idea.__schema__(:type, :location_name) == :string
+      assert Idea.__schema__(:type, :lat) == :float
+      assert Idea.__schema__(:type, :lng) == :float
+    end
+
+    test "valid boundary lat=90.0" do
+      cs =
+        location_changeset(%{
+          location_name: "X",
+          lat: 90.0,
+          lng: 0.0
+        })
+
+      assert cs.valid?
+    end
+
+    test "valid boundary lat=-90.0" do
+      cs =
+        location_changeset(%{
+          location_name: "X",
+          lat: -90.0,
+          lng: 0.0
+        })
+
+      assert cs.valid?
+    end
+
+    test "valid boundary lng=180.0" do
+      cs =
+        location_changeset(%{
+          location_name: "X",
+          lat: 0.0,
+          lng: 180.0
+        })
+
+      assert cs.valid?
+    end
+
+    test "valid boundary lng=-180.0" do
+      cs =
+        location_changeset(%{
+          location_name: "X",
+          lat: 0.0,
+          lng: -180.0
+        })
+
+      assert cs.valid?
+    end
+  end
+
   describe "list_ideas/1 with :durations opt (slice 5 step 5)" do
     # Background fixture matching the spec: 6 ideas across all 5 durations
     # plus one NULL-duration idea (Bagno improvviso) used as the regression

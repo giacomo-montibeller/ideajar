@@ -45,6 +45,9 @@ defmodule Ideajar.Ideas.IdeaTest do
                  :url,
                  :duration,
                  :estimated_cost,
+                 :location_name,
+                 :lat,
+                 :lng,
                  :inserted_at,
                  :updated_at
                ]

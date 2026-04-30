@@ -43,8 +43,20 @@ defmodule Ideajar.Ideas.Idea do
   @categories_required "Seleziona almeno una categoria"
   @duration_invalid "Durata non valida"
   @cost_invalid "Budget non valido"
+  @location_incomplete "Posizione incompleta"
+  @location_invalid "Posizione non valida"
+  @location_name_too_long "Il nome del luogo non può superare i 200 caratteri"
 
-  @castable_fields [:title, :description, :url, :duration, :estimated_cost]
+  @castable_fields [
+    :title,
+    :description,
+    :url,
+    :duration,
+    :estimated_cost,
+    :location_name,
+    :lat,
+    :lng
+  ]
 
   schema "ideas" do
     field :title, :string
@@ -52,6 +64,9 @@ defmodule Ideajar.Ideas.Idea do
     field :url, :string
     field :duration, Ecto.Enum, values: Duration.values()
     field :estimated_cost, :integer
+    field :location_name, :string
+    field :lat, :float
+    field :lng, :float
 
     many_to_many :categories, Ideajar.Categories.Category, join_through: "idea_categories"
 
@@ -86,15 +101,29 @@ defmodule Ideajar.Ideas.Idea do
     |> cast(attrs, @castable_fields)
     |> override_duration_error()
     |> override_estimated_cost_error()
+    |> override_coordinate_errors()
     |> validate_inclusion(:estimated_cost, Budget.values(), message: @cost_invalid)
+    |> validate_number(:lat,
+      greater_than_or_equal_to: -90,
+      less_than_or_equal_to: 90,
+      message: @location_invalid
+    )
+    |> validate_number(:lng,
+      greater_than_or_equal_to: -180,
+      less_than_or_equal_to: 180,
+      message: @location_invalid
+    )
     |> trim_text(:title)
     |> trim_text(:url)
+    |> trim_text(:location_name)
     |> validate_required([:title], message: @title_required)
     |> validate_length(:title, max: 200, message: @title_too_long)
     |> validate_length(:url, max: 2000, message: @url_too_long)
+    |> validate_length(:location_name, max: 200, message: @location_name_too_long)
     |> validate_url(:url)
     |> put_categories(attrs)
     |> validate_at_least_one_category()
+    |> validate_location_consistency()
   end
 
   # `Ecto.Enum` cast emits the generic `"is invalid"` message when the input
@@ -125,6 +154,65 @@ defmodule Ideajar.Ideas.Idea do
 
       _ ->
         cs
+    end
+  end
+
+  # Parallel to `override_duration_error/1` + `override_estimated_cost_error/1`:
+  # the float cast emits the generic `"is invalid"` for non-numeric input
+  # (`"abc"`, `"<script>"`). Rewrite both `:lat` and `:lng` to the canonical
+  # `"Posizione non valida"` so users see the same message for cast failures
+  # as for out-of-range values (CC6 — dual-path error coverage).
+  defp override_coordinate_errors(%Ecto.Changeset{} = cs) do
+    cs
+    |> override_coordinate_error(:lat)
+    |> override_coordinate_error(:lng)
+  end
+
+  defp override_coordinate_error(%Ecto.Changeset{errors: errors} = cs, field) do
+    case Keyword.get(errors, field) do
+      {"is invalid", opts} ->
+        new_errors = Keyword.put(errors, field, {@location_invalid, opts})
+        %{cs | errors: new_errors}
+
+      _ ->
+        cs
+    end
+  end
+
+  # Cross-field validator (CC5): enforces the 3 valid states on the
+  # `(location_name, lat, lng)` tuple.
+  #
+  #   (a) all 3 nil               → valid
+  #   (b) name only, coords nil   → valid (utente scrive "Casa di nonna")
+  #   (c) name + lat + lng all set → valid (full posizione)
+  #   (d) any other combination    → invalid: `"Posizione incompleta"`
+  #                                  on `:location_name` (centralizzato).
+  #
+  # Reads via `get_field/2` so it observes both the schema's persisted
+  # values AND the changeset's pending changes — including the trimmed
+  # `:location_name` (empty-string → nil after `trim_text/2`).
+  defp validate_location_consistency(changeset) do
+    name_present? = location_name_present?(changeset)
+    lat_present? = not is_nil(get_field(changeset, :lat))
+    lng_present? = not is_nil(get_field(changeset, :lng))
+
+    case {name_present?, lat_present?, lng_present?} do
+      # State (a): all 3 nil — no location.
+      {false, false, false} -> changeset
+      # State (b): name only — utente scrive "Casa di nonna".
+      {true, false, false} -> changeset
+      # State (c): name + both coords — full posizione.
+      {true, true, true} -> changeset
+      # State (d): everything else — invalid.
+      _ -> add_error(changeset, :location_name, @location_incomplete)
+    end
+  end
+
+  defp location_name_present?(changeset) do
+    case get_field(changeset, :location_name) do
+      nil -> false
+      "" -> false
+      _ -> true
     end
   end
 
