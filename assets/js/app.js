@@ -66,27 +66,9 @@ window.addEventListener("phx:open-dialog", e => {
   const dialog = document.getElementById(id)
   if (!dialog || typeof dialog.showModal !== "function") return
   dialog.showModal()
-
-  // Leaflet maps inside the dialog booted with clientHeight=0 (parent
-  // was display:none). The LeafletMap hook installs a ResizeObserver
-  // that auto-invalidates the map size as soon as the dialog opens
-  // and the container takes real dimensions — no extra wiring needed
-  // here.
-
-  // Backdrop click closes the dialog. HTML5 `<dialog>` does not do this
-  // by default; we wire a one-shot listener that fires only when the
-  // click target is the dialog element itself (clicks on inner content
-  // don't bubble as `event.target === dialog`). Restores the
-  // tap-outside-to-dismiss affordance users expect.
-  const backdropHandler = (event) => {
-    if (event.target === dialog) {
-      dialog.close()
-    }
-  }
-  dialog.addEventListener("click", backdropHandler)
-  dialog.addEventListener("close", () => {
-    dialog.removeEventListener("click", backdropHandler)
-  }, { once: true })
+  // Dismiss paths: explicit close button (✕) and Esc key (HTML5 native).
+  // The LeafletMap hook's ResizeObserver auto-invalidates the map size
+  // once the container takes real dimensions, so no extra wiring here.
 })
 
 window.addEventListener("phx:close-dialog", e => {
