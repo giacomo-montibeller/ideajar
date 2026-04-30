@@ -59,12 +59,22 @@ export const LeafletMap = {
     this.map.on("click", (e) => {
       this.pushEvent("set_location", { lat: e.latlng.lat, lng: e.latlng.lng })
     })
+
+    // Expose the Leaflet instance on the host element so the
+    // `phx:open-dialog` listener in app.js can call `invalidateSize()`
+    // after the parent <dialog> opens. Required because the hook mounts
+    // while the dialog is `display: none` (clientHeight: 0), so Leaflet
+    // boots with a zero-sized container and otherwise stays blank.
+    this.el._leafletMap = this.map
   },
 
   destroyed() {
     if (this.map) {
       this.map.remove()
       this.map = null
+    }
+    if (this.el && this.el._leafletMap) {
+      this.el._leafletMap = null
     }
   },
 }

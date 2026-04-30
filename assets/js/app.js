@@ -64,7 +64,37 @@ window.addEventListener("phx:open-dialog", e => {
   const id = e.detail && e.detail.id
   if (!id) return
   const dialog = document.getElementById(id)
-  if (dialog && typeof dialog.showModal === "function") dialog.showModal()
+  if (!dialog || typeof dialog.showModal !== "function") return
+  dialog.showModal()
+
+  // Leaflet maps mounted inside the dialog booted with clientHeight=0
+  // (parent was display:none). After the modal opens, give them a frame
+  // to recompute size or the tile layer stays blank.
+  requestAnimationFrame(() => {
+    dialog.querySelectorAll('[phx-hook="LeafletMap"]').forEach(el => {
+      if (el._leafletMap && typeof el._leafletMap.invalidateSize === "function") {
+        el._leafletMap.invalidateSize()
+      }
+    })
+  })
+
+  // Backdrop click closes the dialog. HTML5 `<dialog>` does not do this
+  // by default; we wire a one-shot listener that fires only when the
+  // click target is the dialog element itself (not its content children
+  // — those don't bubble as `event.target === dialog`). Mobile users
+  // expect tap-outside-to-dismiss; this restores that affordance
+  // without an inline `onclick` (CC18 originally said "no backdrop
+  // click", but the trade-off changed once page-lock incidents
+  // appeared in the field).
+  const backdropHandler = (event) => {
+    if (event.target === dialog) {
+      dialog.close()
+    }
+  }
+  dialog.addEventListener("click", backdropHandler)
+  dialog.addEventListener("close", () => {
+    dialog.removeEventListener("click", backdropHandler)
+  }, { once: true })
 })
 
 window.addEventListener("phx:close-dialog", e => {
