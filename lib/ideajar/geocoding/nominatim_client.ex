@@ -1,54 +1,89 @@
 defmodule Ideajar.Geocoding.NominatimClient do
   @moduledoc """
-  Slice 7a — Nominatim HTTP client.
+  Real Nominatim HTTP client (slice 7a step 2).
 
-  Step 1 ships a minimum-functional skeleton that exercises the
-  `Req.Test` plug seam end-to-end so the slice's delegation path is
-  proven before step 2 hardens the real implementation.
+  Reverse-geocoding lookups against the Nominatim public endpoint. Sends
+  the required `User-Agent: ideajar/1.0` header (Nominatim usage policy)
+  and disables Req's default retry/decompress on transport errors so a
+  single network failure surfaces immediately as
+  `{:error, :service_unavailable}` rather than blocking the caller.
 
-  When a `Req.Test` plug is configured for this module via
-  `config :ideajar, Ideajar.Geocoding.NominatimClient, req_options:
-  [plug: {Req.Test, IdeajarStub}]`, requests are routed through the
-  test plug and a 200 response with a `display_name` field maps to
-  `{:ok, name}`.
+  In tests, requests are routed through the canonical `Req.Test` plug
+  (`{Req.Test, IdeajarStub}`) configured in `config/test.exs`. Each
+  test installs its own stub via `Req.Test.stub(IdeajarStub, fn conn -> ... end)`.
 
-  When no plug is configured we fail safe with a friendly raise — the
-  real production HTTP path (User-Agent, error mapping for all 9
-  scenarios) lands in step 2.
+  Response mapping (spec O5, S5, S6, CC1, CC3):
+
+    * 200 + JSON with binary `display_name`        → `{:ok, name}`
+    * 200 + JSON without `display_name`            → `{:error, :no_match}`
+    * 200 + body that fails to parse as JSON       → `{:error, :service_unavailable}`
+    * 404                                          → `{:error, :no_match}`
+    * 5xx, network error, transport timeout        → `{:error, :service_unavailable}`
+    * Any other non-success status                 → `{:error, :service_unavailable}`
   """
+
+  @user_agent "ideajar/1.0"
+  @default_base_url "https://nominatim.openstreetmap.org"
 
   @spec reverse_lookup(float, float) ::
           {:ok, String.t()} | {:error, :no_match | :service_unavailable}
   def reverse_lookup(lat, lng) do
     opts = Application.get_env(:ideajar, __MODULE__, [])
+    base_url = Keyword.get(opts, :base_url, @default_base_url)
     plug = get_in(opts, [:req_options, :plug])
 
-    if plug do
-      url =
-        "https://nominatim.openstreetmap.org/reverse?lat=#{lat}&lon=#{lng}&format=json"
+    url = "#{base_url}/reverse?lat=#{lat}&lon=#{lng}&format=json"
 
-      url
-      |> Req.get!(plug: plug, decode_json: [keys: :strings])
-      |> extract_display_name()
-    else
-      raise "Ideajar.Geocoding.NominatimClient not yet implemented (slice 7a step 2)"
+    req_opts =
+      [
+        headers: [{"user-agent", @user_agent}],
+        # Skip retries: transport/5xx failures must surface immediately so
+        # the LV handler can flash `:service_unavailable` without blocking
+        # the calling process for ~7s of exponential backoff.
+        retry: false
+      ]
+      |> maybe_put_plug(plug)
+
+    case Req.get(url, req_opts) do
+      {:ok, %Req.Response{status: 200, body: body}} ->
+        extract_display_name(body)
+
+      {:ok, %Req.Response{status: 404}} ->
+        {:error, :no_match}
+
+      {:ok, %Req.Response{status: status}} when status >= 500 ->
+        {:error, :service_unavailable}
+
+      {:ok, %Req.Response{}} ->
+        {:error, :service_unavailable}
+
+      {:error, _exception} ->
+        {:error, :service_unavailable}
     end
   end
 
-  # Test plugs that omit the content-type header bypass Req's
-  # auto-decoder; fall back to a manual parse so the slice's canonical
-  # stub idiom (`Plug.Conn.send_resp/3`) works as documented in the
-  # plan and spec.
-  defp extract_display_name(%{status: 200, body: %{"display_name" => name}})
-       when is_binary(name),
-       do: {:ok, name}
+  defp maybe_put_plug(opts, nil), do: opts
+  defp maybe_put_plug(opts, plug), do: Keyword.put(opts, :plug, plug)
 
-  defp extract_display_name(%{status: 200, body: body}) when is_binary(body) do
+  # Pre-decoded JSON map (Req auto-decodes when the response sets
+  # `content-type: application/json`) — happy path.
+  defp extract_display_name(%{"display_name" => name}) when is_binary(name),
+    do: {:ok, name}
+
+  defp extract_display_name(body) when is_map(body),
+    do: {:error, :no_match}
+
+  # Body returned as raw string: either Req didn't auto-decode (no JSON
+  # content-type) or the server sent malformed JSON. Try a manual parse;
+  # on failure treat as `:service_unavailable` (server bug, not a miss).
+  defp extract_display_name(body) when is_binary(body) do
     case Jason.decode(body) do
       {:ok, %{"display_name" => name}} when is_binary(name) -> {:ok, name}
-      _ -> {:error, :no_match}
+      {:ok, map} when is_map(map) -> {:error, :no_match}
+      {:ok, _other} -> {:error, :service_unavailable}
+      {:error, _} -> {:error, :service_unavailable}
     end
   end
 
-  defp extract_display_name(_), do: {:error, :no_match}
+  defp extract_display_name(_other), do: {:error, :service_unavailable}
 end
