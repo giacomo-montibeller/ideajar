@@ -60,21 +60,29 @@ export const LeafletMap = {
       this.pushEvent("set_location", { lat: e.latlng.lat, lng: e.latlng.lng })
     })
 
-    // Expose the Leaflet instance on the host element so the
-    // `phx:open-dialog` listener in app.js can call `invalidateSize()`
-    // after the parent <dialog> opens. Required because the hook mounts
-    // while the dialog is `display: none` (clientHeight: 0), so Leaflet
-    // boots with a zero-sized container and otherwise stays blank.
-    this.el._leafletMap = this.map
+    // The hook mounts while the parent <dialog> is `display: none`
+    // (clientHeight: 0). Leaflet boots with a zero-sized container and
+    // doesn't know how to lay out tiles. ResizeObserver fires whenever
+    // the element acquires real dimensions (i.e. when the dialog opens
+    // via showModal()) and tells Leaflet to recompute. We invalidate
+    // unconditionally on any resize so subsequent dialog open/close
+    // cycles also work.
+    this._resizeObserver = new ResizeObserver(() => {
+      if (this.map && this.el.clientHeight > 0) {
+        this.map.invalidateSize()
+      }
+    })
+    this._resizeObserver.observe(this.el)
   },
 
   destroyed() {
+    if (this._resizeObserver) {
+      this._resizeObserver.disconnect()
+      this._resizeObserver = null
+    }
     if (this.map) {
       this.map.remove()
       this.map = null
-    }
-    if (this.el && this.el._leafletMap) {
-      this.el._leafletMap = null
     }
   },
 }
