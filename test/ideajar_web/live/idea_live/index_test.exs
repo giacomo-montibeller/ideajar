@@ -5130,4 +5130,208 @@ defmodule IdeajarWeb.IdeaLive.IndexTest do
       assert assigns.selected_lng == nil
     end
   end
+
+  # ── Slice 7a Step 9: Hostile inputs uniform list + cross-field
+  # validation regression pin. Step 4 already covers `update_location_name`
+  # hostile inputs (5 cases), step 7 already covers `set_location` hostile
+  # inputs (out-of-range + non-numeric + missing-key + non-binary), and
+  # step 3 covers cross-field validation at the changeset level. This
+  # describe block adds:
+  #   * cross-field validation pinned at the submit/LV level (state D
+  #     combinations all surface "Posizione incompleta" on `:location_name`);
+  #   * `remove_location` idempotency (multiple consecutive invocations
+  #     leave state nil + no crash);
+  #   * `set_location` hostile inputs not already covered (nil lng, list
+  #     and map payloads, `<script>` lat string).
+  describe "hostile inputs and cross-field validation regression (slice 7a step 9)" do
+    # Cross-field validation regression — all 4 state-D combinations
+    # surface the canonical "Posizione incompleta" error on
+    # `:location_name`. Submit-level pins parallel to step 3's
+    # changeset-level pins.
+
+    test "submit with lat without lng surfaces 'Posizione incompleta' on :location_name",
+         %{conn: conn} do
+      view = mount_authenticated(conn) |> open_form()
+
+      # Coords without complete pair: simulate by placing values directly
+      # into the LV assigns via render_hook (same pattern step 7 uses).
+      :sys.replace_state(view.pid, fn state ->
+        socket = state.socket
+        new_assigns = Map.merge(socket.assigns, %{selected_lat: 43.5})
+        %{state | socket: %{socket | assigns: new_assigns}}
+      end)
+
+      submit(view, %{title: "Picnic"})
+
+      assigns = :sys.get_state(view.pid).socket.assigns
+      assert assigns.ideas == []
+
+      assert {"Posizione incompleta", _opts} =
+               Keyword.get(assigns.form.source.errors, :location_name)
+    end
+
+    test "submit with lng without lat surfaces 'Posizione incompleta'",
+         %{conn: conn} do
+      view = mount_authenticated(conn) |> open_form()
+
+      :sys.replace_state(view.pid, fn state ->
+        socket = state.socket
+        new_assigns = Map.merge(socket.assigns, %{selected_lng: 13.6})
+        %{state | socket: %{socket | assigns: new_assigns}}
+      end)
+
+      submit(view, %{title: "Picnic"})
+
+      assigns = :sys.get_state(view.pid).socket.assigns
+      assert assigns.ideas == []
+
+      assert {"Posizione incompleta", _opts} =
+               Keyword.get(assigns.form.source.errors, :location_name)
+    end
+
+    test "submit with coords without location_name surfaces 'Posizione incompleta'",
+         %{conn: conn} do
+      view = mount_authenticated(conn) |> open_form()
+
+      :sys.replace_state(view.pid, fn state ->
+        socket = state.socket
+        new_assigns = Map.merge(socket.assigns, %{selected_lat: 43.5, selected_lng: 13.6})
+        %{state | socket: %{socket | assigns: new_assigns}}
+      end)
+
+      submit(view, %{title: "Picnic"})
+
+      assigns = :sys.get_state(view.pid).socket.assigns
+      assert assigns.ideas == []
+
+      assert {"Posizione incompleta", _opts} =
+               Keyword.get(assigns.form.source.errors, :location_name)
+    end
+
+    test "submit with empty-string name (post-trim) + coords is rejected",
+         %{conn: conn} do
+      view = mount_authenticated(conn) |> open_form()
+
+      # Post-trim "" → nil → state D. Step 8 already pins the in-band
+      # update_location_name path; this is the regression pin via direct
+      # assigns mutation.
+      :sys.replace_state(view.pid, fn state ->
+        socket = state.socket
+
+        new_assigns =
+          Map.merge(socket.assigns, %{
+            selected_location_name: "",
+            selected_lat: 43.5,
+            selected_lng: 13.6
+          })
+
+        %{state | socket: %{socket | assigns: new_assigns}}
+      end)
+
+      submit(view, %{title: "Picnic"})
+
+      assigns = :sys.get_state(view.pid).socket.assigns
+      assert assigns.ideas == []
+
+      assert {"Posizione incompleta", _opts} =
+               Keyword.get(assigns.form.source.errors, :location_name)
+    end
+
+    # remove_location idempotency: calling twice with no location set
+    # yields no error and the assigns remain nil.
+
+    test "remove_location is idempotent on already-empty location state",
+         %{conn: conn} do
+      view = mount_authenticated(conn) |> open_form()
+
+      # Initial state: all 3 nil.
+      assigns_before = :sys.get_state(view.pid).socket.assigns
+      assert assigns_before.selected_location_name == nil
+      assert assigns_before.selected_lat == nil
+      assert assigns_before.selected_lng == nil
+
+      render_click(view, "remove_location")
+      render_click(view, "remove_location")
+      render_click(view, "remove_location")
+
+      assigns_after = :sys.get_state(view.pid).socket.assigns
+      assert assigns_after.selected_location_name == nil
+      assert assigns_after.selected_lat == nil
+      assert assigns_after.selected_lng == nil
+      assert Process.alive?(view.pid)
+    end
+
+    # set_location additional hostile inputs not already covered by step 7.
+
+    test "set_location with non-numeric '<script>' lat is a no-op",
+         %{conn: conn} do
+      view = mount_authenticated(conn) |> open_form()
+
+      render_hook(view, "set_location", %{"lat" => "<script>", "lng" => 13.6})
+
+      assigns = :sys.get_state(view.pid).socket.assigns
+      assert assigns.selected_lat == nil
+      assert assigns.selected_lng == nil
+      assert assigns.selected_location_name == nil
+      assert Process.alive?(view.pid)
+    end
+
+    test "set_location with nil lng is a no-op",
+         %{conn: conn} do
+      view = mount_authenticated(conn) |> open_form()
+
+      render_hook(view, "set_location", %{"lat" => 43.5, "lng" => nil})
+
+      assigns = :sys.get_state(view.pid).socket.assigns
+      assert assigns.selected_lat == nil
+      assert assigns.selected_lng == nil
+      assert Process.alive?(view.pid)
+    end
+
+    test "set_location with list payload is a no-op",
+         %{conn: conn} do
+      view = mount_authenticated(conn) |> open_form()
+
+      render_hook(view, "set_location", %{"lat" => [], "lng" => 13.6})
+
+      assigns = :sys.get_state(view.pid).socket.assigns
+      assert assigns.selected_lat == nil
+      assert assigns.selected_lng == nil
+      assert Process.alive?(view.pid)
+    end
+
+    test "set_location with map payload is a no-op",
+         %{conn: conn} do
+      view = mount_authenticated(conn) |> open_form()
+
+      render_hook(view, "set_location", %{"lat" => %{}, "lng" => 13.6})
+
+      assigns = :sys.get_state(view.pid).socket.assigns
+      assert assigns.selected_lat == nil
+      assert assigns.selected_lng == nil
+      assert Process.alive?(view.pid)
+    end
+
+    # Geocoding raise behavior — explicit regression pin (step 7 #10
+    # covers the same flow; this pins the exact recovery contract:
+    # coords assigned, flash error surfaced, dialog closed, process alive).
+
+    test "geocoding raise: handler catches, flash error, coords assigned, process alive",
+         %{conn: conn} do
+      Req.Test.stub(IdeajarStub, fn _conn -> raise "Nominatim boom" end)
+
+      view = mount_authenticated(conn) |> open_form()
+      Req.Test.allow(IdeajarStub, self(), view.pid)
+
+      html = render_hook(view, "set_location", %{"lat" => 43.5, "lng" => 13.6})
+
+      assigns = :sys.get_state(view.pid).socket.assigns
+      assert assigns.selected_lat == 43.5
+      assert assigns.selected_lng == 13.6
+      # Service-unavailable flash surfaced.
+      assert html =~ "Geocodifica non disponibile"
+      # Process alive.
+      assert Process.alive?(view.pid)
+    end
+  end
 end
