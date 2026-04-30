@@ -799,6 +799,18 @@ c. **Geocoding service raise**: stub raises arbitrary → caught by handler, fla
 - **R7a-10 — Field naming `lng` vs `lon` vs `long`**: Nominatim usa `lon`. Convenzione Elixir/Postgres `lng` è più comune (3 chars, no SQL keyword conflict). Mantengo `lng` lato schema, convert a `lon` solo nella URL Nominatim.
 - **R7a-11 — Edit text + coord drift (E1)**: utente edita name dopo pin, coords restano. Distance filter slice 7b userà coords. UX trade-off: utente sa di aver overridden, accept.
 - **R7a-12 — gettext deferral (slice 4 R6 carry-over)**: slice 7a aggiunge ~13 stringhe. Cumulative ~70 strings. Trigger residuo (utente non-IT) non scattato.
+- **R7a-UX1 — Map picker UX da rivisitare (post-shipping)**: utente ha confermato funzionalità (apri mappa → click → reverse geocoding → autofill funziona) ma flagga che l'esperienza non è soddisfacente. Aspetti potenzialmente da rivedere in slice future:
+  - Mappa renderizzata solo a primo click → percezione lentezza
+  - Dialog full-screen sempre, anche su desktop dove backdrop click farebbe comodo
+  - Dopo set_location, dialog chiude automaticamente: utente non vede il pin sulla mappa per conferma
+  - Nessun preview pin sulla mappa prima del click (ghost pin?)
+  - Nessuna possibilità di aggiustare il pin dopo averlo posizionato
+  - Mappa parte sempre dal centro Italia (slice 7b geolocation user-position migliora questo)
+  - Edit text dopo pin: coords restano "stale" rispetto al name (E1 trade-off accettato in spec ma forse confuso UX)
+  - Modal mechanics potrebbero beneficiare di un pattern non-modale (es. mappa inline che si espande)
+  - Slice 7b post-shipping: rivisitare prima di slice 9 (deploy) per non shippare un'esperienza sub-ottimale.
+  
+  Trigger per riapertura: feedback utente real-use o UX polish dedicato pre-deploy.
 
 ## Plan Review Summary
 
