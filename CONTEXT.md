@@ -23,7 +23,7 @@ Webapp per raccogliere idee di attività nel tempo libero (passeggiata al lago, 
 
 ## Modello dati
 
-Stato attuale (slice 2-6 implementate):
+Stato attuale (slice 2-7a implementate):
 
 ```
 ideas
@@ -35,6 +35,9 @@ ideas
                      [poche_ore, mezza_giornata, giornata, weekend, piu_giorni]
   estimated_cost     integer, optional (slice 6)
                      bucket whitelist [0, 20, 50, 100, 200, 500, 1000]
+  location_name      string, optional, max 200, trimmed (slice 7a)
+  lat                float, optional, range [-90, 90] (slice 7a)
+  lng                float, optional, range [-180, 180] (slice 7a)
   inserted_at, updated_at
 
 categories            seed da codice, non CRUD
@@ -48,7 +51,7 @@ idea_categories       many-to-many (composite PK)
   category_id        FK categories, ON DELETE RESTRICT
 ```
 
-Slice future estenderanno `ideas` con `lat, lng, location_name` (slice 7).
+Slice 7a ha esteso `ideas` con `location_name, lat, lng`. Slice 7b aggiungerà il filtro distanza Haversine (geolocation hook + slider) sopra questi campi.
 
 Nota: `created_by` **non** presente — irrilevante per due utenti che condividono lo spazio.
 

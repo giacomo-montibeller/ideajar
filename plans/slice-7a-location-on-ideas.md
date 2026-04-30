@@ -2,7 +2,7 @@
 
 **Created**: 2026-04-30
 **Branch**: main (trunk-based)
-**Status**: approved
+**Status**: implemented
 **Spec**: `docs/specs/location-on-ideas.md`
 
 ## Build conventions (carried from slice 1-6)

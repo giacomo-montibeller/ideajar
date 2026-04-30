@@ -132,6 +132,26 @@ Stringhe aggiunte in slice 6 (budget on ideas):
 | Aria-label filter chip on                  | `<label> attiva` (es. `gratis attiva`, `fino a 100€ attiva`, `oltre 1000€ attiva`) |
 | Badge budget su idea card                  | `<label>` (uguale al chip label)                                  |
 
+Stringhe aggiunte in slice 7a (location on ideas):
+
+| Elemento                                   | Testo IT                                                          |
+|--------------------------------------------|-------------------------------------------------------------------|
+| Label fieldset posizione (form)            | `Posizione` (no asterisco — opzionale)                            |
+| Label text input                           | `Luogo`                                                           |
+| Placeholder text input                     | `es. Casa di nonna`                                               |
+| Bottone apri map picker                    | `📍 Apri mappa`                                                   |
+| Bottone rimuovi posizione                  | `Rimuovi posizione`                                               |
+| Titolo dialog                              | `Scegli posizione`                                                |
+| Bottone chiudi dialog                      | aria-label `Chiudi` (visualizza `✕` come slice 2 form close)      |
+| OSM attribution (visibile)                 | `© OpenStreetMap` con link a `https://www.openstreetmap.org/copyright` |
+| Errore posizione incompleta                | `Posizione incompleta`                                            |
+| Errore posizione non valida (range/cast)   | `Posizione non valida`                                            |
+| Errore nome luogo troppo lungo             | `Il nome del luogo non può superare i 200 caratteri`              |
+| Flash error geocoding service down         | `Geocodifica non disponibile, inserisci il nome manualmente`      |
+| Inline hint coords impostate (CC19)        | `📍 Coordinate impostate`                                         |
+| Badge location card                        | `📍 <location_name>`                                              |
+| Badge data-testid                          | `idea-location-badge`                                             |
+
 Nuova copy aggiunta da slice future va appesa qui per evitare drift.
 
 ## Architettura

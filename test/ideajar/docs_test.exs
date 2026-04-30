@@ -317,4 +317,56 @@ defmodule Ideajar.DocsTest do
              "CONTEXT.md still treats budget NULL-handling as open"
     end
   end
+
+  describe "docs/conventions.md — slice 7a UI copy" do
+    setup do
+      {:ok, content: File.read!(Path.join(File.cwd!(), "docs/conventions.md"))}
+    end
+
+    test "lists every canonical UI copy string introduced in slice 7a", %{content: content} do
+      slice_7a_strings = [
+        # fieldset legend
+        "Posizione",
+        # text input label
+        "Luogo",
+        # placeholder
+        "es. Casa di nonna",
+        # bottone apri picker
+        "📍 Apri mappa",
+        # bottone rimuovi
+        "Rimuovi posizione",
+        # titolo dialog
+        "Scegli posizione",
+        # OSM attribution (visible inside dialog)
+        "© OpenStreetMap",
+        # cross-field validation error
+        "Posizione incompleta",
+        # range/cast validation error
+        "Posizione non valida",
+        # length validation error
+        "Il nome del luogo non può superare i 200 caratteri",
+        # flash error when geocoding service is down
+        "Geocodifica non disponibile, inserisci il nome manualmente",
+        # CC19 inline hint when coords are set
+        "📍 Coordinate impostate"
+      ]
+
+      for needle <- slice_7a_strings do
+        assert content =~ needle, "missing slice-7a UI copy in conventions.md: #{needle}"
+      end
+    end
+  end
+
+  describe "CONTEXT.md — slice 7a schema fields" do
+    setup do
+      {:ok, content: File.read!(Path.join(File.cwd!(), "CONTEXT.md"))}
+    end
+
+    test "schema block documents location_name, lat, lng", %{content: content} do
+      assert content =~ ~r/location_name/i
+      # Word boundary to avoid spurious matches like "lateral".
+      assert content =~ ~r/\blat\b/
+      assert content =~ ~r/\blng\b/
+    end
+  end
 end
