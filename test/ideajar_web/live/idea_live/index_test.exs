@@ -4603,4 +4603,270 @@ defmodule IdeajarWeb.IdeaLive.IndexTest do
              "CC18: the <dialog> element itself must NOT have phx-click — bubbling child clicks would close the dialog. Backdrop click must NOT close (use the explicit close button or Esc)."
     end
   end
+
+  # Slice 7a step 7 — `set_location` LV handler + reverse geocoding flow.
+  #
+  # The handler is the integration glue between the Leaflet hook (browser
+  # click → `pushEvent("set_location", {lat, lng})`) and the form's three
+  # location assigns. It MUST:
+  #
+  #   * parse + range-check raw lat/lng (CC10) — hostile shapes are silent
+  #     no-ops to keep DevTools tampering and rogue hooks harmless.
+  #   * call `Ideajar.Geocoding.reverse_lookup/2` and map its 3 outcomes
+  #     (`{:ok, name}`, `{:error, :no_match}`, `{:error, :service_unavailable}`).
+  #   * push a `phx:close-dialog` event so the global `assets/js/app.js`
+  #     listener (CC8/U7) calls `dialog.close()` on the location map dialog.
+  #   * survive an unexpected raise from the geocoding layer (S5) — the LV
+  #     process must stay alive and a flash error must surface.
+  #
+  # Cross-process Req.Test note: `live_isolated/3` spawns the LV in a
+  # separate process from the test, so each test that depends on a stubbed
+  # Nominatim response calls `Req.Test.allow(IdeajarStub, self(), view.pid)`
+  # AFTER mounting. Tests that exercise hostile/out-of-range inputs do not
+  # need a stub at all (the handler short-circuits before geocoding).
+  describe "set_location handler (slice 7a step 7)" do
+    # F11 — happy path: stub returns 200 + display_name. After dispatching
+    # set_location the 3 location assigns are populated and the text input
+    # mirrors the geocoded name.
+    test "success path: assigns selected_lat, selected_lng and selected_location_name from the stub",
+         %{conn: conn} do
+      Req.Test.stub(IdeajarStub, fn conn ->
+        conn
+        |> Plug.Conn.put_resp_header("content-type", "application/json")
+        |> Plug.Conn.send_resp(200, ~s({"display_name": "Sirolo, AN"}))
+      end)
+
+      view = mount_authenticated(conn) |> open_form()
+      Req.Test.allow(IdeajarStub, self(), view.pid)
+
+      html = render_hook(view, "set_location", %{"lat" => 43.5, "lng" => 13.6})
+
+      assigns = :sys.get_state(view.pid).socket.assigns
+      assert assigns.selected_lat == 43.5
+      assert assigns.selected_lng == 13.6
+      assert assigns.selected_location_name == "Sirolo, AN"
+
+      # Form text input value mirrors the geocoded name.
+      assert html =~ ~s(value="Sirolo, AN")
+    end
+
+    # F11 — push_event close-dialog companion: success path also closes
+    # the modal via the global `phx:close-dialog` listener (CC8).
+    test "success path: pushes phx:close-dialog with id=location-map-dialog",
+         %{conn: conn} do
+      Req.Test.stub(IdeajarStub, fn conn ->
+        conn
+        |> Plug.Conn.put_resp_header("content-type", "application/json")
+        |> Plug.Conn.send_resp(200, ~s({"display_name": "Sirolo, AN"}))
+      end)
+
+      view = mount_authenticated(conn) |> open_form()
+      Req.Test.allow(IdeajarStub, self(), view.pid)
+
+      render_hook(view, "set_location", %{"lat" => 43.5, "lng" => 13.6})
+
+      assert_push_event(view, "phx:close-dialog", %{id: "location-map-dialog"})
+    end
+
+    # CC19 inline hint becomes visible once `@selected_lat != nil`.
+    test "success path: '📍 Coordinate impostate' inline hint is visible after set_location",
+         %{conn: conn} do
+      Req.Test.stub(IdeajarStub, fn conn ->
+        conn
+        |> Plug.Conn.put_resp_header("content-type", "application/json")
+        |> Plug.Conn.send_resp(200, ~s({"display_name": "Sirolo, AN"}))
+      end)
+
+      view = mount_authenticated(conn) |> open_form()
+      Req.Test.allow(IdeajarStub, self(), view.pid)
+
+      html = render_hook(view, "set_location", %{"lat" => 43.5, "lng" => 13.6})
+
+      assert html =~ "Coordinate impostate"
+    end
+
+    # F12 — service unavailable: coords still get assigned (best-effort
+    # — user can manually type the name), the prior name is preserved,
+    # the dialog closes, and a flash error surfaces.
+    test "service unavailable: coords assigned, prior name preserved, flash error, dialog closed",
+         %{conn: conn} do
+      Req.Test.stub(IdeajarStub, fn conn ->
+        Plug.Conn.send_resp(conn, 500, "boom")
+      end)
+
+      view = mount_authenticated(conn) |> open_form()
+      Req.Test.allow(IdeajarStub, self(), view.pid)
+
+      # Pre-existing user-typed name in the text input.
+      render_change(view, "update_location_name", %{"name" => "Casa di nonna"})
+
+      html = render_hook(view, "set_location", %{"lat" => 43.5, "lng" => 13.6})
+
+      assigns = :sys.get_state(view.pid).socket.assigns
+      assert assigns.selected_lat == 43.5
+      assert assigns.selected_lng == 13.6
+      assert assigns.selected_location_name == "Casa di nonna"
+
+      assert html =~ "Geocodifica non disponibile, inserisci il nome manualmente"
+
+      assert_push_event(view, "phx:close-dialog", %{id: "location-map-dialog"})
+    end
+
+    # F13 — no match: 200 OK with no display_name. Coords are assigned,
+    # name remains unchanged (nil here), dialog closes, NO flash error.
+    test "no match: coords assigned, name unchanged (nil), dialog closed, no flash",
+         %{conn: conn} do
+      Req.Test.stub(IdeajarStub, fn conn ->
+        conn
+        |> Plug.Conn.put_resp_header("content-type", "application/json")
+        |> Plug.Conn.send_resp(200, ~s({}))
+      end)
+
+      view = mount_authenticated(conn) |> open_form()
+      Req.Test.allow(IdeajarStub, self(), view.pid)
+
+      html = render_hook(view, "set_location", %{"lat" => 0, "lng" => 0})
+
+      assigns = :sys.get_state(view.pid).socket.assigns
+      assert assigns.selected_lat == 0.0
+      assert assigns.selected_lng == 0.0
+      assert assigns.selected_location_name == nil
+
+      refute html =~ "Geocodifica non disponibile"
+
+      assert_push_event(view, "phx:close-dialog", %{id: "location-map-dialog"})
+    end
+
+    # CC10 hostile uniform list — out-of-range and bad shapes never reach
+    # the geocoding layer. We assert assigns are unchanged and no
+    # phx:close-dialog event is pushed.
+    test "out-of-range lat=91 is a no-op (no assigns change, no push_event)",
+         %{conn: conn} do
+      view = mount_authenticated(conn) |> open_form()
+
+      render_hook(view, "set_location", %{"lat" => 91, "lng" => 13.6})
+
+      assigns = :sys.get_state(view.pid).socket.assigns
+      assert assigns.selected_lat == nil
+      assert assigns.selected_lng == nil
+      assert assigns.selected_location_name == nil
+      refute_push_event(view, "phx:close-dialog", %{})
+    end
+
+    test "out-of-range lng=-181 is a no-op (no assigns change, no push_event)",
+         %{conn: conn} do
+      view = mount_authenticated(conn) |> open_form()
+
+      render_hook(view, "set_location", %{"lat" => 43.5, "lng" => -181})
+
+      assigns = :sys.get_state(view.pid).socket.assigns
+      assert assigns.selected_lat == nil
+      assert assigns.selected_lng == nil
+      refute_push_event(view, "phx:close-dialog", %{})
+    end
+
+    test "non-numeric lat is a no-op",
+         %{conn: conn} do
+      view = mount_authenticated(conn) |> open_form()
+
+      render_hook(view, "set_location", %{"lat" => "abc", "lng" => 13.6})
+
+      assigns = :sys.get_state(view.pid).socket.assigns
+      assert assigns.selected_lat == nil
+      assert assigns.selected_lng == nil
+      refute_push_event(view, "phx:close-dialog", %{})
+    end
+
+    test "missing lat key is a no-op",
+         %{conn: conn} do
+      view = mount_authenticated(conn) |> open_form()
+
+      render_hook(view, "set_location", %{"lng" => 13.6})
+
+      assigns = :sys.get_state(view.pid).socket.assigns
+      assert assigns.selected_lat == nil
+      assert assigns.selected_lng == nil
+      refute_push_event(view, "phx:close-dialog", %{})
+    end
+
+    # S5 — Geocoding raises an unexpected exception (network bug,
+    # decoder crash, …). The handler MUST catch it. Coords are still
+    # assigned (validation passed before geocoding), the dialog closes,
+    # a flash error surfaces, and the LV process stays alive.
+    test "geocoding raise: caught, flash error, coords assigned, push close, process alive",
+         %{conn: conn} do
+      Req.Test.stub(IdeajarStub, fn _conn ->
+        raise "boom"
+      end)
+
+      view = mount_authenticated(conn) |> open_form()
+      Req.Test.allow(IdeajarStub, self(), view.pid)
+
+      html = render_hook(view, "set_location", %{"lat" => 43.5, "lng" => 13.6})
+
+      assigns = :sys.get_state(view.pid).socket.assigns
+      assert assigns.selected_lat == 43.5
+      assert assigns.selected_lng == 13.6
+
+      assert html =~ "Geocodifica non disponibile, inserisci il nome manualmente"
+
+      assert_push_event(view, "phx:close-dialog", %{id: "location-map-dialog"})
+
+      assert Process.alive?(view.pid)
+    end
+
+    # S3 — A malicious Nominatim response is treated as opaque text and
+    # surfaces through HEEx auto-escape on the text input value.
+    test "S3 malicious Nominatim response is HTML-escaped on the text input value",
+         %{conn: conn} do
+      payload = "<img src=x onerror=alert(1)>"
+
+      Req.Test.stub(IdeajarStub, fn conn ->
+        conn
+        |> Plug.Conn.put_resp_header("content-type", "application/json")
+        |> Plug.Conn.send_resp(200, Jason.encode!(%{display_name: payload}))
+      end)
+
+      view = mount_authenticated(conn) |> open_form()
+      Req.Test.allow(IdeajarStub, self(), view.pid)
+
+      html = render_hook(view, "set_location", %{"lat" => 43.5, "lng" => 13.6})
+
+      assigns = :sys.get_state(view.pid).socket.assigns
+      assert assigns.selected_location_name == payload
+
+      # The raw `<img ... onerror=alert(1)>` must NOT survive into the DOM
+      # as an executable element — HEEx auto-escape replaces `<` with `&lt;`
+      # and `"` with `&quot;` inside attribute values. We pin the escaped
+      # form is present and the raw form is absent.
+      refute html =~ "<img src=x onerror=alert(1)>"
+      assert html =~ "&lt;img"
+    end
+
+    # End-to-end: success path → submit → idea persisted with all 3
+    # location fields. Mirrors the F5 acceptance criterion via the LV.
+    test "persistence end-to-end: set_location success then submit persists name + coords",
+         %{conn: conn} do
+      Req.Test.stub(IdeajarStub, fn conn ->
+        conn
+        |> Plug.Conn.put_resp_header("content-type", "application/json")
+        |> Plug.Conn.send_resp(200, ~s({"display_name": "Sirolo, AN"}))
+      end)
+
+      view = mount_authenticated(conn) |> open_form()
+      Req.Test.allow(IdeajarStub, self(), view.pid)
+
+      render_hook(view, "set_location", %{"lat" => 43.5, "lng" => 13.6})
+
+      submit(view, %{title: "Picnic"})
+
+      assigns = :sys.get_state(view.pid).socket.assigns
+      assert length(assigns.ideas) == 1
+
+      idea = hd(assigns.ideas)
+      assert idea.location_name == "Sirolo, AN"
+      assert idea.lat == 43.5
+      assert idea.lng == 13.6
+    end
+  end
 end
