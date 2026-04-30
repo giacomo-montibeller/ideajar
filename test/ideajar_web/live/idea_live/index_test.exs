@@ -4869,4 +4869,265 @@ defmodule IdeajarWeb.IdeaLive.IndexTest do
       assert idea.lng == 13.6
     end
   end
+
+  # Slice 7a step 8 — pure regression pin block. After step 7 the form,
+  # the `set_location` handler, the `update_location_name` handler, the
+  # `remove_location` handler, the `maybe_inject_*` save-time injectors,
+  # the cross-field `validate_location_consistency/1` validator, and the
+  # idea card location badge are all in place. This describe pins the
+  # invariants that emerge from their composition — no new production
+  # code expected, every test passes against the existing architecture.
+  #
+  # Spec mapping: F5, F15, F17, S2, CC11.
+  describe "form/badge integration + edit-text-after-pin invariants (slice 7a step 8)" do
+    # E1 — Editing the text input after a successful map pin must NOT
+    # disturb @selected_lat / @selected_lng. The `update_location_name`
+    # handler touches only `@selected_location_name`; coords survive.
+    # Pinned against a future regression that wires lat/lng resets into
+    # the text-edit path.
+    test "E1: editing the text input after a successful set_location preserves lat/lng",
+         %{conn: conn} do
+      Req.Test.stub(IdeajarStub, fn conn ->
+        conn
+        |> Plug.Conn.put_resp_header("content-type", "application/json")
+        |> Plug.Conn.send_resp(200, ~s({"display_name": "Sirolo, AN"}))
+      end)
+
+      view = mount_authenticated(conn) |> open_form()
+      Req.Test.allow(IdeajarStub, self(), view.pid)
+
+      render_hook(view, "set_location", %{"lat" => 43.5, "lng" => 13.6})
+
+      pre = :sys.get_state(view.pid).socket.assigns
+      assert pre.selected_lat == 43.5
+      assert pre.selected_lng == 13.6
+      assert pre.selected_location_name == "Sirolo, AN"
+
+      render_change(view, "update_location_name", %{"name" => "Casa di nonna a Sirolo"})
+
+      post = :sys.get_state(view.pid).socket.assigns
+      assert post.selected_location_name == "Casa di nonna a Sirolo"
+      assert post.selected_lat == 43.5
+      assert post.selected_lng == 13.6
+    end
+
+    # F5 — End-to-end persistence of state (c): set_location success →
+    # text edit override → submit. The persisted idea carries the user-
+    # edited name AND the original coords. After save the 3 location
+    # assigns reset to nil (CC11/F17 parallel to slice 5/6).
+    test "F5: set_location → edit text → submit persists edited name + original coords and resets assigns",
+         %{conn: conn} do
+      Req.Test.stub(IdeajarStub, fn conn ->
+        conn
+        |> Plug.Conn.put_resp_header("content-type", "application/json")
+        |> Plug.Conn.send_resp(200, ~s({"display_name": "Sirolo, AN"}))
+      end)
+
+      view = mount_authenticated(conn) |> open_form()
+      Req.Test.allow(IdeajarStub, self(), view.pid)
+
+      render_hook(view, "set_location", %{"lat" => 43.5, "lng" => 13.6})
+      render_change(view, "update_location_name", %{"name" => "Casa di nonna a Sirolo"})
+
+      submit(view, %{title: "Picnic"})
+
+      assigns = :sys.get_state(view.pid).socket.assigns
+      assert length(assigns.ideas) == 1
+
+      idea = hd(assigns.ideas)
+      assert idea.title == "Picnic"
+      assert idea.location_name == "Casa di nonna a Sirolo"
+      assert idea.lat == 43.5
+      assert idea.lng == 13.6
+
+      # CC11/F17: 3 location assigns reset to nil on save success,
+      # parallel to reset_duration/reset_budget.
+      assert assigns.selected_location_name == nil
+      assert assigns.selected_lat == nil
+      assert assigns.selected_lng == nil
+      assert assigns.form_visible? == false
+    end
+
+    # F14 — `remove_location` zeroes the full triplet AFTER a successful
+    # set_location pin. This pins that the reset path also clears coords
+    # set via the map picker (not just the text-input-only path covered
+    # in step 4). The "Rimuovi posizione" affordance disappears with the
+    # state.
+    test "remove_location after set_location success resets all 3 assigns and hides the button",
+         %{conn: conn} do
+      Req.Test.stub(IdeajarStub, fn conn ->
+        conn
+        |> Plug.Conn.put_resp_header("content-type", "application/json")
+        |> Plug.Conn.send_resp(200, ~s({"display_name": "Sirolo, AN"}))
+      end)
+
+      view = mount_authenticated(conn) |> open_form()
+      Req.Test.allow(IdeajarStub, self(), view.pid)
+
+      render_hook(view, "set_location", %{"lat" => 43.5, "lng" => 13.6})
+
+      pre = :sys.get_state(view.pid).socket.assigns
+      assert pre.selected_lat == 43.5
+      assert pre.selected_lng == 13.6
+      assert pre.selected_location_name == "Sirolo, AN"
+
+      html = render_click(view, "remove_location")
+
+      post = :sys.get_state(view.pid).socket.assigns
+      assert post.selected_location_name == nil
+      assert post.selected_lat == nil
+      assert post.selected_lng == nil
+
+      refute html =~ "Rimuovi posizione"
+    end
+
+    # F16 state (b) — name without coords renders the badge with just
+    # the name. Pure regression pin against the slice 7a step 5 contract.
+    test "card badge state (b): persisted idea with location_name only renders '📍 <name>'",
+         %{conn: conn} do
+      mare = CategoriesFixtures.category_by_name!("mare")
+
+      assert {:ok, _idea} =
+               Ideajar.Ideas.create_idea(%{
+                 title: "Picnic",
+                 category_ids: [mare.id],
+                 location_name: "Casa di nonna"
+               })
+
+      {:ok, _view, html} =
+        live_isolated(conn, Index, session: @authenticated_session)
+
+      [_full, inner] =
+        Regex.run(
+          ~r{<span[^>]*data-testid="idea-location-badge"[^>]*>(.*?)</span>}s,
+          html
+        )
+
+      assert String.trim(inner) == "📍 Casa di nonna"
+    end
+
+    # F16 state (c) — name + coords renders the badge with just the name.
+    # Coords are NOT exposed in the badge (slice 7b will use them for the
+    # distance filter, not for badge text).
+    test "card badge state (c): persisted idea with name + coords renders only '📍 <name>' (no coords)",
+         %{conn: conn} do
+      mare = CategoriesFixtures.category_by_name!("mare")
+
+      assert {:ok, _idea} =
+               Ideajar.Ideas.create_idea(%{
+                 title: "Sirolo",
+                 category_ids: [mare.id],
+                 location_name: "Sirolo, AN",
+                 lat: 43.5,
+                 lng: 13.6
+               })
+
+      {:ok, _view, html} =
+        live_isolated(conn, Index, session: @authenticated_session)
+
+      [_full, inner] =
+        Regex.run(
+          ~r{<span[^>]*data-testid="idea-location-badge"[^>]*>(.*?)</span>}s,
+          html
+        )
+
+      assert String.trim(inner) == "📍 Sirolo, AN"
+      refute inner =~ "43.5"
+      refute inner =~ "13.6"
+    end
+
+    # S2 — XSS regression on the badge. A persisted location_name carrying
+    # a `<script>` payload must surface escaped through HEEx auto-escape.
+    # Duplicates the step 5 S2 pin in the integration block so a future
+    # refactor that strips this regression from step 5 still trips here.
+    test "S2: persisted idea with hostile location_name <script> renders escaped on the card badge",
+         %{conn: conn} do
+      mare = CategoriesFixtures.category_by_name!("mare")
+
+      assert {:ok, _idea} =
+               Ideajar.Ideas.create_idea(%{
+                 title: "Hostile",
+                 category_ids: [mare.id],
+                 location_name: "<script>alert(1)</script>"
+               })
+
+      {:ok, _view, html} =
+        live_isolated(conn, Index, session: @authenticated_session)
+
+      [_full, inner] =
+        Regex.run(
+          ~r{<span[^>]*data-testid="idea-location-badge"[^>]*>(.*?)</span>}s,
+          html
+        )
+
+      assert inner =~ "&lt;script&gt;"
+      assert inner =~ "&lt;/script&gt;"
+      refute inner =~ "<script>"
+      refute inner =~ "</script>"
+    end
+
+    # Empty-string trim invariant — pinned at the integration boundary:
+    # text input cleared after a successful pin → submit → state D
+    # invalid → cross-field validator rejects with "Posizione
+    # incompleta" on `:location_name`. The handler accepts the empty
+    # string; `location_name_present?/1` treats "" as not present; the
+    # cross-field validator surfaces the canonical error because coords
+    # remain set without a name. The error text is checked at the
+    # changeset level (the LV template's location-error rendering is a
+    # step 9 deliverable — W12); this test pins the *invariant*: the
+    # idea is not persisted and the changeset carries the documented
+    # error tuple on `:location_name`.
+    test "empty-string text after a successful pin: changeset rejects with 'Posizione incompleta', idea NOT persisted",
+         %{conn: conn} do
+      Req.Test.stub(IdeajarStub, fn conn ->
+        conn
+        |> Plug.Conn.put_resp_header("content-type", "application/json")
+        |> Plug.Conn.send_resp(200, ~s({"display_name": "Sirolo, AN"}))
+      end)
+
+      view = mount_authenticated(conn) |> open_form()
+      Req.Test.allow(IdeajarStub, self(), view.pid)
+
+      render_hook(view, "set_location", %{"lat" => 43.5, "lng" => 13.6})
+
+      render_change(view, "update_location_name", %{"name" => ""})
+
+      assigns_after_clear = :sys.get_state(view.pid).socket.assigns
+      assert assigns_after_clear.selected_location_name == ""
+      assert assigns_after_clear.selected_lat == 43.5
+      assert assigns_after_clear.selected_lng == 13.6
+
+      submit(view, %{title: "Picnic"})
+
+      # Idea NOT persisted — submit hit the changeset error path.
+      assigns = :sys.get_state(view.pid).socket.assigns
+      assert assigns.ideas == []
+
+      # Changeset carries the canonical "Posizione incompleta" error on
+      # `:location_name`. The form remains visible and is re-bound to
+      # the failing changeset so the user can correct the input.
+      assert assigns.form_visible? == true
+
+      assert {"Posizione incompleta", _opts} =
+               Keyword.get(assigns.form.source.errors, :location_name)
+    end
+
+    # F17 / CC11 — On a vanilla save success (no location involved) the
+    # 3 location assigns are still nil afterwards. Parallel to the
+    # explicit reset-on-save-success pins for duration (slice 5) and
+    # budget (slice 6). The integration here is "save success path
+    # touches reset_location/1".
+    test "F17: save success resets the 3 location assigns to nil",
+         %{conn: conn} do
+      view = mount_authenticated(conn) |> open_form()
+
+      submit(view, %{title: "Cinema stasera"})
+
+      assigns = :sys.get_state(view.pid).socket.assigns
+      assert assigns.form_visible? == false
+      assert assigns.selected_location_name == nil
+      assert assigns.selected_lat == nil
+      assert assigns.selected_lng == nil
+    end
+  end
 end
