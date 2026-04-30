@@ -34,9 +34,7 @@
 // shell.
 export const LeafletMap = {
   mounted() {
-    const L = window.L
-
-    if (!L) {
+    if (!window.L) {
       // Surfaced loud-and-clear so an asset regression (missing
       // <script> tag in root.html.heex, or vendor file not mirrored
       // into priv/static/assets/vendor/) doesn't degrade silently
@@ -47,15 +45,30 @@ export const LeafletMap = {
       return
     }
 
+    // Deferred init pattern: the hook mounts while the parent <dialog>
+    // is `display: none` (clientHeight: 0). If we boot Leaflet here,
+    // the tileLayer registers against a zero-sized viewport and never
+    // recovers — `invalidateSize()` post-open updates the container
+    // size but the tile pane stays blank. Instead, hold the config and
+    // boot Leaflet only when the container actually acquires dimensions
+    // (i.e. when the dialog opens). ResizeObserver gives us that
+    // signal cross-browser.
+    this._resizeObserver = new ResizeObserver(() => {
+      if (!this.map && this.el.clientHeight > 0 && this.el.clientWidth > 0) {
+        this._initMap()
+      } else if (this.map) {
+        // Subsequent dialog open/close cycles, or window resizes while
+        // the dialog is open, just need a recompute.
+        this.map.invalidateSize()
+      }
+    })
+    this._resizeObserver.observe(this.el)
+  },
+
+  _initMap() {
+    const L = window.L
     const center = JSON.parse(this.el.dataset.defaultCenter || "[43.5, 12.5]")
     const zoom = parseInt(this.el.dataset.defaultZoom || "6", 10)
-
-    console.log("[LeafletMap] mounted", {
-      el: this.el,
-      clientHeight: this.el.clientHeight,
-      clientWidth: this.el.clientWidth,
-      offsetParent: this.el.offsetParent,
-    })
 
     this.map = L.map(this.el, { tap: false }).setView(center, zoom)
 
@@ -66,24 +79,6 @@ export const LeafletMap = {
     this.map.on("click", (e) => {
       this.pushEvent("set_location", { lat: e.latlng.lat, lng: e.latlng.lng })
     })
-
-    // The hook mounts while the parent <dialog> is `display: none`
-    // (clientHeight: 0). Leaflet boots with a zero-sized container and
-    // doesn't know how to lay out tiles. ResizeObserver fires whenever
-    // the element acquires real dimensions (i.e. when the dialog opens
-    // via showModal()) and tells Leaflet to recompute. We invalidate
-    // unconditionally on any resize so subsequent dialog open/close
-    // cycles also work.
-    this._resizeObserver = new ResizeObserver(() => {
-      console.log("[LeafletMap] resize observed", {
-        clientHeight: this.el.clientHeight,
-        clientWidth: this.el.clientWidth,
-      })
-      if (this.map && this.el.clientHeight > 0) {
-        this.map.invalidateSize()
-      }
-    })
-    this._resizeObserver.observe(this.el)
   },
 
   destroyed() {
