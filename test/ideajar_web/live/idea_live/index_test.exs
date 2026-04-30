@@ -3947,4 +3947,248 @@ defmodule IdeajarWeb.IdeaLive.IndexTest do
       refute function_exported?(IdeajarWeb.IdeaLive.Index, :filter_active?, 2)
     end
   end
+
+  # ── Slice 7a step 4: form Posizione fieldset, text input, LV handlers ──
+  #
+  # Pure form/LV layer wiring of the location domain (slice 7a step 3 added
+  # the schema + cross-field validator). The map picker dialog is wired in
+  # step 6; for now the `📍 Apri mappa` button is rendered `disabled` and
+  # the inline coord-set hint visibility is exercised at step 7 (where
+  # `set_location` actually sets `@selected_lat`).
+  #
+  # Lifecycle parallel to `reset_categories/1` (slice 3), `reset_duration/1`
+  # (slice 5) and `reset_budget/1` (slice 6): a dedicated `reset_location/1`
+  # helper fires on mount, toggle_form open, close_form, and save success.
+  describe "form location field (slice 7a step 4)" do
+    test "mount: @selected_location_name, @selected_lat, @selected_lng are nil",
+         %{conn: conn} do
+      view = mount_authenticated(conn)
+
+      assigns = :sys.get_state(view.pid).socket.assigns
+      assert assigns.selected_location_name == nil
+      assert assigns.selected_lat == nil
+      assert assigns.selected_lng == nil
+    end
+
+    test "opening the form renders <legend>Posizione</legend> with NO asterisk + <label>Luogo</label> + text input wired to update_location_name",
+         %{conn: conn} do
+      view = mount_authenticated(conn)
+      html = render_click(view, "toggle_form")
+
+      [pos_legend] =
+        Regex.run(~r{<legend[^>]*>\s*Posizione\s*</legend>}, html) ||
+          [nil] |> List.wrap()
+
+      assert pos_legend, "Expected <legend>Posizione</legend> to be rendered"
+      refute pos_legend =~ "*"
+
+      assert html =~ ~r{<label[^>]*for="idea-location-name"[^>]*>\s*Luogo\s*</label>}
+
+      [input_tag] =
+        Regex.run(~r{<input[^>]*id="idea-location-name"[^>]*>}, html) ||
+          [nil] |> List.wrap()
+
+      assert input_tag, "Expected the location-name text input to be rendered"
+      assert input_tag =~ ~s(phx-change="update_location_name")
+      assert input_tag =~ ~s(placeholder="es. Casa di nonna")
+      assert input_tag =~ ~s(maxlength="200")
+    end
+
+    test "opening the form renders the disabled '📍 Apri mappa' button with aria-haspopup=\"dialog\"",
+         %{conn: conn} do
+      view = mount_authenticated(conn) |> open_form()
+      html = render(view)
+
+      [pos_block] =
+        Regex.run(~r{<legend[^>]*>\s*Posizione\s*</legend>.*?</fieldset>}s, html) ||
+          [nil] |> List.wrap()
+
+      assert pos_block, "Expected the Posizione fieldset block to be present"
+
+      [open_map_btn] =
+        Regex.run(~r{<button[^>]*>[^<]*Apri mappa[^<]*</button>}s, pos_block) ||
+          [nil] |> List.wrap()
+
+      assert open_map_btn, "Expected an 'Apri mappa' button inside the Posizione fieldset"
+      assert open_map_btn =~ ~s(aria-haspopup="dialog")
+      assert open_map_btn =~ "disabled"
+    end
+
+    test "no location set: 'Rimuovi posizione' button is NOT rendered",
+         %{conn: conn} do
+      view = mount_authenticated(conn) |> open_form()
+      html = render(view)
+
+      refute html =~ "Rimuovi posizione"
+    end
+
+    test "no coords set: '📍 Coordinate impostate' inline hint is NOT rendered",
+         %{conn: conn} do
+      view = mount_authenticated(conn) |> open_form()
+      html = render(view)
+
+      refute html =~ "Coordinate impostate"
+    end
+
+    test "update_location_name event sets @selected_location_name and leaves lat/lng nil",
+         %{conn: conn} do
+      view = mount_authenticated(conn) |> open_form()
+
+      render_change(view, "update_location_name", %{"name" => "Casa di nonna"})
+
+      assigns = :sys.get_state(view.pid).socket.assigns
+      assert assigns.selected_location_name == "Casa di nonna"
+      assert assigns.selected_lat == nil
+      assert assigns.selected_lng == nil
+    end
+
+    test "after update_location_name: 'Rimuovi posizione' button is rendered",
+         %{conn: conn} do
+      view = mount_authenticated(conn) |> open_form()
+
+      html = render_change(view, "update_location_name", %{"name" => "Casa di nonna"})
+
+      assert html =~ "Rimuovi posizione"
+    end
+
+    test "remove_location event resets all 3 location assigns and hides the 'Rimuovi posizione' button",
+         %{conn: conn} do
+      view = mount_authenticated(conn) |> open_form()
+
+      render_change(view, "update_location_name", %{"name" => "Casa di nonna"})
+
+      pre = :sys.get_state(view.pid).socket.assigns
+      assert pre.selected_location_name == "Casa di nonna"
+
+      html = render_click(view, "remove_location")
+
+      assigns = :sys.get_state(view.pid).socket.assigns
+      assert assigns.selected_location_name == nil
+      assert assigns.selected_lat == nil
+      assert assigns.selected_lng == nil
+
+      refute html =~ "Rimuovi posizione"
+    end
+
+    test "save success state (b) name-only persists location_name, lat=nil, lng=nil and resets assigns",
+         %{conn: conn} do
+      view = mount_authenticated(conn) |> open_form()
+
+      render_change(view, "update_location_name", %{"name" => "Casa di nonna"})
+
+      html = submit(view, %{title: "Picnic"})
+      assert html =~ "Idea aggiunta"
+
+      assigns = :sys.get_state(view.pid).socket.assigns
+      assert assigns.selected_location_name == nil
+      assert assigns.selected_lat == nil
+      assert assigns.selected_lng == nil
+      assert assigns.form_visible? == false
+      assert length(assigns.ideas) == 1
+
+      idea = hd(assigns.ideas)
+      assert idea.location_name == "Casa di nonna"
+      assert idea.lat == nil
+      assert idea.lng == nil
+    end
+
+    test "save success state (a) no location input persists location_name, lat, lng all nil",
+         %{conn: conn} do
+      view = mount_authenticated(conn) |> open_form()
+
+      submit(view, %{title: "Cinema stasera"})
+
+      assigns = :sys.get_state(view.pid).socket.assigns
+      assert length(assigns.ideas) == 1
+
+      idea = hd(assigns.ideas)
+      assert idea.location_name == nil
+      assert idea.lat == nil
+      assert idea.lng == nil
+    end
+
+    test "close_form resets @selected_location_name, @selected_lat, @selected_lng to nil",
+         %{conn: conn} do
+      view = mount_authenticated(conn) |> open_form()
+
+      render_change(view, "update_location_name", %{"name" => "Casa di nonna"})
+
+      pre = :sys.get_state(view.pid).socket.assigns
+      assert pre.selected_location_name == "Casa di nonna"
+
+      render_click(view, "close_form")
+
+      post = :sys.get_state(view.pid).socket.assigns
+      assert post.form_visible? == false
+      assert post.selected_location_name == nil
+      assert post.selected_lat == nil
+      assert post.selected_lng == nil
+    end
+
+    test "open_form resets @selected_location_name to nil even after close+reopen with prior input",
+         %{conn: conn} do
+      view = mount_authenticated(conn) |> open_form()
+
+      render_change(view, "update_location_name", %{"name" => "Casa di nonna"})
+      render_click(view, "close_form")
+      render_click(view, "toggle_form")
+
+      assigns = :sys.get_state(view.pid).socket.assigns
+      assert assigns.form_visible? == true
+      assert assigns.selected_location_name == nil
+      assert assigns.selected_lat == nil
+      assert assigns.selected_lng == nil
+    end
+
+    # CC22 hostile-uniform list — 5 hostile shapes for `update_location_name`.
+    # Missing `"name"` key, non-binary name (integer, list, map, nil) → no-op:
+    # @selected_location_name stays at its prior value (nil here) and the LV
+    # process remains alive.
+    #
+    # We use `render_hook/3` (not `render_change/3`) to bypass the form
+    # encoder that would coerce `42` → `"42"` and `nil` → `""` before
+    # reaching the handler. The handler's catchall must exercise the
+    # non-binary clauses on the wire shape itself, not the post-form-cast
+    # one.
+    for {label, payload} <- [
+          {"missing key", %{}},
+          {"integer", %{"name" => 42}},
+          {"list", %{"name" => []}},
+          {"map", %{"name" => %{}}},
+          {"nil", %{"name" => nil}}
+        ] do
+      test "update_location_name with hostile #{label} payload is a no-op",
+           %{conn: conn} do
+        view = mount_authenticated(conn) |> open_form()
+
+        render_hook(view, "update_location_name", unquote(Macro.escape(payload)))
+
+        assigns = :sys.get_state(view.pid).socket.assigns
+        assert assigns.selected_location_name == nil
+        assert assigns.selected_lat == nil
+        assert assigns.selected_lng == nil
+        assert Process.alive?(view.pid)
+      end
+    end
+
+    # Pin DOM source order: Categorie → Durata → Budget → Posizione → Salva.
+    # The save button must remain the last interactive element of the form
+    # so screen readers reach all fieldsets first.
+    test "form fieldset order: Categorie → Durata → Budget → Posizione → Salva",
+         %{conn: conn} do
+      view = mount_authenticated(conn) |> open_form()
+      html = render(view)
+
+      categorie_idx = :binary.match(html, "Categorie") |> elem(0)
+      durata_idx = :binary.match(html, ">Durata<") |> elem(0)
+      budget_idx = :binary.match(html, ">Budget<") |> elem(0)
+      posizione_idx = :binary.match(html, ">Posizione<") |> elem(0)
+      salva_idx = :binary.match(html, ">\n        Salva\n      <") |> elem(0)
+
+      assert categorie_idx < durata_idx
+      assert durata_idx < budget_idx
+      assert budget_idx < posizione_idx
+      assert posizione_idx < salva_idx
+    end
+  end
 end

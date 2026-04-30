@@ -105,6 +105,41 @@
         </p>
       </fieldset>
 
+      <fieldset class="fieldset">
+        <legend class="label mb-1">Posizione</legend>
+        <label for="idea-location-name" class="label">Luogo</label>
+        <input
+          type="text"
+          id="idea-location-name"
+          name="idea[location_name]"
+          value={@selected_location_name || ""}
+          placeholder="es. Casa di nonna"
+          phx-change="update_location_name"
+          phx-debounce="300"
+          maxlength="200"
+          class="input"
+        />
+        <p :if={not is_nil(@selected_lat)} class="text-xs text-base-content/70">
+          📍 Coordinate impostate
+        </p>
+        <button
+          type="button"
+          aria-haspopup="dialog"
+          class="btn btn-secondary btn-sm min-h-11 min-w-11"
+          disabled
+        >
+          📍 Apri mappa
+        </button>
+        <button
+          :if={not is_nil(@selected_location_name) or not is_nil(@selected_lat)}
+          type="button"
+          phx-click="remove_location"
+          class="btn btn-ghost btn-sm min-h-11 min-w-11"
+        >
+          Rimuovi posizione
+        </button>
+      </fieldset>
+
       <button type="submit" phx-disable-with="Salvataggio…" class="btn btn-primary">
         Salva
       </button>

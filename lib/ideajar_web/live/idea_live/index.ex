@@ -55,6 +55,7 @@ defmodule IdeajarWeb.IdeaLive.Index do
      |> reset_categories()
      |> reset_duration()
      |> reset_budget()
+     |> reset_location()
      |> assign_form()
      |> reload_ideas()}
   end
@@ -71,6 +72,7 @@ defmodule IdeajarWeb.IdeaLive.Index do
      |> reset_categories()
      |> reset_duration()
      |> reset_budget()
+     |> reset_location()
      |> assign_form()
      |> push_event("ideajar:focus", %{to: "#idea-title"})}
   end
@@ -88,6 +90,7 @@ defmodule IdeajarWeb.IdeaLive.Index do
      |> reset_categories()
      |> reset_duration()
      |> reset_budget()
+     |> reset_location()
      |> assign_form()}
   end
 
@@ -150,6 +153,31 @@ defmodule IdeajarWeb.IdeaLive.Index do
   # Catchall for hostile or malformed phx-value-cost payloads (non-string
   # types or missing key). Pinned by S2 hostile uniform list.
   def handle_event("toggle_form_budget", _params, socket), do: {:noreply, socket}
+
+  # Slice 7a step 4 — text input `phx-change` for the location name. We
+  # accept any binary (including the empty string — clearing the input is
+  # legal at this layer; the schema validator drops empty-after-trim to
+  # nil and surfaces a "Posizione incompleta" error only when coords are
+  # set without a name). Only `@selected_location_name` is touched; lat
+  # and lng survive a text edit (E1 invariant — slice spec scenario
+  # "Editing the text input after a pin keeps lat/lng unchanged").
+  def handle_event("update_location_name", %{"name" => name}, socket)
+      when is_binary(name) do
+    {:noreply, assign(socket, :selected_location_name, name)}
+  end
+
+  # Catchall for hostile or malformed `update_location_name` payloads:
+  # missing `"name"` key, non-binary values (integer, list, map, nil).
+  # Pinned by the slice-7a-step-4 hostile uniform list.
+  def handle_event("update_location_name", _params, socket), do: {:noreply, socket}
+
+  # Slice 7a step 4 — clears the full location triplet at once. Wired to
+  # the conditional "Rimuovi posizione" button (rendered when at least one
+  # of the 3 assigns is set). Symmetrical with `clear_filters` for the
+  # filter row but scoped to the form's location fieldset.
+  def handle_event("remove_location", _params, socket) do
+    {:noreply, reset_location(socket)}
+  end
 
   def handle_event("cycle_filter", %{"id" => raw_id}, socket) when is_binary(raw_id) do
     case parse_known_category_id(raw_id, socket.assigns.categories) do
@@ -243,9 +271,15 @@ defmodule IdeajarWeb.IdeaLive.Index do
     attrs_with_budget =
       maybe_inject_budget(attrs_with_duration, socket.assigns.selected_cost)
 
+    attrs_with_location =
+      attrs_with_budget
+      |> maybe_inject_location_name(socket.assigns.selected_location_name)
+      |> maybe_inject_lat(socket.assigns.selected_lat)
+      |> maybe_inject_lng(socket.assigns.selected_lng)
+
     socket
     |> create_idea_fun()
-    |> apply([attrs_with_budget])
+    |> apply([attrs_with_location])
     |> handle_save_result(socket, attrs)
   end
 
@@ -278,6 +312,30 @@ defmodule IdeajarWeb.IdeaLive.Index do
   defp maybe_inject_budget(params, value) when is_integer(value),
     do: Map.put(params, "estimated_cost", Integer.to_string(value))
 
+  # Slice 7a step 4 — symmetric to `maybe_inject_duration/3` and
+  # `maybe_inject_budget/2`. The form's three location assigns are the
+  # source of truth: when any is set we override the matching `"idea[..]"`
+  # key in the form params (the text input also posts `idea[location_name]`
+  # via its `name` attribute, so on submit the assign and the form param
+  # carry the same value — the assign wins for consistency with the chip
+  # families). When the assign is `nil` we leave whatever the form params
+  # carried so the cross-field validator in the schema can surface the
+  # canonical "Posizione incompleta" error on hostile submits.
+  defp maybe_inject_location_name(params, nil), do: params
+
+  defp maybe_inject_location_name(params, name) when is_binary(name),
+    do: Map.put(params, "location_name", name)
+
+  defp maybe_inject_lat(params, nil), do: params
+
+  defp maybe_inject_lat(params, lat) when is_number(lat),
+    do: Map.put(params, "lat", lat)
+
+  defp maybe_inject_lng(params, nil), do: params
+
+  defp maybe_inject_lng(params, lng) when is_number(lng),
+    do: Map.put(params, "lng", lng)
+
   # Test seam: tests assign `:create_idea_fun` to inject a deterministic
   # failure without dragging in Mox for a single call site. In production
   # the assign is absent and we fall back to the real context call.
@@ -292,6 +350,7 @@ defmodule IdeajarWeb.IdeaLive.Index do
      |> reset_categories()
      |> reset_duration()
      |> reset_budget()
+     |> reset_location()
      |> assign_form()
      |> reload_ideas()
      |> put_flash(:info, "Idea aggiunta")
@@ -326,6 +385,23 @@ defmodule IdeajarWeb.IdeaLive.Index do
   # `reset_categories/1` and `reset_duration/1`. `nil` means "no chip
   # selected"; `0` is a valid bucket (gratis) and is NOT the reset value.
   defp reset_budget(socket), do: assign(socket, :selected_cost, nil)
+
+  # Slice 7a step 4 (CC11): the form's location triplet
+  # `(@selected_location_name, @selected_lat, @selected_lng)` lives outside
+  # `@form` for the same reason as the chip-derived fields — the map picker
+  # (step 6) sets coords via a `set_location` push event, and the text
+  # input feeds `@selected_location_name` via the `update_location_name`
+  # `phx-change` handler. `reset_location/1` runs in the same lifecycle
+  # slots as `reset_categories/1` / `reset_duration/1` / `reset_budget/1`:
+  # mount, toggle_form open, close_form, and save success. Kept as a
+  # dedicated helper rather than folded into a single `reset_form_state/1`
+  # for symmetry with the slice-3/5/6 pattern.
+  defp reset_location(socket) do
+    socket
+    |> assign(:selected_location_name, nil)
+    |> assign(:selected_lat, nil)
+    |> assign(:selected_lng, nil)
+  end
 
   # Re-loads the ideas list from the context using the filter opts derived
   # from `@filter_state`, `@duration_filter` and `@cost_filter`. Called on
