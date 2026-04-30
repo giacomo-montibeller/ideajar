@@ -289,6 +289,10 @@
           :if={not is_nil(idea.estimated_cost)}
           cost={idea.estimated_cost}
         />
+        <LocationBadge.location_badge
+          :if={not is_nil(idea.location_name)}
+          name={idea.location_name}
+        />
       </li>
     </ul>
   </section>

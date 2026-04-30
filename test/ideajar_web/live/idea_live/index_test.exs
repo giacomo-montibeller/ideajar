@@ -1976,6 +1976,185 @@ defmodule IdeajarWeb.IdeaLive.IndexTest do
     end
   end
 
+  describe "idea card location badge (slice 7a step 5)" do
+    # F16 — present (state b: name only, no coords). The badge surfaces on
+    # idea cards whenever `idea.location_name != nil`, regardless of whether
+    # coords are also set. Slice 7b's distance filter will use coords; this
+    # slice only renders the name with a 📍 prefix.
+    test "idea with location_name: \"Sirolo, AN\" renders <span data-testid=idea-location-badge> with '📍 Sirolo, AN'",
+         %{conn: conn} do
+      mare = CategoriesFixtures.category_by_name!("mare")
+
+      assert {:ok, _idea} =
+               Ideajar.Ideas.create_idea(%{
+                 title: "Sirolo",
+                 category_ids: [mare.id],
+                 location_name: "Sirolo, AN"
+               })
+
+      {:ok, _view, html} =
+        live_isolated(conn, Index, session: @authenticated_session)
+
+      [_full, inner] =
+        Regex.run(
+          ~r{<span[^>]*data-testid="idea-location-badge"[^>]*>(.*?)</span>}s,
+          html
+        )
+
+      assert String.trim(inner) == "📍 Sirolo, AN"
+    end
+
+    # F16 — absent: an idea without location_name renders no location badge.
+    test "idea without location_name renders NO data-testid=idea-location-badge element",
+         %{conn: conn} do
+      mare = CategoriesFixtures.category_by_name!("mare")
+
+      assert {:ok, _idea} =
+               Ideajar.Ideas.create_idea(%{
+                 title: "Cinema stasera",
+                 category_ids: [mare.id]
+               })
+
+      {:ok, _view, html} =
+        live_isolated(conn, Index, session: @authenticated_session)
+
+      refute html =~ ~s(data-testid="idea-location-badge")
+    end
+
+    # State (b) name-only is the canonical "no map yet" path: utente scrive
+    # "Casa di nonna" senza pin. Badge shown anyway.
+    test "idea with location_name set and lat/lng nil (state b) DOES render the badge",
+         %{conn: conn} do
+      mare = CategoriesFixtures.category_by_name!("mare")
+
+      assert {:ok, idea} =
+               Ideajar.Ideas.create_idea(%{
+                 title: "Picnic",
+                 category_ids: [mare.id],
+                 location_name: "Casa di nonna"
+               })
+
+      assert idea.location_name == "Casa di nonna"
+      assert idea.lat == nil
+      assert idea.lng == nil
+
+      {:ok, _view, html} =
+        live_isolated(conn, Index, session: @authenticated_session)
+
+      [_full, inner] =
+        Regex.run(
+          ~r{<span[^>]*data-testid="idea-location-badge"[^>]*>(.*?)</span>}s,
+          html
+        )
+
+      assert String.trim(inner) == "📍 Casa di nonna"
+    end
+
+    # Multiple ideas: only those with location_name set render a badge.
+    # 2 ideas (one with name, one without) → exactly 1 location badge.
+    test "two ideas (one with location_name, one without) render exactly one location badge",
+         %{conn: conn} do
+      mare = CategoriesFixtures.category_by_name!("mare")
+
+      assert {:ok, _} =
+               Ideajar.Ideas.create_idea(%{
+                 title: "Sirolo",
+                 category_ids: [mare.id],
+                 location_name: "Sirolo, AN"
+               })
+
+      assert {:ok, _} =
+               Ideajar.Ideas.create_idea(%{
+                 title: "Cinema stasera",
+                 category_ids: [mare.id]
+               })
+
+      {:ok, _view, html} =
+        live_isolated(conn, Index, session: @authenticated_session)
+
+      badges = Regex.scan(~r/data-testid="idea-location-badge"/, html)
+      assert length(badges) == 1
+    end
+
+    # S2 — XSS regression: location_name flows through HEEx auto-escape.
+    # A `<script>` payload persisted via `create_idea/1` (it's a plain
+    # string field, no character whitelist) must surface as escaped text
+    # in the rendered HTML — never as an executable script tag.
+    test "idea with hostile location_name <script> renders escaped, NOT raw <script>",
+         %{conn: conn} do
+      mare = CategoriesFixtures.category_by_name!("mare")
+
+      assert {:ok, _idea} =
+               Ideajar.Ideas.create_idea(%{
+                 title: "Hostile",
+                 category_ids: [mare.id],
+                 location_name: "<script>alert(1)</script>"
+               })
+
+      {:ok, _view, html} =
+        live_isolated(conn, Index, session: @authenticated_session)
+
+      [_full, inner] =
+        Regex.run(
+          ~r{<span[^>]*data-testid="idea-location-badge"[^>]*>(.*?)</span>}s,
+          html
+        )
+
+      assert inner =~ "&lt;script&gt;"
+      assert inner =~ "&lt;/script&gt;"
+      refute inner =~ "<script>"
+      refute inner =~ "</script>"
+    end
+
+    # Position pin — the location badge appears AFTER <BudgetChip.budget_badge>
+    # in the idea card DOM source order, and BEFORE the closing </li> of the
+    # card (parallel to slice 6 step 5 position pin which placed the budget
+    # badge after the duration badge).
+    test "location badge appears after budget badge within the idea card",
+         %{conn: conn} do
+      mare = CategoriesFixtures.category_by_name!("mare")
+
+      assert {:ok, _} =
+               Ideajar.Ideas.create_idea(%{
+                 title: "Sirolo",
+                 category_ids: [mare.id],
+                 estimated_cost: "200",
+                 location_name: "Sirolo, AN"
+               })
+
+      {:ok, _view, html} =
+        live_isolated(conn, Index, session: @authenticated_session)
+
+      budget_pos =
+        case :binary.match(html, ~s(data-testid="idea-budget-badge")) do
+          {pos, _} -> pos
+          :nomatch -> nil
+        end
+
+      location_pos =
+        case :binary.match(html, ~s(data-testid="idea-location-badge")) do
+          {pos, _} -> pos
+          :nomatch -> nil
+        end
+
+      # Find the FIRST `</li>` that closes the idea card — i.e. the first
+      # one that occurs at or after `location_pos`. The earlier `</li>`
+      # occurrences in the HTML close the inner category-badge list items
+      # (`<ul data-testid="idea-categories">`), not the idea card itself.
+      end_of_card_pos =
+        :binary.matches(html, "</li>")
+        |> Enum.find_value(fn {pos, _} ->
+          if pos >= location_pos, do: pos, else: nil
+        end)
+
+      assert is_integer(budget_pos)
+      assert is_integer(location_pos)
+      assert is_integer(end_of_card_pos)
+      assert budget_pos < location_pos
+      assert location_pos < end_of_card_pos
+    end
+  end
+
   # ── Slice 5 Step 6: duration filter sub-block ─────────────────────────
   defp insert_idea_with_categories_and_duration!(
          title,

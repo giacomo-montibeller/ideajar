@@ -42,6 +42,7 @@ defmodule IdeajarWeb.IdeaLive.Index do
   # DurationChip.filter_chip).
   alias IdeajarWeb.Components.BudgetChip
   alias IdeajarWeb.Components.DurationChip
+  alias IdeajarWeb.Components.LocationBadge
 
   @impl Phoenix.LiveView
   def mount(_params, %{"authenticated" => true}, socket) do
