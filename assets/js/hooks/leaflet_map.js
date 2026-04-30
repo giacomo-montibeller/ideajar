@@ -50,6 +50,13 @@ export const LeafletMap = {
     const center = JSON.parse(this.el.dataset.defaultCenter || "[43.5, 12.5]")
     const zoom = parseInt(this.el.dataset.defaultZoom || "6", 10)
 
+    console.log("[LeafletMap] mounted", {
+      el: this.el,
+      clientHeight: this.el.clientHeight,
+      clientWidth: this.el.clientWidth,
+      offsetParent: this.el.offsetParent,
+    })
+
     this.map = L.map(this.el, { tap: false }).setView(center, zoom)
 
     L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
@@ -68,6 +75,10 @@ export const LeafletMap = {
     // unconditionally on any resize so subsequent dialog open/close
     // cycles also work.
     this._resizeObserver = new ResizeObserver(() => {
+      console.log("[LeafletMap] resize observed", {
+        clientHeight: this.el.clientHeight,
+        clientWidth: this.el.clientWidth,
+      })
       if (this.map && this.el.clientHeight > 0) {
         this.map.invalidateSize()
       }

@@ -157,9 +157,9 @@
     <dialog
       id="location-map-dialog"
       aria-labelledby="location-map-title"
-      class="rounded-box border border-base-300 bg-base-100 p-0 backdrop:bg-black/40"
+      class="rounded-box border border-base-300 bg-base-100 p-0 backdrop:bg-black/40 w-[36rem] max-w-[calc(100vw-2rem)]"
     >
-      <div class="flex flex-col gap-2 p-4 h-full w-full sm:w-[32rem]">
+      <div class="flex flex-col gap-2 p-4 w-full">
         <div class="flex items-center justify-between">
           <h2 id="location-map-title" class="text-base font-semibold">Scegli posizione</h2>
           <button
@@ -176,7 +176,8 @@
           phx-hook="LeafletMap"
           data-default-center="[43.5, 12.5]"
           data-default-zoom="6"
-          class="h-96 w-full sm:h-96 grow"
+          style="height: 24rem;"
+          class="w-full"
         >
         </div>
         <p class="text-xs text-base-content/70">

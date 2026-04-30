@@ -61,11 +61,20 @@ window.addEventListener("phx:ideajar:focus", e => {
 // methods like showModal()/close() directly (JS.exec is for command attrs,
 // not method invocation), so this small bridge is the documented pattern.
 window.addEventListener("phx:open-dialog", e => {
+  console.log("[phx:open-dialog] received", e.detail)
   const id = e.detail && e.detail.id
   if (!id) return
   const dialog = document.getElementById(id)
-  if (!dialog || typeof dialog.showModal !== "function") return
+  console.log("[phx:open-dialog] dialog node", dialog)
+  if (!dialog || typeof dialog.showModal !== "function") {
+    console.error("[phx:open-dialog] dialog not found or no showModal", { id, dialog })
+    return
+  }
   dialog.showModal()
+  console.log("[phx:open-dialog] showModal called", {
+    open: dialog.open,
+    rect: dialog.getBoundingClientRect(),
+  })
 
   // Leaflet maps inside the dialog booted with clientHeight=0 (parent
   // was display:none). The LeafletMap hook installs a ResizeObserver
