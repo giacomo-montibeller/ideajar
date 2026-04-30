@@ -39,3 +39,9 @@ config :ideajar, :workspace_password, "correct horse battery staple"
 # zero in tests to keep the suite fast. The login_timing_test.exs file
 # overrides this back to 500ms via Application.put_env (async: false).
 config :ideajar, :wrong_password_delay_ms, 0
+
+# Slice 7a — Reverse-geocoding HTTP test seam. `Req.Test` keeps a
+# cross-process shared name table, so a single canonical stub name
+# (`IdeajarStub`) works for unit tests and LiveView tests alike.
+# Each test installs its own stub via `Req.Test.stub(IdeajarStub, fn ... end)`.
+config :ideajar, Ideajar.Geocoding.NominatimClient, req_options: [plug: {Req.Test, IdeajarStub}]
