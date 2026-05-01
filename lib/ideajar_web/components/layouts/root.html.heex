@@ -8,15 +8,6 @@
       {assigns[:page_title]}
     </.live_title>
     <link phx-track-static rel="stylesheet" href={~p"/assets/css/app.css"} />
-    <%!--
-      Leaflet 1.9.4 UMD bundle. Loaded BEFORE app.js so `window.L` is
-      available when the LeafletMap hook mounts. The bundle is mirrored
-      from `assets/vendor/leaflet.js` to `priv/static/assets/vendor/`
-      by `mix assets.build` (see `copy_vendor_assets/1` in mix.exs) so
-      `Plug.Static` can serve it under `/assets/vendor/leaflet.js`.
-    --%>
-    <script phx-track-static type="text/javascript" src={~p"/assets/vendor/leaflet.js"}>
-    </script>
     <script defer phx-track-static type="text/javascript" src={~p"/assets/js/app.js"}>
     </script>
     <script>

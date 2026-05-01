@@ -17,6 +17,31 @@ defmodule IdeajarWeb.IdeaLive.IndexTest do
     view
   end
 
+  # Slice 7a iter2: the location text input triggers a synchronous
+  # `Ideajar.Geocoding.search/1` call when the query has ≥ 3 characters.
+  # In tests the real HTTP boundary is replaced by `Req.Test` keyed under
+  # `IdeajarStub` (see config/test.exs). LV runs in a separate process so
+  # we must `allow/3` it to use the stub installed by the test process.
+  # Default stub here returns `[]` so existing slice 7a step 4 tests that
+  # fire `update_location_name` with ≥ 3 chars stay green without caring
+  # about the dropdown; tests that exercise the dropdown install their
+  # own stub before calling `allow_geocoding!/1`.
+  defp stub_geocoding_empty!(view) do
+    Req.Test.stub(IdeajarStub, fn conn ->
+      conn
+      |> Plug.Conn.put_resp_header("content-type", "application/json")
+      |> Plug.Conn.send_resp(200, "[]")
+    end)
+
+    Req.Test.allow(IdeajarStub, self(), view.pid)
+    view
+  end
+
+  defp allow_geocoding!(view) do
+    Req.Test.allow(IdeajarStub, self(), view.pid)
+    view
+  end
+
   defp open_form(view) do
     render_click(view, "toggle_form")
     view
@@ -4133,10 +4158,11 @@ defmodule IdeajarWeb.IdeaLive.IndexTest do
   # ── Slice 7a step 4: form Posizione fieldset, text input, LV handlers ──
   #
   # Pure form/LV layer wiring of the location domain (slice 7a step 3 added
-  # the schema + cross-field validator). The map picker dialog is wired in
-  # step 6; for now the `📍 Apri mappa` button is rendered `disabled` and
-  # the inline coord-set hint visibility is exercised at step 7 (where
-  # `set_location` actually sets `@selected_lat`).
+  # the schema + cross-field validator). The slice 7a iter2 UX rework
+  # replaced the Leaflet map picker with a Google-Maps-style search
+  # dropdown — the `📍 Apri mappa` button, the `📍 Coordinate impostate`
+  # hint, the `<dialog>` shell, and the `set_location` handler are all
+  # gone (see "location search dropdown (slice 7a iter2)" describe).
   #
   # Lifecycle parallel to `reset_categories/1` (slice 3), `reset_duration/1`
   # (slice 5) and `reset_budget/1` (slice 6): a dedicated `reset_location/1`
@@ -4176,29 +4202,6 @@ defmodule IdeajarWeb.IdeaLive.IndexTest do
       assert input_tag =~ ~s(maxlength="200")
     end
 
-    test "opening the form renders the '📍 Apri mappa' button with aria-haspopup=\"dialog\"",
-         %{conn: conn} do
-      view = mount_authenticated(conn) |> open_form()
-      html = render(view)
-
-      [pos_block] =
-        Regex.run(~r{<legend[^>]*>\s*Posizione\s*</legend>.*?</fieldset>}s, html) ||
-          [nil] |> List.wrap()
-
-      assert pos_block, "Expected the Posizione fieldset block to be present"
-
-      [open_map_btn] =
-        Regex.run(~r{<button[^>]*>[^<]*Apri mappa[^<]*</button>}s, pos_block) ||
-          [nil] |> List.wrap()
-
-      assert open_map_btn, "Expected an 'Apri mappa' button inside the Posizione fieldset"
-      assert open_map_btn =~ ~s(aria-haspopup="dialog")
-      # Slice 7a step 6 enables the button (was `disabled` after step 4).
-      # The behaviour test for the wired phx-click lives in the step 6
-      # describe block ("'📍 Apri mappa' button is enabled and wired to ...").
-      refute open_map_btn =~ ~r/\bdisabled\b/
-    end
-
     test "no location set: 'Rimuovi posizione' button is NOT rendered",
          %{conn: conn} do
       view = mount_authenticated(conn) |> open_form()
@@ -4207,7 +4210,15 @@ defmodule IdeajarWeb.IdeaLive.IndexTest do
       refute html =~ "Rimuovi posizione"
     end
 
-    test "no coords set: '📍 Coordinate impostate' inline hint is NOT rendered",
+    test "iter2: no '📍 Apri mappa' button rendered (Leaflet picker removed)",
+         %{conn: conn} do
+      view = mount_authenticated(conn) |> open_form()
+      html = render(view)
+
+      refute html =~ "Apri mappa"
+    end
+
+    test "iter2: no '📍 Coordinate impostate' inline hint rendered (replaced by search dropdown)",
          %{conn: conn} do
       view = mount_authenticated(conn) |> open_form()
       html = render(view)
@@ -4217,7 +4228,7 @@ defmodule IdeajarWeb.IdeaLive.IndexTest do
 
     test "update_location_name event sets @selected_location_name and leaves lat/lng nil",
          %{conn: conn} do
-      view = mount_authenticated(conn) |> open_form()
+      view = mount_authenticated(conn) |> open_form() |> stub_geocoding_empty!()
 
       render_change(view, "update_location_name", %{"name" => "Casa di nonna"})
 
@@ -4229,7 +4240,7 @@ defmodule IdeajarWeb.IdeaLive.IndexTest do
 
     test "after update_location_name: 'Rimuovi posizione' button is rendered",
          %{conn: conn} do
-      view = mount_authenticated(conn) |> open_form()
+      view = mount_authenticated(conn) |> open_form() |> stub_geocoding_empty!()
 
       html = render_change(view, "update_location_name", %{"name" => "Casa di nonna"})
 
@@ -4238,7 +4249,7 @@ defmodule IdeajarWeb.IdeaLive.IndexTest do
 
     test "remove_location event resets all 3 location assigns and hides the 'Rimuovi posizione' button",
          %{conn: conn} do
-      view = mount_authenticated(conn) |> open_form()
+      view = mount_authenticated(conn) |> open_form() |> stub_geocoding_empty!()
 
       render_change(view, "update_location_name", %{"name" => "Casa di nonna"})
 
@@ -4257,7 +4268,7 @@ defmodule IdeajarWeb.IdeaLive.IndexTest do
 
     test "save success state (b) name-only persists location_name, lat=nil, lng=nil and resets assigns",
          %{conn: conn} do
-      view = mount_authenticated(conn) |> open_form()
+      view = mount_authenticated(conn) |> open_form() |> stub_geocoding_empty!()
 
       render_change(view, "update_location_name", %{"name" => "Casa di nonna"})
 
@@ -4294,7 +4305,7 @@ defmodule IdeajarWeb.IdeaLive.IndexTest do
 
     test "close_form resets @selected_location_name, @selected_lat, @selected_lng to nil",
          %{conn: conn} do
-      view = mount_authenticated(conn) |> open_form()
+      view = mount_authenticated(conn) |> open_form() |> stub_geocoding_empty!()
 
       render_change(view, "update_location_name", %{"name" => "Casa di nonna"})
 
@@ -4312,7 +4323,7 @@ defmodule IdeajarWeb.IdeaLive.IndexTest do
 
     test "open_form resets @selected_location_name to nil even after close+reopen with prior input",
          %{conn: conn} do
-      view = mount_authenticated(conn) |> open_form()
+      view = mount_authenticated(conn) |> open_form() |> stub_geocoding_empty!()
 
       render_change(view, "update_location_name", %{"name" => "Casa di nonna"})
       render_click(view, "close_form")
@@ -4377,244 +4388,350 @@ defmodule IdeajarWeb.IdeaLive.IndexTest do
     end
   end
 
-  describe "map picker dialog shell + assets (slice 7a step 6)" do
-    # ── Hook + asset registration tests (CC4, CC8, CC9) ────────────
+  # ── Slice 7a iter2: search dropdown (replaces map picker) ──
+  #
+  # The text input drives a debounced (300ms client-side) `phx-change`
+  # event into `update_location_name`. When the trimmed query has at
+  # least 3 characters the handler calls `Ideajar.Geocoding.search/1`
+  # synchronously and assigns `:location_search_results` +
+  # `:location_search_state` (`:idle | :searching | :empty | :results`).
+  # Clicking a result populates the 3 location assigns; clicking
+  # outside fires `dismiss_location_search`. Decision C1: typing
+  # after a previous select clears lat/lng so name-only-state-(b)
+  # reasserts itself once the typed string diverges from the picked
+  # one. The `Geocoding.search/1` HTTP boundary is stubbed via
+  # `Req.Test` (see config/test.exs `IdeajarStub`).
+  describe "location search dropdown (slice 7a iter2)" do
+    defp stub_results!(view, results) do
+      Req.Test.stub(IdeajarStub, fn conn ->
+        conn
+        |> Plug.Conn.put_resp_header("content-type", "application/json")
+        |> Plug.Conn.send_resp(200, Jason.encode!(results))
+      end)
 
-    test "vendor leaflet JS exists" do
-      assert File.exists?("assets/vendor/leaflet.js"),
-             "Expected assets/vendor/leaflet.js to be vendored (Leaflet 1.9.4 UMD)"
+      allow_geocoding!(view)
     end
 
-    test "vendor leaflet CSS exists" do
-      assert File.exists?("assets/vendor/leaflet.css"),
-             "Expected assets/vendor/leaflet.css to be vendored"
+    defp stub_service_unavailable!(view) do
+      Req.Test.stub(IdeajarStub, fn conn ->
+        Plug.Conn.send_resp(conn, 502, "bad gateway")
+      end)
+
+      allow_geocoding!(view)
     end
 
-    test "vendor leaflet JS and CSS are mirrored under priv/static so Plug.Static can serve them" do
-      assert File.exists?("priv/static/assets/vendor/leaflet.js"),
-             "Expected priv/static/assets/vendor/leaflet.js (mirrored by mix assets.build)"
-
-      assert File.exists?("priv/static/assets/vendor/leaflet.css"),
-             "Expected priv/static/assets/vendor/leaflet.css (mirrored by mix assets.build)"
-    end
-
-    test "leaflet_map.js hook file exists with the expected wiring" do
-      assert File.exists?("assets/js/hooks/leaflet_map.js"),
-             "Expected assets/js/hooks/leaflet_map.js"
-
-      js = File.read!("assets/js/hooks/leaflet_map.js")
-      assert js =~ "export const LeafletMap"
-      assert js =~ "mounted()"
-      assert js =~ "window.L"
-
-      assert js =~ ~s(pushEvent("set_location") or js =~ ~s(pushEvent('set_location'),
-             "Hook must pushEvent set_location with click coords"
-
-      assert js =~ "destroyed()"
-    end
-
-    test "app.js imports + registers LeafletMap and bridges phx:open-dialog / phx:close-dialog" do
-      app_js = File.read!("assets/js/app.js")
-
-      assert app_js =~ "LeafletMap",
-             "Expected LeafletMap to be imported and registered as a hook in app.js"
-
-      assert app_js =~ "phx:open-dialog",
-             "Expected app.js to install a global phx:open-dialog listener that calls dialog.showModal()"
-
-      assert app_js =~ "phx:close-dialog",
-             "Expected app.js to install a global phx:close-dialog listener that calls dialog.close()"
-    end
-
-    test "leaflet CSS is imported by the app stylesheet" do
-      css = File.read!("assets/css/app.css")
-
-      assert css =~ "leaflet.css" or css =~ "leaflet",
-             "Expected assets/css/app.css to import the vendored leaflet stylesheet"
-    end
-
-    # ── Template DOM structure tests (CC7, CC18, CC21) ─────────────
-
-    test "mount: renders <dialog id=\"location-map-dialog\"> closed (no `open` attribute)",
+    test "mount: assigns initial search state (results == [], state == :idle)",
          %{conn: conn} do
       view = mount_authenticated(conn)
-      html = render(view)
 
-      [dialog_open_tag] =
-        Regex.run(~r{<dialog[^>]*id="location-map-dialog"[^>]*>}, html) ||
-          [nil] |> List.wrap()
-
-      assert dialog_open_tag,
-             "Expected <dialog id=\"location-map-dialog\"> to be present in the rendered DOM"
-
-      refute dialog_open_tag =~ ~r/\bopen\b/,
-             "Dialog must mount closed: the `open` attribute must not be present"
+      assigns = :sys.get_state(view.pid).socket.assigns
+      assert assigns.location_search_results == []
+      assert assigns.location_search_state == :idle
     end
 
-    test "dialog has aria-labelledby pointing at the dialog title (A4)", %{conn: conn} do
-      view = mount_authenticated(conn)
+    test "mount: dropdown not in DOM initially (state idle)", %{conn: conn} do
+      view = mount_authenticated(conn) |> open_form()
       html = render(view)
 
-      [dialog_open_tag] =
-        Regex.run(~r{<dialog[^>]*id="location-map-dialog"[^>]*>}, html) ||
-          [nil] |> List.wrap()
-
-      assert dialog_open_tag =~ ~s(aria-labelledby="location-map-title")
+      refute html =~ ~s(role="listbox")
+      refute html =~ "Cerco"
+      refute html =~ "Nessun risultato"
     end
 
-    test "dialog contains <h2 id=\"location-map-title\">Scegli posizione</h2>",
+    test "type < 3 chars: silent (state stays :idle, no dropdown rendered)",
          %{conn: conn} do
-      view = mount_authenticated(conn)
-      html = render(view)
+      view = mount_authenticated(conn) |> open_form() |> stub_geocoding_empty!()
 
-      [_full, dialog_inner] =
-        Regex.run(
-          ~r{<dialog[^>]*id="location-map-dialog"[^>]*>(.*?)</dialog>}s,
-          html
-        ) || [nil, nil]
+      html = render_change(view, "update_location_name", %{"name" => "Si"})
 
-      assert dialog_inner,
-             "Expected to extract the inner content of the location-map-dialog"
-
-      assert dialog_inner =~
-               ~r{<h2[^>]*id="location-map-title"[^>]*>\s*Scegli posizione\s*</h2>}
+      assigns = :sys.get_state(view.pid).socket.assigns
+      assert assigns.location_search_state == :idle
+      assert assigns.location_search_results == []
+      assert assigns.selected_location_name == "Si"
+      refute html =~ ~s(role="listbox")
     end
 
-    test "dialog contains the Leaflet hook host with default-center [43.5, 12.5] and default-zoom 6 (CC21)",
+    test "type >= 3 chars: triggers search, dropdown renders the results",
          %{conn: conn} do
-      view = mount_authenticated(conn)
-      html = render(view)
+      view = mount_authenticated(conn) |> open_form()
 
-      [_, dialog_inner] =
-        Regex.run(
-          ~r{<dialog[^>]*id="location-map-dialog"[^>]*>(.*?)</dialog>}s,
-          html
-        ) || [nil, nil]
+      stub_results!(view, [
+        %{"display_name" => "Sirolo, AN", "lat" => "43.5", "lon" => "13.6"},
+        %{"display_name" => "Siracusa, SR", "lat" => "37.0", "lon" => "15.3"}
+      ])
 
-      assert dialog_inner
+      html = render_change(view, "update_location_name", %{"name" => "sir"})
 
-      [hook_div] =
-        Regex.run(~r{<div[^>]*id="form-map-picker"[^>]*>}, dialog_inner) ||
-          [nil] |> List.wrap()
-
-      assert hook_div, "Expected <div id=\"form-map-picker\"> hook host inside the dialog"
-      assert hook_div =~ ~s(phx-hook="LeafletMap")
-      assert hook_div =~ ~s(data-default-center="[43.5, 12.5]")
-      assert hook_div =~ ~s(data-default-zoom="6")
+      assigns = :sys.get_state(view.pid).socket.assigns
+      assert assigns.location_search_state == :results
+      assert length(assigns.location_search_results) == 2
+      assert html =~ ~s(role="listbox")
+      assert html =~ "Sirolo, AN"
+      assert html =~ "Siracusa, SR"
+      assert html =~ ~s(phx-click="select_location")
     end
 
-    test "dialog contains a close button with aria-label Chiudi wired to phx:close-dialog (A5)",
+    test "empty result set: state :empty, dropdown shows 'Nessun risultato'",
          %{conn: conn} do
-      view = mount_authenticated(conn)
-      html = render(view)
+      view = mount_authenticated(conn) |> open_form()
+      stub_results!(view, [])
 
-      [_, dialog_inner] =
-        Regex.run(
-          ~r{<dialog[^>]*id="location-map-dialog"[^>]*>(.*?)</dialog>}s,
-          html
-        ) || [nil, nil]
+      html = render_change(view, "update_location_name", %{"name" => "xyzzy"})
 
-      assert dialog_inner
-
-      [close_btn] =
-        Regex.run(
-          ~r{<button[^>]*aria-label="Chiudi"[^>]*>[^<]*</button>}s,
-          dialog_inner
-        ) || [nil] |> List.wrap()
-
-      assert close_btn, "Expected a close button with aria-label=\"Chiudi\" inside the dialog"
-
-      # JS.dispatch("phx:close-dialog", detail: %{id: "..."}) serialises to a
-      # JSON-ish payload containing the verb "dispatch", the event name
-      # "phx:close-dialog" and the dialog id (HTML-escaped). The window
-      # listener in app.js bridges this CustomEvent to dialog.close().
-      assert close_btn =~ "phx-click",
-             "Expected the close button to carry a phx-click attribute"
-
-      assert close_btn =~ "dispatch" and close_btn =~ "phx:close-dialog",
-             "Expected the close button phx-click to encode JS.dispatch(\"phx:close-dialog\", ...)"
-
-      assert close_btn =~ "location-map-dialog",
-             "Expected the close button phx-click to carry the dialog id"
+      assigns = :sys.get_state(view.pid).socket.assigns
+      assert assigns.location_search_state == :empty
+      assert assigns.location_search_results == []
+      assert html =~ "Nessun risultato"
+      assert html =~ ~s(role="listbox")
     end
 
-    test "dialog contains an OSM attribution link to openstreetmap.org/copyright",
+    test "service unavailable: state :idle, no dropdown, flash error 'Ricerca non disponibile, riprova'",
          %{conn: conn} do
-      view = mount_authenticated(conn)
-      html = render(view)
+      view = mount_authenticated(conn) |> open_form()
+      stub_service_unavailable!(view)
 
-      [_, dialog_inner] =
-        Regex.run(
-          ~r{<dialog[^>]*id="location-map-dialog"[^>]*>(.*?)</dialog>}s,
-          html
-        ) || [nil, nil]
+      html = render_change(view, "update_location_name", %{"name" => "sirolo"})
 
-      assert dialog_inner
-      assert dialog_inner =~ "https://www.openstreetmap.org/copyright"
-      assert dialog_inner =~ "OpenStreetMap"
+      assigns = :sys.get_state(view.pid).socket.assigns
+      assert assigns.location_search_state == :idle
+      assert assigns.location_search_results == []
+      refute html =~ ~s(role="listbox")
+      assert html =~ "Ricerca non disponibile, riprova"
     end
 
-    test "'📍 Apri mappa' button is enabled and wired to phx:open-dialog (U3)",
+    test "click result populates the 3 location assigns and closes the dropdown",
+         %{conn: conn} do
+      view = mount_authenticated(conn) |> open_form()
+
+      stub_results!(view, [
+        %{"display_name" => "Sirolo, AN", "lat" => "43.5", "lon" => "13.6"}
+      ])
+
+      render_change(view, "update_location_name", %{"name" => "sir"})
+
+      html =
+        render_click(view, "select_location", %{
+          "name" => "Sirolo, AN",
+          "lat" => "43.5",
+          "lng" => "13.6"
+        })
+
+      assigns = :sys.get_state(view.pid).socket.assigns
+      assert assigns.selected_location_name == "Sirolo, AN"
+      assert assigns.selected_lat == 43.5
+      assert assigns.selected_lng == 13.6
+      assert assigns.location_search_state == :idle
+      assert assigns.location_search_results == []
+      refute html =~ ~s(role="listbox")
+      assert html =~ ~s(value="Sirolo, AN")
+    end
+
+    # C1 — typing after a successful select must clear lat/lng so the form
+    # cannot be submitted as state (c) name+coords with a stale name. The
+    # location name is replaced with the new query.
+    test "C1: typing after a select clears lat/lng and re-runs the search",
+         %{conn: conn} do
+      view = mount_authenticated(conn) |> open_form()
+
+      stub_results!(view, [
+        %{"display_name" => "Sirolo, AN", "lat" => "43.5", "lon" => "13.6"}
+      ])
+
+      render_change(view, "update_location_name", %{"name" => "sir"})
+
+      render_click(view, "select_location", %{
+        "name" => "Sirolo, AN",
+        "lat" => "43.5",
+        "lng" => "13.6"
+      })
+
+      pre = :sys.get_state(view.pid).socket.assigns
+      assert pre.selected_lat == 43.5
+      assert pre.selected_lng == 13.6
+
+      stub_results!(view, [
+        %{"display_name" => "Roma, RM", "lat" => "41.9", "lon" => "12.5"}
+      ])
+
+      render_change(view, "update_location_name", %{"name" => "roma"})
+
+      post = :sys.get_state(view.pid).socket.assigns
+      assert post.selected_location_name == "roma"
+      assert post.selected_lat == nil
+      assert post.selected_lng == nil
+      assert post.location_search_state == :results
+      assert length(post.location_search_results) == 1
+    end
+
+    test "phx-click-away dismiss_location_search closes the dropdown without touching the 3 assigns",
+         %{conn: conn} do
+      view = mount_authenticated(conn) |> open_form()
+
+      stub_results!(view, [
+        %{"display_name" => "Sirolo, AN", "lat" => "43.5", "lon" => "13.6"}
+      ])
+
+      render_change(view, "update_location_name", %{"name" => "sir"})
+
+      pre = :sys.get_state(view.pid).socket.assigns
+      assert pre.location_search_state == :results
+      assert pre.selected_location_name == "sir"
+
+      html = render_click(view, "dismiss_location_search")
+
+      post = :sys.get_state(view.pid).socket.assigns
+      assert post.location_search_state == :idle
+      assert post.location_search_results == []
+      # 3 location assigns survive dismissal
+      assert post.selected_location_name == "sir"
+      assert post.selected_lat == nil
+      assert post.selected_lng == nil
+      refute html =~ ~s(role="listbox")
+    end
+
+    test "phx-click-away wired on the search input wrapper",
          %{conn: conn} do
       view = mount_authenticated(conn) |> open_form()
       html = render(view)
 
-      [pos_block] =
-        Regex.run(~r{<legend[^>]*>\s*Posizione\s*</legend>.*?</fieldset>}s, html) ||
-          [nil] |> List.wrap()
-
-      assert pos_block
-
-      [open_map_btn] =
-        Regex.run(~r{<button[^>]*>[^<]*Apri mappa[^<]*</button>}s, pos_block) ||
-          [nil] |> List.wrap()
-
-      assert open_map_btn, "Expected an 'Apri mappa' button inside the Posizione fieldset"
-
-      refute open_map_btn =~ ~r/\bdisabled\b/,
-             "Step 6 enables the 'Apri mappa' button — the disabled attribute must be gone"
-
-      assert open_map_btn =~ "phx-click",
-             "Expected 'Apri mappa' to carry a phx-click attribute"
-
-      # JS.dispatch("phx:open-dialog", detail: %{id: "..."}) serialises to a
-      # JSON-ish payload containing the verb "dispatch", the event name
-      # "phx:open-dialog" and the dialog id (HTML-escaped). The window
-      # listener in app.js bridges this CustomEvent to dialog.showModal().
-      assert open_map_btn =~ "dispatch" and open_map_btn =~ "phx:open-dialog",
-             "Expected 'Apri mappa' phx-click to encode JS.dispatch(\"phx:open-dialog\", ...)"
-
-      assert open_map_btn =~ "location-map-dialog"
-      assert open_map_btn =~ ~s(aria-haspopup="dialog")
+      assert html =~ ~s(phx-click-away="dismiss_location_search")
     end
 
-    # CC18: HTML5 showModal() does NOT close on backdrop click. We MUST NOT add
-    # a phx-click listener on the <dialog> element itself — that would close
-    # the dialog whenever a child click bubbles up. The close button + Esc are
-    # the only dismiss paths.
-    test "<dialog> opening tag does NOT carry phx-click (CC18 backdrop no-handler)",
+    test "submit without selecting from the dropdown (state b): name persists, lat/lng nil",
          %{conn: conn} do
-      view = mount_authenticated(conn)
+      view = mount_authenticated(conn) |> open_form()
+      stub_results!(view, [])
+
+      render_change(view, "update_location_name", %{"name" => "Casa di nonna"})
+
+      html = submit(view, %{title: "Picnic"})
+      assert html =~ "Idea aggiunta"
+
+      assigns = :sys.get_state(view.pid).socket.assigns
+      assert length(assigns.ideas) == 1
+      idea = hd(assigns.ideas)
+      assert idea.location_name == "Casa di nonna"
+      assert idea.lat == nil
+      assert idea.lng == nil
+    end
+
+    test "submit after selecting from the dropdown (state c): all 3 fields persist",
+         %{conn: conn} do
+      view = mount_authenticated(conn) |> open_form()
+
+      stub_results!(view, [
+        %{"display_name" => "Sirolo, AN", "lat" => "43.5", "lon" => "13.6"}
+      ])
+
+      render_change(view, "update_location_name", %{"name" => "sir"})
+
+      render_click(view, "select_location", %{
+        "name" => "Sirolo, AN",
+        "lat" => "43.5",
+        "lng" => "13.6"
+      })
+
+      submit(view, %{title: "Gita"})
+
+      assigns = :sys.get_state(view.pid).socket.assigns
+      assert length(assigns.ideas) == 1
+      idea = hd(assigns.ideas)
+      assert idea.location_name == "Sirolo, AN"
+      assert idea.lat == 43.5
+      assert idea.lng == 13.6
+    end
+
+    # Hostile select_location payloads: missing keys, non-binary lat/lng,
+    # non-numeric strings, out-of-range floats. Handler must no-op so the
+    # 3 location assigns and search state stay unchanged and the LV
+    # process stays alive.
+    for {label, payload} <- [
+          {"non-numeric lat", %{"name" => "X", "lat" => "abc", "lng" => "13.6"}},
+          {"non-numeric lng", %{"name" => "X", "lat" => "43.5", "lng" => "xyz"}},
+          {"out-of-range lat (>90)", %{"name" => "X", "lat" => "120.0", "lng" => "13.6"}},
+          {"out-of-range lat (<-90)", %{"name" => "X", "lat" => "-91.0", "lng" => "13.6"}},
+          {"out-of-range lng (>180)", %{"name" => "X", "lat" => "43.5", "lng" => "200.0"}},
+          {"out-of-range lng (<-180)", %{"name" => "X", "lat" => "43.5", "lng" => "-181.0"}},
+          {"missing name", %{"lat" => "43.5", "lng" => "13.6"}},
+          {"missing lat", %{"name" => "X", "lng" => "13.6"}},
+          {"missing lng", %{"name" => "X", "lat" => "43.5"}},
+          {"non-binary name", %{"name" => 42, "lat" => "43.5", "lng" => "13.6"}}
+        ] do
+      test "select_location with hostile #{label} payload is a no-op",
+           %{conn: conn} do
+        view = mount_authenticated(conn) |> open_form()
+
+        render_hook(view, "select_location", unquote(Macro.escape(payload)))
+
+        assigns = :sys.get_state(view.pid).socket.assigns
+        assert assigns.selected_location_name == nil
+        assert assigns.selected_lat == nil
+        assert assigns.selected_lng == nil
+        assert Process.alive?(view.pid)
+      end
+    end
+
+    test "remove_location resets the search results + state too",
+         %{conn: conn} do
+      view = mount_authenticated(conn) |> open_form()
+
+      stub_results!(view, [
+        %{"display_name" => "Sirolo, AN", "lat" => "43.5", "lon" => "13.6"}
+      ])
+
+      render_change(view, "update_location_name", %{"name" => "sir"})
+
+      pre = :sys.get_state(view.pid).socket.assigns
+      assert pre.location_search_state == :results
+      assert length(pre.location_search_results) == 1
+
+      render_click(view, "remove_location")
+
+      post = :sys.get_state(view.pid).socket.assigns
+      assert post.selected_location_name == nil
+      assert post.selected_lat == nil
+      assert post.selected_lng == nil
+      assert post.location_search_state == :idle
+      assert post.location_search_results == []
+    end
+
+    test "DOM source order regression: Categorie → Durata → Budget → Posizione → Salva",
+         %{conn: conn} do
+      view = mount_authenticated(conn) |> open_form()
       html = render(view)
 
-      [dialog_open_tag] =
-        Regex.run(~r{<dialog[^>]*id="location-map-dialog"[^>]*>}, html) ||
-          [nil] |> List.wrap()
+      categorie_idx = :binary.match(html, "Categorie") |> elem(0)
+      durata_idx = :binary.match(html, ">Durata<") |> elem(0)
+      budget_idx = :binary.match(html, ">Budget<") |> elem(0)
+      posizione_idx = :binary.match(html, ">Posizione<") |> elem(0)
+      salva_idx = :binary.match(html, ">\n        Salva\n      <") |> elem(0)
 
-      assert dialog_open_tag
+      assert categorie_idx < durata_idx
+      assert durata_idx < budget_idx
+      assert budget_idx < posizione_idx
+      assert posizione_idx < salva_idx
+    end
 
-      refute dialog_open_tag =~ "phx-click",
-             "CC18: the <dialog> element itself must NOT have phx-click — bubbling child clicks would close the dialog. Backdrop click must NOT close (use the explicit close button or Esc)."
+    test "no Leaflet/dialog DOM survives the rework",
+         %{conn: conn} do
+      view = mount_authenticated(conn) |> open_form()
+      html = render(view)
+
+      refute html =~ "location-map-dialog"
+      refute html =~ "form-map-picker"
+      refute html =~ "LeafletMap"
+      refute html =~ "Apri mappa"
     end
   end
 
-  # Slice 7a step 8 — pure regression pin block. After step 7 the form,
-  # the `set_location` handler, the `update_location_name` handler, the
-  # `remove_location` handler, the `maybe_inject_*` save-time injectors,
-  # the cross-field `validate_location_consistency/1` validator, and the
-  # idea card location badge are all in place. This describe pins the
-  # invariants that emerge from their composition — no new production
-  # code expected, every test passes against the existing architecture.
+  # Slice 7a step 8 — pure regression pin block. After the iter2 rework
+  # the form, the `select_location` handler (replacing `set_location`),
+  # the extended `update_location_name` handler (search + C1 clear), the
+  # `dismiss_location_search` handler, the `remove_location` handler,
+  # the `maybe_inject_*` save-time injectors, the cross-field
+  # `validate_location_consistency/1` validator, and the idea card
+  # location badge are all in place. This describe pins the invariants
+  # that emerge from their composition.
   #
   # Spec mapping: F5, F15, F17, S2, CC11.
   describe "form/badge integration + edit-text-after-pin invariants (slice 7a step 8)" do
@@ -4724,16 +4841,15 @@ defmodule IdeajarWeb.IdeaLive.IndexTest do
 
   # ── Slice 7a Step 9: Hostile inputs uniform list + cross-field
   # validation regression pin. Step 4 already covers `update_location_name`
-  # hostile inputs (5 cases), step 7 already covers `set_location` hostile
-  # inputs (out-of-range + non-numeric + missing-key + non-binary), and
+  # hostile inputs (5 cases); the iter2 dropdown describe covers
+  # `select_location` hostile inputs (out-of-range + non-numeric +
+  # missing-key + non-binary, replacing the old `set_location` matrix);
   # step 3 covers cross-field validation at the changeset level. This
   # describe block adds:
   #   * cross-field validation pinned at the submit/LV level (state D
   #     combinations all surface "Posizione incompleta" on `:location_name`);
   #   * `remove_location` idempotency (multiple consecutive invocations
-  #     leave state nil + no crash);
-  #   * `set_location` hostile inputs not already covered (nil lng, list
-  #     and map payloads, `<script>` lat string).
+  #     leave state nil + no crash).
   describe "hostile inputs and cross-field validation regression (slice 7a step 9)" do
     # Cross-field validation regression — all 4 state-D combinations
     # surface the canonical "Posizione incompleta" error on

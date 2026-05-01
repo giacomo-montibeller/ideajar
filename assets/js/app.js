@@ -24,14 +24,13 @@ import {Socket} from "phoenix"
 import {LiveSocket} from "phoenix_live_view"
 import {hooks as colocatedHooks} from "phoenix-colocated/ideajar"
 import {RovingTabindex} from "./hooks/roving_tabindex"
-import {LeafletMap} from "./hooks/leaflet_map"
 import topbar from "../vendor/topbar"
 
 const csrfToken = document.querySelector("meta[name='csrf-token']").getAttribute("content")
 const liveSocket = new LiveSocket("/live", Socket, {
   longPollFallbackMs: 2500,
   params: {_csrf_token: csrfToken},
-  hooks: {...colocatedHooks, RovingTabindex, LeafletMap},
+  hooks: {...colocatedHooks, RovingTabindex},
 })
 
 // Show progress bar on live navigation and form submits
@@ -48,34 +47,6 @@ window.addEventListener("phx:ideajar:focus", e => {
   if (!target) return
   const node = document.querySelector(target)
   if (node) node.focus()
-})
-
-// Slice 7a — bridge HTML5 <dialog> open/close to native methods. Used by:
-//   * server push_event("phx:close-dialog", %{id: "..."}) from post-handler
-//     code (e.g. after a successful set_location reverse geocode);
-//   * client JS.dispatch from button phx-click (Apri mappa / Chiudi). The
-//     event bubbles to window from the button; we resolve the dialog by
-//     `detail.id` so both server and client paths share the same listener.
-//
-// Phoenix.LiveView.JS does not expose a primitive that calls element DOM
-// methods like showModal()/close() directly (JS.exec is for command attrs,
-// not method invocation), so this small bridge is the documented pattern.
-window.addEventListener("phx:open-dialog", e => {
-  const id = e.detail && e.detail.id
-  if (!id) return
-  const dialog = document.getElementById(id)
-  if (!dialog || typeof dialog.showModal !== "function") return
-  dialog.showModal()
-  // Dismiss paths: explicit close button (✕) and Esc key (HTML5 native).
-  // The LeafletMap hook's ResizeObserver auto-invalidates the map size
-  // once the container takes real dimensions, so no extra wiring here.
-})
-
-window.addEventListener("phx:close-dialog", e => {
-  const id = e.detail && e.detail.id
-  if (!id) return
-  const dialog = document.getElementById(id)
-  if (dialog && typeof dialog.close === "function") dialog.close()
 })
 
 // connect if there are any LiveViews on the page

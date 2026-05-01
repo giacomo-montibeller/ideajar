@@ -83,45 +83,15 @@ defmodule Ideajar.MixProject do
       "assets.setup": ["tailwind.install --if-missing", "esbuild.install --if-missing"],
       "assets.build": [
         "compile",
-        &copy_vendor_assets/1,
         "tailwind ideajar",
         "esbuild ideajar"
       ],
       "assets.deploy": [
-        &copy_vendor_assets/1,
         "tailwind ideajar --minify",
         "esbuild ideajar --minify",
         "phx.digest"
       ],
       precommit: ["compile --warnings-as-errors", "deps.unlock --unused", "format", "test"]
     ]
-  end
-
-  # Vendor JS/CSS files that must be served directly (not bundled by esbuild)
-  # are mirrored from `assets/vendor/` to `priv/static/assets/vendor/` so
-  # `Plug.Static` can serve them at `/assets/vendor/...`. Used for Leaflet's
-  # UMD bundle (slice 7a) — the bundle exposes `window.L` only when loaded via
-  # a `<script>` tag, so we need the file present on disk under priv/static.
-  defp copy_vendor_assets(_args) do
-    src_dir = Path.expand("assets/vendor", __DIR__)
-    dest_dir = Path.expand("priv/static/assets/vendor", __DIR__)
-
-    # Mirror only the files we actually serve as standalone vendor assets.
-    # `daisyui.js`, `daisyui-theme.js`, `heroicons.js`, and `topbar.js` are
-    # bundled by esbuild/tailwind and do not need to be copied.
-    files_to_copy = ~w(leaflet.js leaflet.css)
-
-    File.mkdir_p!(dest_dir)
-
-    Enum.each(files_to_copy, fn name ->
-      src = Path.join(src_dir, name)
-      dest = Path.join(dest_dir, name)
-
-      if File.exists?(src) do
-        File.cp!(src, dest)
-      end
-    end)
-
-    :ok
   end
 end

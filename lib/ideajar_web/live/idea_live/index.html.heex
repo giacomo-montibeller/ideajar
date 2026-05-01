@@ -108,28 +108,53 @@
       <fieldset class="fieldset">
         <legend class="label mb-1">Posizione</legend>
         <label for="idea-location-name" class="label">Luogo</label>
-        <input
-          type="text"
-          id="idea-location-name"
-          name="idea[location_name]"
-          value={@selected_location_name || ""}
-          placeholder="es. Casa di nonna"
-          phx-change="update_location_name"
-          phx-debounce="300"
-          maxlength="200"
-          class="input"
-        />
-        <p :if={not is_nil(@selected_lat)} class="text-xs text-base-content/70">
-          📍 Coordinate impostate
-        </p>
-        <button
-          type="button"
-          aria-haspopup="dialog"
-          phx-click={JS.dispatch("phx:open-dialog", detail: %{id: "location-map-dialog"})}
-          class="btn btn-secondary btn-sm min-h-11 min-w-11"
-        >
-          📍 Apri mappa
-        </button>
+        <div phx-click-away="dismiss_location_search" class="relative">
+          <input
+            type="text"
+            id="idea-location-name"
+            name="idea[location_name]"
+            value={@selected_location_name || ""}
+            placeholder="es. Casa di nonna"
+            phx-change="update_location_name"
+            phx-debounce="300"
+            maxlength="200"
+            autocomplete="off"
+            class="input w-full"
+          />
+          <ul
+            :if={@location_search_state != :idle}
+            class="absolute z-10 mt-1 w-full max-h-64 overflow-auto rounded-box border border-base-300 bg-base-100 shadow-lg"
+            role="listbox"
+          >
+            <li
+              :if={@location_search_state == :searching}
+              class="px-3 py-2 text-sm text-base-content/70"
+            >
+              Cerco…
+            </li>
+            <li
+              :if={@location_search_state == :empty}
+              class="px-3 py-2 text-sm text-base-content/70"
+            >
+              Nessun risultato
+            </li>
+            <li
+              :for={result <- @location_search_results}
+              class="border-t border-base-300 first:border-t-0"
+            >
+              <button
+                type="button"
+                phx-click="select_location"
+                phx-value-name={result.display_name}
+                phx-value-lat={result.lat}
+                phx-value-lng={result.lng}
+                class="block w-full text-left px-3 py-2 text-sm hover:bg-base-200"
+              >
+                {result.display_name}
+              </button>
+            </li>
+          </ul>
+        </div>
         <button
           :if={not is_nil(@selected_location_name) or not is_nil(@selected_lat)}
           type="button"
@@ -144,56 +169,6 @@
         Salva
       </button>
     </.form>
-
-    <%!--
-      Slice 7a step 6 — HTML5 <dialog> map picker shell.
-      Always rendered (independent of @form_visible?) so the
-      `JS.exec("showModal", ...)` from the form's "📍 Apri mappa"
-      button always has a target node. Closed at mount: no `open`
-      attribute. CC18: NO `phx-click` on the <dialog> itself —
-      bubbling child clicks would close it; the close button + Esc
-      are the only dismiss paths.
-    --%>
-    <dialog
-      id="location-map-dialog"
-      aria-labelledby="location-map-title"
-      phx-update="ignore"
-      class="rounded-box border border-base-300 bg-base-100 p-0 backdrop:bg-black/40 w-[36rem] max-w-[calc(100vw-2rem)]"
-    >
-      <div class="flex flex-col gap-2 p-4 w-full">
-        <div class="flex items-center justify-between">
-          <h2 id="location-map-title" class="text-base font-semibold">Scegli posizione</h2>
-          <button
-            type="button"
-            aria-label="Chiudi"
-            phx-click={JS.dispatch("phx:close-dialog", detail: %{id: "location-map-dialog"})}
-            class="btn btn-ghost btn-sm min-h-11 min-w-11 text-base-content/60"
-          >
-            ✕
-          </button>
-        </div>
-        <div
-          id="form-map-picker"
-          phx-hook="LeafletMap"
-          data-default-center="[43.5, 12.5]"
-          data-default-zoom="6"
-          style="height: 24rem;"
-          class="w-full"
-        >
-        </div>
-        <p class="text-xs text-base-content/70">
-          ©
-          <a
-            href="https://www.openstreetmap.org/copyright"
-            target="_blank"
-            rel="noopener noreferrer"
-            class="link"
-          >
-            OpenStreetMap
-          </a>
-        </p>
-      </div>
-    </dialog>
 
     <section
       data-testid="filter-row"

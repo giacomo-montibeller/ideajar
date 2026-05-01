@@ -57,6 +57,7 @@ defmodule IdeajarWeb.IdeaLive.Index do
      |> reset_duration()
      |> reset_budget()
      |> reset_location()
+     |> reset_location_search()
      |> assign_form()
      |> reload_ideas()}
   end
@@ -74,6 +75,7 @@ defmodule IdeajarWeb.IdeaLive.Index do
      |> reset_duration()
      |> reset_budget()
      |> reset_location()
+     |> reset_location_search()
      |> assign_form()
      |> push_event("ideajar:focus", %{to: "#idea-title"})}
   end
@@ -92,6 +94,7 @@ defmodule IdeajarWeb.IdeaLive.Index do
      |> reset_duration()
      |> reset_budget()
      |> reset_location()
+     |> reset_location_search()
      |> assign_form()}
   end
 
@@ -155,16 +158,61 @@ defmodule IdeajarWeb.IdeaLive.Index do
   # types or missing key). Pinned by S2 hostile uniform list.
   def handle_event("toggle_form_budget", _params, socket), do: {:noreply, socket}
 
-  # Slice 7a step 4 — text input `phx-change` for the location name. We
-  # accept any binary (including the empty string — clearing the input is
-  # legal at this layer; the schema validator drops empty-after-trim to
-  # nil and surfaces a "Posizione incompleta" error only when coords are
-  # set without a name). Only `@selected_location_name` is touched; lat
-  # and lng survive a text edit (E1 invariant — slice spec scenario
-  # "Editing the text input after a pin keeps lat/lng unchanged").
+  # Slice 7a iter2 — text input `phx-change` for the location name and
+  # search trigger. Accepts any binary (including the empty string —
+  # clearing the input is legal at this layer; the schema validator
+  # drops empty-after-trim to nil and surfaces "Posizione incompleta"
+  # only when coords are set without a name).
+  #
+  # Behaviour:
+  #
+  #   * trimmed query has < 3 chars: silent. `@selected_location_name`
+  #     is updated, search results are cleared, state goes back to
+  #     `:idle` so no dropdown is rendered.
+  #
+  #   * trimmed query has ≥ 3 chars: synchronous call to
+  #     `Ideajar.Geocoding.search/1`. On success the LV assigns the
+  #     results and flips state to `:results` (or `:empty` if the
+  #     list comes back empty). On `:service_unavailable` we land
+  #     back at `:idle` with no results and put a flash error so
+  #     the user knows the service is down.
+  #
+  #   * Decision C1 — if the user types after a previous successful
+  #     selection (`@selected_lat` not nil), lat/lng are also cleared.
+  #     A divergent name + stale coords would otherwise produce a
+  #     state-(c) submit with the wrong coords for the typed name.
   def handle_event("update_location_name", %{"name" => name}, socket)
       when is_binary(name) do
-    {:noreply, assign(socket, :selected_location_name, name)}
+    socket =
+      socket
+      |> assign(:selected_location_name, name)
+      |> maybe_clear_coords_on_text_change()
+
+    case String.trim(name) do
+      trimmed when byte_size(trimmed) < 3 ->
+        {:noreply, reset_location_search(socket)}
+
+      trimmed ->
+        case Ideajar.Geocoding.search(trimmed) do
+          {:ok, []} ->
+            {:noreply,
+             socket
+             |> assign(:location_search_results, [])
+             |> assign(:location_search_state, :empty)}
+
+          {:ok, results} ->
+            {:noreply,
+             socket
+             |> assign(:location_search_results, results)
+             |> assign(:location_search_state, :results)}
+
+          {:error, :service_unavailable} ->
+            {:noreply,
+             socket
+             |> reset_location_search()
+             |> put_flash(:error, "Ricerca non disponibile, riprova")}
+        end
+    end
   end
 
   # Catchall for hostile or malformed `update_location_name` payloads:
@@ -172,12 +220,53 @@ defmodule IdeajarWeb.IdeaLive.Index do
   # Pinned by the slice-7a-step-4 hostile uniform list.
   def handle_event("update_location_name", _params, socket), do: {:noreply, socket}
 
+  # Slice 7a iter2 — selecting a result from the search dropdown.
+  # Defensive parse of lat/lng (string → float) plus range validation
+  # ([-90, 90] / [-180, 180]). Hostile or out-of-range payloads no-op.
+  # On success: populate the 3 location assigns, close the dropdown,
+  # and clear the result list.
+  def handle_event(
+        "select_location",
+        %{"name" => name, "lat" => lat_raw, "lng" => lng_raw},
+        socket
+      )
+      when is_binary(name) and is_binary(lat_raw) and is_binary(lng_raw) do
+    with {lat, ""} <- Float.parse(lat_raw),
+         {lng, ""} <- Float.parse(lng_raw),
+         true <- lat >= -90.0 and lat <= 90.0,
+         true <- lng >= -180.0 and lng <= 180.0 do
+      {:noreply,
+       socket
+       |> assign(:selected_location_name, name)
+       |> assign(:selected_lat, lat)
+       |> assign(:selected_lng, lng)
+       |> reset_location_search()}
+    else
+      _ -> {:noreply, socket}
+    end
+  end
+
+  # Catchall for hostile or malformed `select_location` payloads:
+  # missing keys, non-binary values, out-of-range coords.
+  def handle_event("select_location", _params, socket), do: {:noreply, socket}
+
+  # Slice 7a iter2 — `phx-click-away` dismiss for the search dropdown.
+  # Closes the dropdown without touching the 3 location assigns: a user
+  # who has typed a name but not picked a result keeps their typed name
+  # (state b on submit).
+  def handle_event("dismiss_location_search", _params, socket) do
+    {:noreply, reset_location_search(socket)}
+  end
+
   # Slice 7a step 4 — clears the full location triplet at once. Wired to
   # the conditional "Rimuovi posizione" button (rendered when at least one
   # of the 3 assigns is set). Symmetrical with `clear_filters` for the
   # filter row but scoped to the form's location fieldset.
   def handle_event("remove_location", _params, socket) do
-    {:noreply, reset_location(socket)}
+    {:noreply,
+     socket
+     |> reset_location()
+     |> reset_location_search()}
   end
 
   def handle_event("cycle_filter", %{"id" => raw_id}, socket) when is_binary(raw_id) do
@@ -352,6 +441,7 @@ defmodule IdeajarWeb.IdeaLive.Index do
      |> reset_duration()
      |> reset_budget()
      |> reset_location()
+     |> reset_location_search()
      |> assign_form()
      |> reload_ideas()
      |> put_flash(:info, "Idea aggiunta")
@@ -389,17 +479,53 @@ defmodule IdeajarWeb.IdeaLive.Index do
 
   # Slice 7a step 4 (CC11): the form's location triplet
   # `(@selected_location_name, @selected_lat, @selected_lng)` lives outside
-  # `@form` for the same reason as the chip-derived fields — the map picker
-  # (step 6) sets coords via a `set_location` push event, and the text
-  # input feeds `@selected_location_name` via the `update_location_name`
-  # `phx-change` handler. `reset_location/1` runs in the same lifecycle
-  # slots as `reset_categories/1` / `reset_duration/1` / `reset_budget/1`:
-  # mount, toggle_form open, close_form, and save success. Kept as a
-  # dedicated helper rather than folded into a single `reset_form_state/1`
-  # for symmetry with the slice-3/5/6 pattern.
+  # `@form` for the same reason as the chip-derived fields — in iter2 the
+  # search dropdown's `select_location` handler populates all 3 at once
+  # and the text input feeds `@selected_location_name` (and clears
+  # lat/lng on text change after a select, decision C1) via the
+  # `update_location_name` `phx-change` handler. `reset_location/1` runs
+  # in the same lifecycle slots as `reset_categories/1` /
+  # `reset_duration/1` / `reset_budget/1`: mount, toggle_form open,
+  # close_form, and save success.
   defp reset_location(socket) do
     socket
     |> assign(:selected_location_name, nil)
+    |> assign(:selected_lat, nil)
+    |> assign(:selected_lng, nil)
+  end
+
+  # Slice 7a iter2 — search dropdown state. Two assigns:
+  #
+  #   * `@location_search_results :: [Ideajar.Geocoding.result()]` — the
+  #     list rendered as clickable buttons in the dropdown.
+  #
+  #   * `@location_search_state :: :idle | :searching | :empty | :results`
+  #     drives the dropdown visibility and contents:
+  #     - `:idle` → no dropdown rendered;
+  #     - `:searching` → dropdown shows "Cerco…" placeholder
+  #       (reserved for a future async-search switch — the synchronous
+  #       handler today never observes this state, but the template
+  #       contract is in place for forward compatibility);
+  #     - `:empty` → dropdown shows "Nessun risultato";
+  #     - `:results` → dropdown lists `@location_search_results`.
+  #
+  # Reset on the same lifecycle slots as `reset_location/1` plus on
+  # `dismiss_location_search` (click-away) and `select_location` (after
+  # a successful pick).
+  defp reset_location_search(socket) do
+    socket
+    |> assign(:location_search_results, [])
+    |> assign(:location_search_state, :idle)
+  end
+
+  # Decision C1 — typing in the text input after a previous successful
+  # select must drop the picked lat/lng. Otherwise the form would post
+  # state-(c) name+coords with a name that no longer matches the coords.
+  defp maybe_clear_coords_on_text_change(%{assigns: %{selected_lat: nil}} = socket),
+    do: socket
+
+  defp maybe_clear_coords_on_text_change(socket) do
+    socket
     |> assign(:selected_lat, nil)
     |> assign(:selected_lng, nil)
   end
