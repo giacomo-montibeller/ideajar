@@ -180,38 +180,6 @@ defmodule IdeajarWeb.IdeaLive.Index do
     {:noreply, reset_location(socket)}
   end
 
-  # Slice 7a step 7 (CC10) — `set_location` is dispatched by the
-  # `LeafletMap` JS hook on map click. The handler is the integration
-  # glue between Leaflet (browser) and the form's three location assigns.
-  #
-  #   1. Parse + range-check raw lat/lng. The hook emits floats by
-  #      construction, but DevTools tampering (or a future hook bug) can
-  #      send strings or out-of-range numbers — those land in the
-  #      catchall as silent no-ops (S1).
-  #   2. Call `Ideajar.Geocoding.reverse_lookup/2` and fan out on the
-  #      three documented outcomes (`{:ok, name}`, `{:error, :no_match}`,
-  #      `{:error, :service_unavailable}`). An unexpected raise from the
-  #      geocoding layer is caught and downgraded to `:service_unavailable`
-  #      so the LV process stays alive (S5).
-  #   3. Always assign the (validated) coords, and always push
-  #      `phx:close-dialog` so the global listener in `assets/js/app.js`
-  #      (CC8/U7) closes the modal. The map picker is a single-shot
-  #      affordance — once a click is processed, the dialog must close
-  #      regardless of geocoding outcome.
-  def handle_event("set_location", %{"lat" => raw_lat, "lng" => raw_lng}, socket) do
-    with {:ok, lat} <- parse_coord(raw_lat, -90, 90),
-         {:ok, lng} <- parse_coord(raw_lng, -180, 180) do
-      handle_geocoding(lat, lng, socket)
-    else
-      :error -> {:noreply, socket}
-    end
-  end
-
-  # Catchall for hostile or malformed `set_location` payloads — missing
-  # `"lat"`/`"lng"` keys, non-map params, anything that doesn't match the
-  # primary clause head. Pinned by the slice-7a-step-7 hostile uniform list.
-  def handle_event("set_location", _params, socket), do: {:noreply, socket}
-
   def handle_event("cycle_filter", %{"id" => raw_id}, socket) when is_binary(raw_id) do
     case parse_known_category_id(raw_id, socket.assigns.categories) do
       {:ok, id} ->
@@ -368,67 +336,6 @@ defmodule IdeajarWeb.IdeaLive.Index do
 
   defp maybe_inject_lng(params, lng) when is_number(lng),
     do: Map.put(params, "lng", lng)
-
-  # Slice 7a step 7 — coordinate parser shared by the `set_location`
-  # handler. Accepts:
-  #
-  #   * a number (int or float) → coerced to float and range-checked
-  #   * a binary that parses cleanly to a float (no trailing garbage) →
-  #     range-checked
-  #
-  # Anything else (atoms, lists, maps, nil, partially-numeric strings
-  # like `"43abc"`) is rejected. Out-of-range numbers are rejected so
-  # the handler short-circuits before calling Nominatim.
-  defp parse_coord(value, min, max) when is_number(value) do
-    if value >= min and value <= max, do: {:ok, value * 1.0}, else: :error
-  end
-
-  defp parse_coord(value, min, max) when is_binary(value) do
-    case Float.parse(value) do
-      {f, ""} -> parse_coord(f, min, max)
-      _ -> :error
-    end
-  end
-
-  defp parse_coord(_value, _min, _max), do: :error
-
-  # Slice 7a step 7 — reverse-geocoding fan-out. Always assigns the
-  # validated coords and always pushes `phx:close-dialog`; only the
-  # `@selected_location_name` assign and flash state vary by outcome.
-  # The `try/rescue` downgrades any unexpected exception (network
-  # decoder bug, malformed JSON path that leaks past the client) to
-  # `:service_unavailable` so the LV process never crashes on a
-  # best-effort geocoding call (S5).
-  defp handle_geocoding(lat, lng, socket) do
-    result =
-      try do
-        Ideajar.Geocoding.reverse_lookup(lat, lng)
-      rescue
-        _ -> {:error, :service_unavailable}
-      end
-
-    socket =
-      socket
-      |> assign(:selected_lat, lat)
-      |> assign(:selected_lng, lng)
-      |> apply_geocoding_result(result)
-      |> push_event("phx:close-dialog", %{id: "location-map-dialog"})
-
-    {:noreply, socket}
-  end
-
-  defp apply_geocoding_result(socket, {:ok, name}) when is_binary(name),
-    do: assign(socket, :selected_location_name, name)
-
-  defp apply_geocoding_result(socket, {:error, :no_match}), do: socket
-
-  defp apply_geocoding_result(socket, {:error, :service_unavailable}) do
-    put_flash(
-      socket,
-      :error,
-      "Geocodifica non disponibile, inserisci il nome manualmente"
-    )
-  end
 
   # Test seam: tests assign `:create_idea_fun` to inject a deterministic
   # failure without dragging in Mox for a single call site. In production

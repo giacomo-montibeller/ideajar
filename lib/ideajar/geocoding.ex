@@ -1,19 +1,18 @@
 defmodule Ideajar.Geocoding do
   @moduledoc """
-  Slice 7a — server-side reverse geocoding wrapper.
+  Slice 7a UX rework — server-side forward geocoding (location search).
 
   Single dispatch path: delegates to `Ideajar.Geocoding.NominatimClient`.
   Test stubbing happens at the HTTP boundary via `Req.Test` (cross-process
   shared name table; works correctly with LiveViewTest's separate LV
   process).
 
-  The full HTTP error mapping (success / no-match / 5xx / network-error /
-  JSON-parse) lands in step 2 of slice 7a. Step 1 only wires up the
-  module surface and the `Req.Test` plug seam used by the rest of the
-  slice.
+  The full HTTP error mapping (success / empty / 404 / 5xx / network-error
+  / JSON-parse / malformed-result filtering) lives in the client module.
   """
 
-  @spec reverse_lookup(float, float) ::
-          {:ok, String.t()} | {:error, :no_match | :service_unavailable}
-  defdelegate reverse_lookup(lat, lng), to: Ideajar.Geocoding.NominatimClient
+  @type result :: %{display_name: String.t(), lat: float(), lng: float()}
+
+  @spec search(String.t()) :: {:ok, [result]} | {:error, :service_unavailable}
+  defdelegate search(query), to: Ideajar.Geocoding.NominatimClient
 end
