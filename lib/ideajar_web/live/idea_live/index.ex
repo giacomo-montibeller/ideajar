@@ -450,6 +450,25 @@ defmodule IdeajarWeb.IdeaLive.Index do
 
   def handle_event("update_max_distance", _params, socket), do: {:noreply, socket}
 
+  # Slice 7b step 9 — explicit reset of the reference point. Cascades
+  # to slider 0 (DD19) so a user who removes the anchor doesn't end up
+  # with an active km cap and no point to measure from. Idempotent on
+  # already-empty state.
+  def handle_event("remove_user_location", _params, socket) do
+    {:noreply,
+     socket
+     |> reset_user_location()
+     |> reset_distance_filter()
+     |> reload_ideas()}
+  end
+
+  # Slice 7b step 9 — slider-only reset. Leaves the reference point
+  # in place so the user can dial the radius back from any value to
+  # 0 without having to re-enter the anchor.
+  def handle_event("remove_distance_filter", _params, socket) do
+    {:noreply, socket |> reset_distance_filter() |> reload_ideas()}
+  end
+
   def handle_event("save", %{"idea" => attrs}, socket) do
     attrs_with_categories =
       Map.put(attrs, "category_ids", MapSet.to_list(socket.assigns.selected_category_ids))

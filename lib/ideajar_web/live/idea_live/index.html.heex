@@ -262,6 +262,24 @@
         />
 
         <p class="text-sm">Distanza: {distance_label(@max_distance_index)}</p>
+
+        <button
+          :if={not is_nil(@user_lat)}
+          type="button"
+          phx-click="remove_user_location"
+          class="btn btn-ghost btn-sm min-h-11 min-w-11"
+        >
+          Rimuovi punto di riferimento
+        </button>
+
+        <button
+          :if={@max_distance_index > 0}
+          type="button"
+          phx-click="remove_distance_filter"
+          class="btn btn-ghost btn-sm min-h-11 min-w-11"
+        >
+          Rimuovi filtro distanza
+        </button>
       </div>
       <button
         :if={

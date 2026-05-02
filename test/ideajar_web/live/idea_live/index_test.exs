@@ -5582,4 +5582,130 @@ defmodule IdeajarWeb.IdeaLive.IndexTest do
       refute html =~ "Senza coords"
     end
   end
+
+  describe "distance filter reset handlers (slice 7b step 9)" do
+    test "F14 remove_user_location: resets 3 user_* + slider 0 + slider disabled",
+         %{conn: conn} do
+      view = mount_authenticated(conn)
+      render_hook(view, "set_user_location", %{"lat" => 43.5, "lng" => 13.6})
+      render_hook(view, "update_max_distance", %{"value" => "3"})
+
+      render_click(view, "remove_user_location")
+
+      assigns = :sys.get_state(view.pid).socket.assigns
+      assert assigns.user_lat == nil
+      assert assigns.user_lng == nil
+      assert assigns.user_location_name == nil
+      assert assigns.max_distance_index == 0
+
+      html = render(view)
+      [slider_html] = Regex.run(~r/<input[^>]*type="range"[^>]*>/, html)
+      assert slider_html =~ "disabled"
+    end
+
+    test "F15 remove_distance_filter: resets only slider, leaves user_* intact",
+         %{conn: conn} do
+      view = mount_authenticated(conn)
+      render_hook(view, "set_user_location", %{"lat" => 43.5, "lng" => 13.6})
+      render_hook(view, "update_max_distance", %{"value" => "3"})
+
+      render_click(view, "remove_distance_filter")
+
+      assigns = :sys.get_state(view.pid).socket.assigns
+      assert assigns.max_distance_index == 0
+      assert assigns.user_lat == 43.5
+      assert assigns.user_lng == 13.6
+      assert assigns.user_location_name == "La mia posizione"
+    end
+
+    test "F17 refresh resets @user_* + slider (LV remount)", %{conn: conn} do
+      # First mount: set state, then re-mount (simulating refresh) and
+      # confirm everything is back to defaults.
+      view1 = mount_authenticated(conn)
+      render_hook(view1, "set_user_location", %{"lat" => 43.5, "lng" => 13.6})
+      render_hook(view1, "update_max_distance", %{"value" => "3"})
+
+      view2 = mount_authenticated(conn)
+      assigns = :sys.get_state(view2.pid).socket.assigns
+      assert assigns.user_lat == nil
+      assert assigns.user_lng == nil
+      assert assigns.user_location_name == nil
+      assert assigns.max_distance_index == 0
+    end
+
+    test "F18 save success does NOT reset @user_* nor slider (filter survives submit)",
+         %{conn: conn} do
+      mare = Ideajar.Repo.get_by!(Ideajar.Categories.Category, name: "mare")
+
+      view = mount_authenticated(conn)
+      render_hook(view, "set_user_location", %{"lat" => 43.5, "lng" => 13.6})
+      render_hook(view, "update_max_distance", %{"value" => "3"})
+
+      open_form(view)
+      render_click(view, "toggle_category", %{"id" => Integer.to_string(mare.id)})
+
+      render_change(view, "save", %{
+        "idea" => %{
+          "title" => "Picnic improvviso",
+          "duration" => "weekend"
+        }
+      })
+
+      assigns = :sys.get_state(view.pid).socket.assigns
+      assert assigns.user_lat == 43.5
+      assert assigns.user_lng == 13.6
+      assert assigns.user_location_name == "La mia posizione"
+      assert assigns.max_distance_index == 3
+    end
+
+    test "Rimuovi punto di riferimento button is rendered when reference is set",
+         %{conn: conn} do
+      view = mount_authenticated(conn)
+      render_hook(view, "set_user_location", %{"lat" => 43.5, "lng" => 13.6})
+
+      html = render(view)
+      assert html =~ "Rimuovi punto di riferimento"
+      assert html =~ ~s(phx-click="remove_user_location")
+    end
+
+    test "Rimuovi punto di riferimento button NOT rendered when nil reference",
+         %{conn: conn} do
+      view = mount_authenticated(conn)
+      html = render(view)
+      refute html =~ "Rimuovi punto di riferimento"
+    end
+
+    test "Rimuovi filtro distanza button is rendered when slider > 0",
+         %{conn: conn} do
+      view = mount_authenticated(conn)
+      render_hook(view, "set_user_location", %{"lat" => 43.5, "lng" => 13.6})
+      render_hook(view, "update_max_distance", %{"value" => "3"})
+
+      html = render(view)
+      assert html =~ "Rimuovi filtro distanza"
+      assert html =~ ~s(phx-click="remove_distance_filter")
+    end
+
+    test "Rimuovi filtro distanza button NOT rendered when slider at 0",
+         %{conn: conn} do
+      view = mount_authenticated(conn)
+      render_hook(view, "set_user_location", %{"lat" => 43.5, "lng" => 13.6})
+
+      html = render(view)
+      refute html =~ "Rimuovi filtro distanza"
+    end
+
+    test "remove_user_location is idempotent on already-empty state",
+         %{conn: conn} do
+      view = mount_authenticated(conn)
+
+      render_click(view, "remove_user_location")
+      render_click(view, "remove_user_location")
+
+      assigns = :sys.get_state(view.pid).socket.assigns
+      assert assigns.user_lat == nil
+      assert assigns.max_distance_index == 0
+      assert Process.alive?(view.pid)
+    end
+  end
 end
