@@ -1248,27 +1248,31 @@ defmodule IdeajarWeb.IdeaLive.IndexTest do
     end
   end
 
-  # ── Slice 4 A13 / Slice 5 AA13 / Slice 6 BB18 / Slice 7b D5: out-of-scope guard ──
-  # Slice 5 step 6 introduced `Durata`; slice 6 step 8 introduces `Budget`;
-  # slice 7b step 8 introduces `Distanza` legitimately (filter sub-block
-  # label, helper texts, slider valuetext) AND the SCOPED string
-  # `Cerca punto di partenza` as the placeholder of the reference-point
-  # search input. The guard now narrows to slice 8's still-out-of-scope
-  # text-search filter. Positive assertions pin all four sub-block labels.
-  describe "out-of-scope guard (slice 4 A13 / 5 AA13 / 6 BB18 / 7b D5)" do
-    test "scoped 'Cerca punto di partenza' is the only Cerca-* string in the render",
+  # ── Slice 4 A13 / Slice 5 AA13 / Slice 6 BB18 / Slice 7b D5 / Slice 8 D5: out-of-scope guard ──
+  # Slice 5 step 6 introduced `Durata`; slice 6 step 8 `Budget`; slice
+  # 7b step 8 `Distanza` (+ scoped `Cerca punto di partenza`); slice 8
+  # step 5 `Testo` (+ scoped `Cerca idee`). The guard now narrows to
+  # the next out-of-scope feature placeholders. Positive assertions
+  # pin all five sub-block labels.
+  describe "out-of-scope guard (slice 4 A13 / 5 AA13 / 6 BB18 / 7b D5 / 8 D5)" do
+    test "scoped 'Cerca punto di partenza' + 'Cerca idee' are the only Cerca-* strings",
          %{conn: conn} do
       {:ok, _view, html} = live_isolated(conn, Index, session: @authenticated_session)
 
-      # The only legitimate `Cerca` string in slice 7b is the filter
-      # placeholder. Slice 8 (text search) would add another one and is
-      # currently out of scope.
+      # Two legitimate `Cerca…` strings: slice-7b reference search
+      # placeholder and slice-8 text search placeholder.
       assert html =~ "Cerca punto di partenza"
+      assert html =~ "Cerca idee"
 
-      # Strip the legitimate slice-7b string and ensure no other
-      # `Cerca…` string survives.
-      stripped = String.replace(html, "Cerca punto di partenza", "")
-      refute stripped =~ ~r/Cerca/i
+      # Strip both legitimate strings and ensure no other `Cerca…`
+      # string survives. Word-boundary regex avoids false positives
+      # on `ricerca` inside the slice-8 helper text.
+      stripped =
+        html
+        |> String.replace("Cerca punto di partenza", "")
+        |> String.replace("Cerca idee", "")
+
+      refute stripped =~ ~r/\bCerca\b/i
     end
 
     test "Durata appears as a visible sub-block label in the filter row",
@@ -5948,15 +5952,230 @@ defmodule IdeajarWeb.IdeaLive.IndexTest do
       assert IdeajarWeb.IdeaLive.Index.filter_active?(%{base | user_lat: 43.5})
     end
 
-    test "step 4 invariant: text_search_query alone does NOT yet make filter active",
+    test "step 4 invariant (historical): /5 was a refactor target before step 5 added the text axis",
          %{conn: conn} do
-      # Step 4 is a pure refactor — the text axis is added to the body
-      # in step 5. Pinning that step 4 leaves text_search out of the
-      # active-filter check.
+      # Slice 8 step 4 was a pure refactor (filter_active?/5 → /1
+      # socket-based). Step 5 then extended the BODY to include the
+      # text-search axis. This test pins the post-step-5 contract:
+      # text_search_query alone should activate the filter, in
+      # parallel with the other 5 axes.
       view = mount_authenticated(conn)
       base = :sys.get_state(view.pid).socket.assigns
 
-      refute IdeajarWeb.IdeaLive.Index.filter_active?(%{base | text_search_query: "mar"})
+      assert IdeajarWeb.IdeaLive.Index.filter_active?(%{base | text_search_query: "mar"})
+      refute IdeajarWeb.IdeaLive.Index.filter_active?(%{base | text_search_query: ""})
+    end
+  end
+
+  describe "text search sub-block + integration (slice 8 step 5)" do
+    test "renders the role=group sub-block with aria-label after Distanza",
+         %{conn: conn} do
+      view = mount_authenticated(conn)
+      html = render(view)
+
+      assert html =~ ~s(role="group" aria-label="Filtra per testo")
+
+      [_, after_distance] = String.split(html, ~s(aria-label="Filtra per distanza"), parts: 2)
+      assert after_distance =~ ~s(aria-label="Filtra per testo")
+    end
+
+    test "renders the form wrapper + text input with the canonical attrs",
+         %{conn: conn} do
+      view = mount_authenticated(conn)
+      html = render(view)
+
+      assert html =~ ~s(id="filter-text-search-form")
+      assert html =~ ~s(phx-change="update_text_search")
+      assert html =~ ~s(id="filter-text-search-input")
+      assert html =~ ~s(name="filter[text_search]")
+      assert html =~ ~s(placeholder="Cerca idee")
+      assert html =~ ~s(autocomplete="off")
+      assert html =~ ~s(maxlength="200")
+      assert html =~ ~s(phx-debounce="300")
+    end
+
+    test "renders the visible 'Testo' sub-label and the NULL-exception helper text",
+         %{conn: conn} do
+      view = mount_authenticated(conn)
+      html = render(view)
+
+      assert html =~ ~r{<p[^>]*class="[^"]*text-xs[^"]*"[^>]*>\s*Testo\s*</p>}
+      assert html =~ "La ricerca trova le idee con la parola in titolo o descrizione."
+    end
+
+    test "F19 source order: Categorie → Durata → Budget → Distanza → Testo",
+         %{conn: conn} do
+      view = mount_authenticated(conn)
+      html = render(view)
+
+      cat_pos = :binary.match(html, "Filtra per categoria") |> elem(0)
+      dur_pos = :binary.match(html, "Filtra per durata") |> elem(0)
+      bud_pos = :binary.match(html, "Filtra per budget") |> elem(0)
+      dist_pos = :binary.match(html, "Filtra per distanza") |> elem(0)
+      txt_pos = :binary.match(html, "Filtra per testo") |> elem(0)
+
+      assert cat_pos < dur_pos
+      assert dur_pos < bud_pos
+      assert bud_pos < dist_pos
+      assert dist_pos < txt_pos
+    end
+
+    test "Rimuovi filtro testo button hidden when query empty, visible when non-empty",
+         %{conn: conn} do
+      view = mount_authenticated(conn)
+      refute render(view) =~ "Rimuovi filtro testo"
+
+      render_hook(view, "update_text_search", %{"q" => "mar"})
+      html = render(view)
+      assert html =~ "Rimuovi filtro testo"
+      assert html =~ ~s(phx-click="remove_text_search")
+    end
+
+    test "Rimuovi filtro testo button has hit area ≥ 44×44",
+         %{conn: conn} do
+      view = mount_authenticated(conn)
+      render_hook(view, "update_text_search", %{"q" => "mar"})
+      html = render(view)
+
+      [button] = Regex.run(~r/<button[^>]*phx-click="remove_text_search"[^>]*>/, html)
+      assert button =~ "min-h-11"
+      assert button =~ "min-w-11"
+    end
+
+    test "filter_active? body extension: text_search_query non-empty alone → true",
+         %{conn: conn} do
+      view = mount_authenticated(conn)
+      base = :sys.get_state(view.pid).socket.assigns
+
+      assert IdeajarWeb.IdeaLive.Index.filter_active?(%{base | text_search_query: "mar"})
+    end
+
+    test "DD-S8-13 empty state: workspace non-empty + text query no-match → empty-filter state",
+         %{conn: conn} do
+      mare = Ideajar.Repo.get_by!(Ideajar.Categories.Category, name: "mare")
+
+      %Ideajar.Ideas.Idea{title: "Sirolo"}
+      |> Ecto.Changeset.change()
+      |> Ecto.Changeset.put_assoc(:categories, [mare])
+      |> Ideajar.Repo.insert!()
+
+      view = mount_authenticated(conn)
+      render_hook(view, "update_text_search", %{"q" => "qqxz"})
+      html = render(view)
+
+      assert html =~ "Nessuna idea per i filtri attivi"
+      assert html =~ "Mostra tutte"
+    end
+
+    test "F4 integration: render filters by typed text query (3+ chars)",
+         %{conn: conn} do
+      mare = Ideajar.Repo.get_by!(Ideajar.Categories.Category, name: "mare")
+
+      [
+        %Ideajar.Ideas.Idea{title: "Sirolo", description: "Mare bellissimo"},
+        %Ideajar.Ideas.Idea{title: "Uffizi", description: "Galleria di Firenze"}
+      ]
+      |> Enum.each(fn idea ->
+        idea
+        |> Ecto.Changeset.change()
+        |> Ecto.Changeset.put_assoc(:categories, [mare])
+        |> Ideajar.Repo.insert!()
+      end)
+
+      view = mount_authenticated(conn)
+      render_hook(view, "update_text_search", %{"q" => "Firenze"})
+      html = render(view)
+
+      assert html =~ "Uffizi"
+      refute html =~ "Sirolo"
+    end
+
+    test "F5 form-shape (real-browser regression pin via form selector)",
+         %{conn: conn} do
+      view = mount_authenticated(conn)
+
+      view
+      |> form("#filter-text-search-form", filter: %{text_search: "mar"})
+      |> render_change()
+
+      assigns = :sys.get_state(view.pid).socket.assigns
+      assert assigns.text_search_query == "mar"
+    end
+
+    test "F6 case-insensitive integration: query 'mare' matches 'MARE in tempesta'",
+         %{conn: conn} do
+      mare = Ideajar.Repo.get_by!(Ideajar.Categories.Category, name: "mare")
+
+      %Ideajar.Ideas.Idea{title: "MARE in tempesta", description: nil}
+      |> Ecto.Changeset.change()
+      |> Ecto.Changeset.put_assoc(:categories, [mare])
+      |> Ideajar.Repo.insert!()
+
+      view = mount_authenticated(conn)
+      render_hook(view, "update_text_search", %{"q" => "mare"})
+
+      assert render(view) =~ "MARE in tempesta"
+    end
+
+    test "F8 NULL-description integration: title match + description nil",
+         %{conn: conn} do
+      mare = Ideajar.Repo.get_by!(Ideajar.Categories.Category, name: "mare")
+
+      %Ideajar.Ideas.Idea{title: "Picnic improvviso", description: nil}
+      |> Ecto.Changeset.change()
+      |> Ecto.Changeset.put_assoc(:categories, [mare])
+      |> Ideajar.Repo.insert!()
+
+      view = mount_authenticated(conn)
+      render_hook(view, "update_text_search", %{"q" => "picnic"})
+
+      assert render(view) =~ "Picnic improvviso"
+    end
+
+    test "F14 combined AND at LV layer: text + category filter active together",
+         %{conn: conn} do
+      mare = Ideajar.Repo.get_by!(Ideajar.Categories.Category, name: "mare")
+      cultura = Ideajar.Repo.get_by!(Ideajar.Categories.Category, name: "cultura")
+
+      # mare + matching text → should remain visible.
+      %Ideajar.Ideas.Idea{title: "Mare a Sirolo", description: "Spiaggia bianca"}
+      |> Ecto.Changeset.change()
+      |> Ecto.Changeset.put_assoc(:categories, [mare])
+      |> Ideajar.Repo.insert!()
+
+      # cultura + matching text → filtered out by category.
+      %Ideajar.Ideas.Idea{title: "Mare di libri", description: "Spiaggia letteraria"}
+      |> Ecto.Changeset.change()
+      |> Ecto.Changeset.put_assoc(:categories, [cultura])
+      |> Ideajar.Repo.insert!()
+
+      # mare but no text match → filtered out by text.
+      %Ideajar.Ideas.Idea{title: "Pizza in terrazza", description: "Cena estiva"}
+      |> Ecto.Changeset.change()
+      |> Ecto.Changeset.put_assoc(:categories, [mare])
+      |> Ideajar.Repo.insert!()
+
+      view = mount_authenticated(conn)
+
+      # Activate category filter (mare required) + text search (spiaggia).
+      render_click(view, "cycle_filter", %{"id" => Integer.to_string(mare.id)})
+      render_click(view, "cycle_filter", %{"id" => Integer.to_string(mare.id)})
+      render_hook(view, "update_text_search", %{"q" => "spiaggia"})
+
+      html = render(view)
+      assert html =~ "Mare a Sirolo"
+      refute html =~ "Mare di libri"
+      refute html =~ "Pizza in terrazza"
+    end
+
+    test "S5 XSS regression: malicious query is HTML-escaped on the input value",
+         %{conn: conn} do
+      view = mount_authenticated(conn)
+      render_hook(view, "update_text_search", %{"q" => "<script>alert(1)</script>"})
+
+      html = render(view)
+      refute html =~ "<script>alert(1)</script>"
+      assert html =~ "&lt;script&gt;"
     end
   end
 end

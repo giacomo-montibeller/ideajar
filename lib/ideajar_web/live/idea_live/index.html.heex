@@ -292,6 +292,38 @@
           Rimuovi filtro distanza
         </button>
       </div>
+      <p class="text-xs">Testo</p>
+      <p class="text-xs text-base-content/70">
+        La ricerca trova le idee con la parola in titolo o descrizione.
+      </p>
+      <div
+        id="filter-text-group"
+        role="group"
+        aria-label="Filtra per testo"
+        class="space-y-2"
+      >
+        <form id="filter-text-search-form" phx-change="update_text_search">
+          <input
+            type="text"
+            id="filter-text-search-input"
+            name="filter[text_search]"
+            value={@text_search_query}
+            placeholder="Cerca idee"
+            phx-debounce="300"
+            maxlength="200"
+            autocomplete="off"
+            class="input w-full"
+          />
+        </form>
+        <button
+          :if={@text_search_query != ""}
+          type="button"
+          phx-click="remove_text_search"
+          class="btn btn-ghost btn-sm min-h-11 min-w-11"
+        >
+          Rimuovi filtro testo
+        </button>
+      </div>
       <button
         :if={filter_active?(assigns) and @ideas != []}
         id="mostra-tutte"

@@ -857,7 +857,8 @@ defmodule IdeajarWeb.IdeaLive.Index do
         cost_filter: cost_filter,
         max_distance_index: max_distance_index,
         user_lat: user_lat,
-        user_lng: user_lng
+        user_lng: user_lng,
+        text_search_query: text_search_query
       }
     } = socket
 
@@ -871,6 +872,7 @@ defmodule IdeajarWeb.IdeaLive.Index do
     |> Keyword.put(:max_distance_km, distance_max_km(max_distance_index))
     |> Keyword.put(:ref_lat, user_lat)
     |> Keyword.put(:ref_lng, user_lng)
+    |> Keyword.put(:text_search, text_search_query)
   end
 
   @doc """
@@ -889,10 +891,11 @@ defmodule IdeajarWeb.IdeaLive.Index do
         duration_filter: duration_filter,
         cost_filter: cost_filter,
         max_distance_index: max_distance_index,
-        user_lat: user_lat
+        user_lat: user_lat,
+        text_search_query: text_search_query
       }) do
     filter_state != %{} or MapSet.size(duration_filter) > 0 or not is_nil(cost_filter) or
-      max_distance_index > 0 or not is_nil(user_lat)
+      max_distance_index > 0 or not is_nil(user_lat) or text_search_query != ""
   end
 
   @doc """
