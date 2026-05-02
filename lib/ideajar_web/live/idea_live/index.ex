@@ -86,6 +86,7 @@ defmodule IdeajarWeb.IdeaLive.Index do
      |> reset_location_search()
      |> reset_user_location()
      |> assign(:max_distance_index, 0)
+     |> assign(:text_search_query, "")
      |> assign_form()
      |> reload_ideas()}
   end
@@ -346,7 +347,27 @@ defmodule IdeajarWeb.IdeaLive.Index do
      |> assign(:cost_filter, nil)
      |> reset_user_location()
      |> reset_distance_filter()
+     |> assign(:text_search_query, "")
      |> reload_ideas()}
+  end
+
+  # Slice 8 step 3 — text-search filter handler. Multi-shape extractor
+  # (DD-S8-6, parallel slice 7b filter search bug fix): accepts the
+  # bare `%{"q" => v}` shape used by `render_hook/3` AND the form-shape
+  # `%{"filter" => %{"text_search" => v}}` shipped by the real browser
+  # when phx-change fires on a `name="filter[text_search]"` input.
+  # Server-side oversize guard at 200 bytes (S2): client `maxlength`
+  # attribute is UX-only and devtools can bypass it.
+  def handle_event("update_text_search", params, socket) do
+    case extract_text_search_query(params) do
+      {:ok, q} -> {:noreply, socket |> assign(:text_search_query, q) |> reload_ideas()}
+      :error -> {:noreply, socket}
+    end
+  end
+
+  # Slice 8 step 3 — scoped reset for the text-search axis.
+  def handle_event("remove_text_search", _params, socket) do
+    {:noreply, socket |> assign(:text_search_query, "") |> reload_ideas()}
   end
 
   # Slice 7b step 6 — Geolocation hook success path. The hook in
@@ -707,6 +728,20 @@ defmodule IdeajarWeb.IdeaLive.Index do
     |> assign(:user_location_name, nil)
     |> reset_user_location_search()
   end
+
+  # Slice 8 step 3 (DD-S8-6) — multi-shape extractor for the filter
+  # text-search input. Browser ships params as
+  # `%{"filter" => %{"text_search" => v}}` (form-bracketed name attr),
+  # `render_hook/3` synthetic calls use `%{"q" => v}`. Both must work.
+  # Hostile bypass: oversize > 200 bytes → :error (S2 guard).
+  defp extract_text_search_query(%{"filter" => %{"text_search" => q}})
+       when is_binary(q) and byte_size(q) <= 200,
+       do: {:ok, q}
+
+  defp extract_text_search_query(%{"q" => q}) when is_binary(q) and byte_size(q) <= 200,
+    do: {:ok, q}
+
+  defp extract_text_search_query(_), do: :error
 
   # Slice 7b step 8 — slider state reset (DD10). Used by `clear_filters`,
   # `remove_distance_filter` (step 9), and `remove_user_location` (step 9

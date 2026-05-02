@@ -5807,4 +5807,114 @@ defmodule IdeajarWeb.IdeaLive.IndexTest do
       assert Process.alive?(view.pid)
     end
   end
+
+  describe "text search filter handlers (slice 8 step 3)" do
+    test "mount: @text_search_query defaults to empty string", %{conn: conn} do
+      view = mount_authenticated(conn)
+      assigns = :sys.get_state(view.pid).socket.assigns
+      assert assigns.text_search_query == ""
+    end
+
+    test "update_text_search with bare {q: 'mar'} assigns the typed text + reloads",
+         %{conn: conn} do
+      view = mount_authenticated(conn)
+
+      render_hook(view, "update_text_search", %{"q" => "mar"})
+
+      assigns = :sys.get_state(view.pid).socket.assigns
+      assert assigns.text_search_query == "mar"
+    end
+
+    test "update_text_search with form-shape {filter: {text_search: 'mar'}} same behavior (DD-S8-6)",
+         %{conn: conn} do
+      view = mount_authenticated(conn)
+
+      render_hook(view, "update_text_search", %{"filter" => %{"text_search" => "mar"}})
+
+      assigns = :sys.get_state(view.pid).socket.assigns
+      assert assigns.text_search_query == "mar"
+    end
+
+    test "update_text_search with empty string clears the assign", %{conn: conn} do
+      view = mount_authenticated(conn)
+      render_hook(view, "update_text_search", %{"q" => "mar"})
+
+      render_hook(view, "update_text_search", %{"q" => ""})
+
+      assigns = :sys.get_state(view.pid).socket.assigns
+      assert assigns.text_search_query == ""
+    end
+
+    test "update_text_search with < 3 chars still assigns the typed text (server filter inactive)",
+         %{conn: conn} do
+      view = mount_authenticated(conn)
+
+      render_hook(view, "update_text_search", %{"q" => "ma"})
+
+      assigns = :sys.get_state(view.pid).socket.assigns
+      assert assigns.text_search_query == "ma"
+    end
+
+    test "remove_text_search resets @text_search_query", %{conn: conn} do
+      view = mount_authenticated(conn)
+      render_hook(view, "update_text_search", %{"q" => "mar"})
+
+      render_click(view, "remove_text_search")
+
+      assigns = :sys.get_state(view.pid).socket.assigns
+      assert assigns.text_search_query == ""
+    end
+
+    test "S1/S2/S3 hostile uniform list → no-op for update_text_search",
+         %{conn: conn} do
+      view = mount_authenticated(conn)
+
+      hostile = [
+        %{"q" => 123},
+        %{"q" => :atom},
+        %{"q" => String.duplicate("a", 201)},
+        %{},
+        %{"filter" => %{}}
+      ]
+
+      Enum.each(hostile, fn p ->
+        render_hook(view, "update_text_search", p)
+      end)
+
+      assigns = :sys.get_state(view.pid).socket.assigns
+      assert assigns.text_search_query == ""
+      assert Process.alive?(view.pid)
+    end
+
+    test "F13 save success does NOT reset @text_search_query", %{conn: conn} do
+      mare = Ideajar.Repo.get_by!(Ideajar.Categories.Category, name: "mare")
+
+      view = mount_authenticated(conn)
+      render_hook(view, "update_text_search", %{"q" => "mar"})
+
+      open_form(view)
+      render_click(view, "toggle_category", %{"id" => Integer.to_string(mare.id)})
+
+      render_change(view, "save", %{
+        "idea" => %{
+          "title" => "Picnic improvviso",
+          "duration" => "weekend"
+        }
+      })
+
+      assigns = :sys.get_state(view.pid).socket.assigns
+      assert assigns.text_search_query == "mar"
+    end
+
+    test "F11 clear_filters extension cascades @text_search_query to ''",
+         %{conn: conn} do
+      view = mount_authenticated(conn)
+      render_hook(view, "update_text_search", %{"q" => "mar"})
+
+      render_click(view, "clear_filters")
+
+      assigns = :sys.get_state(view.pid).socket.assigns
+      assert assigns.text_search_query == ""
+    end
+  end
 end
