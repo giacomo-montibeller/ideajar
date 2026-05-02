@@ -181,8 +181,26 @@ defmodule IdeajarWeb.IdeaLive.Index do
   #     selection (`@selected_lat` not nil), lat/lng are also cleared.
   #     A divergent name + stale coords would otherwise produce a
   #     state-(c) submit with the wrong coords for the typed name.
-  def handle_event("update_location_name", %{"name" => name}, socket)
-      when is_binary(name) do
+  def handle_event("update_location_name", params, socket) do
+    case extract_location_name(params) do
+      {:ok, name} -> apply_location_name_change(socket, name)
+      :error -> {:noreply, socket}
+    end
+  end
+
+  # `phx-change` on a form-bound input sends the full form params shape
+  # (`%{"idea" => %{"location_name" => "..."}}`), while direct
+  # `render_hook/render_change` test dispatches use the bare `%{"name" => "..."}`
+  # shape. We accept both so production typing works AND the slice-7a-step-4
+  # hostile-uniform-list tests keep passing. Hostile/missing payloads return
+  # `:error` and trigger the no-op catchall.
+  defp extract_location_name(%{"idea" => %{"location_name" => name}}) when is_binary(name),
+    do: {:ok, name}
+
+  defp extract_location_name(%{"name" => name}) when is_binary(name), do: {:ok, name}
+  defp extract_location_name(_), do: :error
+
+  defp apply_location_name_change(socket, name) do
     socket =
       socket
       |> assign(:selected_location_name, name)
@@ -214,11 +232,6 @@ defmodule IdeajarWeb.IdeaLive.Index do
         end
     end
   end
-
-  # Catchall for hostile or malformed `update_location_name` payloads:
-  # missing `"name"` key, non-binary values (integer, list, map, nil).
-  # Pinned by the slice-7a-step-4 hostile uniform list.
-  def handle_event("update_location_name", _params, socket), do: {:noreply, socket}
 
   # Slice 7a iter2 — selecting a result from the search dropdown.
   # Defensive parse of lat/lng (string → float) plus range validation

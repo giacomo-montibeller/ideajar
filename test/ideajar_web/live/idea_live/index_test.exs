@@ -4438,6 +4438,31 @@ defmodule IdeajarWeb.IdeaLive.IndexTest do
       refute html =~ "Nessun risultato"
     end
 
+    # Regression pin (slice 7a iter2 follow-up): the input's `phx-change`
+    # is fired by the browser inside the parent `<.form>`, so the params
+    # arrive as `%{"idea" => %{"location_name" => "..."}}`, NOT the
+    # synthetic `%{"name" => "..."}` shape that the unit-style
+    # `render_change/3` calls use. The handler must accept BOTH shapes,
+    # otherwise typing in the real browser silently no-ops.
+    test "form-shape params (idea.location_name) drive the search the same way",
+         %{conn: conn} do
+      view = mount_authenticated(conn) |> open_form()
+
+      stub_results!(view, [
+        %{"display_name" => "Sirolo, AN", "lat" => "43.5", "lon" => "13.6"}
+      ])
+
+      render_change(view, "update_location_name", %{
+        "_target" => ["idea", "location_name"],
+        "idea" => %{"location_name" => "sirolo"}
+      })
+
+      assigns = :sys.get_state(view.pid).socket.assigns
+      assert assigns.selected_location_name == "sirolo"
+      assert assigns.location_search_state == :results
+      assert length(assigns.location_search_results) == 1
+    end
+
     test "type < 3 chars: silent (state stays :idle, no dropdown rendered)",
          %{conn: conn} do
       view = mount_authenticated(conn) |> open_form() |> stub_geocoding_empty!()
