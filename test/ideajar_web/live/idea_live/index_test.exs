@@ -4993,4 +4993,56 @@ defmodule IdeajarWeb.IdeaLive.IndexTest do
       assert Process.alive?(view.pid)
     end
   end
+
+  describe "Geolocation JS hook (slice 7b step 5)" do
+    # Static-source pins for the JS hook. Slice 7b step 6 and step 8
+    # exercise the server side of the geolocation flow (handlers
+    # `set_user_location`/`user_location_denied`); these tests pin only
+    # the JS half — that the hook file exists with the expected click
+    # handler shape and that app.js registers it on the LiveSocket so
+    # the LiveView's `phx-hook="Geolocation"` button actually wires up
+    # at boot time.
+
+    test "hook source defines mounted() and a click handler invoking navigator.geolocation" do
+      hook_js = File.read!(Path.join(File.cwd!(), "assets/js/hooks/geolocation.js"))
+
+      assert hook_js =~ "export const Geolocation"
+      assert hook_js =~ "mounted()"
+      assert hook_js =~ "addEventListener"
+      assert hook_js =~ "navigator.geolocation"
+      assert hook_js =~ "getCurrentPosition"
+      assert hook_js =~ "set_user_location"
+      assert hook_js =~ "user_location_denied"
+    end
+
+    test "hook does NOT register click in updated() (no double-bind on LV patch)" do
+      # Phoenix LV calls the update callback on every diff; if
+      # `addEventListener` were registered there, every render would
+      # stack another listener producing N pushEvents per click. The
+      # hook must rely on the one-time `mounted()` bind only.
+      #
+      # The regex anchors on a line-start method definition (`^\s*updated\s*\(`)
+      # so the design-notes comment that explains the rationale below
+      # does NOT trip the assertion.
+      hook_js = File.read!(Path.join(File.cwd!(), "assets/js/hooks/geolocation.js"))
+
+      refute hook_js =~ ~r/^\s*updated\s*\(/m
+    end
+
+    test "hook maps W3C PositionError codes to the four documented reason strings" do
+      # W3C: 1=PERMISSION_DENIED, 2=POSITION_UNAVAILABLE, 3=TIMEOUT.
+      # Hook fallback for missing API → "unsupported".
+      hook_js = File.read!(Path.join(File.cwd!(), "assets/js/hooks/geolocation.js"))
+
+      assert hook_js =~ "permission_denied"
+      assert hook_js =~ "unavailable"
+      assert hook_js =~ "timeout"
+      assert hook_js =~ "unsupported"
+    end
+
+    test "app.js registers the Geolocation hook on the LiveSocket" do
+      app_js = File.read!(Path.join(File.cwd!(), "assets/js/app.js"))
+      assert app_js =~ "Geolocation"
+    end
+  end
 end
