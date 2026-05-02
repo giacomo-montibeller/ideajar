@@ -208,7 +208,7 @@ Fuori scope: URL params, map view, watch-position continuo, persistence cross-se
 3. `Distance.km(0, 0, 1, 0)` ≈ 111.32 (±0.5) — equator N-S 1°.
 4. `Distance.km(90, 0, -90, 0)` ≈ 20015 (±10) — pole-to-pole.
 5. `Distance.km(43.5, 13.6, 41.9, 12.5)` ≈ 200 (±10) — Sirolo↔Roma real-world.
-6. `Distance.km(43.5, 13.6, 48.85, 2.35)` ≈ 1300 (±50) — Sirolo↔Parigi.
+6. `Distance.km(43.5, 13.6, 48.85, 2.35)` ≈ 1050 (±50) — Sirolo↔Parigi great-circle.
 7. **Symmetry**: `Distance.km(a, b, c, d) == Distance.km(c, d, a, b)` (commutative).
 8. **Antipodal correctness**: `Distance.km(0, 0, 0, 180)` ≈ 20015 km (±10) — half of Earth's circumference (π·R). Returns finite float, no raise. Pin both magnitude AND no-raise.
 
