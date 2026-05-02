@@ -28,6 +28,133 @@ defmodule Ideajar.Ideas.FilterTest do
     )
   end
 
+  describe "apply_post/2 — slice 7b post-query distance filter (DD3)" do
+    # `apply_post/2` operates on the in-memory list AFTER the SQL query
+    # returns + Repo.preload runs. Slice 7b's only post-query clause is
+    # `apply_max_distance/2` which uses `Ideajar.Ideas.Distance.km/4`.
+    # Tests build plain `%Idea{}` structs (no Repo round-trip) — the
+    # function is pure and the boundary between query and post-query is
+    # exactly that.
+
+    # Sirolo, AN baseline reference point (43.5, 13.6).
+    @sirolo_lat 43.5
+    @sirolo_lng 13.6
+
+    defp ideas_fixture do
+      [
+        %Idea{id: 1, title: "Sirolo", lat: 43.5, lng: 13.6},
+        %Idea{id: 2, title: "Ancona", lat: 43.6, lng: 13.5},
+        %Idea{id: 3, title: "Roma", lat: 41.9, lng: 12.5},
+        %Idea{id: 4, title: "Parigi", lat: 48.85, lng: 2.35},
+        %Idea{id: 5, title: "Senza coords", lat: nil, lng: nil},
+        %Idea{id: 6, title: "Solo lat", lat: 43.5, lng: nil},
+        %Idea{id: 7, title: "Solo lng", lat: nil, lng: 13.6}
+      ]
+    end
+
+    test "no opts → list unchanged" do
+      ideas = ideas_fixture()
+      assert Filter.apply_post(ideas, []) == ideas
+    end
+
+    test "max_distance_km nil → no-op" do
+      ideas = ideas_fixture()
+      assert Filter.apply_post(ideas, max_distance_km: nil) == ideas
+    end
+
+    test "max_distance_km: 5 + ref Sirolo → only ideas within 5 km AND non-nil coords" do
+      ideas = ideas_fixture()
+
+      result =
+        Filter.apply_post(ideas,
+          max_distance_km: 5,
+          ref_lat: @sirolo_lat,
+          ref_lng: @sirolo_lng
+        )
+
+      titles = Enum.map(result, & &1.title)
+      assert "Sirolo" in titles
+      refute "Ancona" in titles
+      refute "Roma" in titles
+      refute "Parigi" in titles
+      refute "Senza coords" in titles
+      refute "Solo lat" in titles
+      refute "Solo lng" in titles
+    end
+
+    test "max_distance_km: 1_000_000 (slider idx 6 mapping) → all ideas with non-nil coords, NULL excluded" do
+      ideas = ideas_fixture()
+
+      result =
+        Filter.apply_post(ideas,
+          max_distance_km: 1_000_000,
+          ref_lat: @sirolo_lat,
+          ref_lng: @sirolo_lng
+        )
+
+      titles = Enum.map(result, & &1.title)
+      assert "Sirolo" in titles
+      assert "Ancona" in titles
+      assert "Roma" in titles
+      assert "Parigi" in titles
+      refute "Senza coords" in titles
+      refute "Solo lat" in titles
+      refute "Solo lng" in titles
+    end
+
+    test "ref_lat nil → no-op (DD5 defensive)" do
+      ideas = ideas_fixture()
+
+      result =
+        Filter.apply_post(ideas,
+          max_distance_km: 50,
+          ref_lat: nil,
+          ref_lng: @sirolo_lng
+        )
+
+      assert result == ideas
+    end
+
+    test "ref_lng nil → no-op (DD5 defensive)" do
+      ideas = ideas_fixture()
+
+      result =
+        Filter.apply_post(ideas,
+          max_distance_km: 50,
+          ref_lat: @sirolo_lat,
+          ref_lng: nil
+        )
+
+      assert result == ideas
+    end
+
+    test "idea with lat nil but lng set → excluded when filter on" do
+      ideas = ideas_fixture()
+
+      result =
+        Filter.apply_post(ideas,
+          max_distance_km: 1_000_000,
+          ref_lat: @sirolo_lat,
+          ref_lng: @sirolo_lng
+        )
+
+      refute Enum.any?(result, &(&1.title == "Solo lng"))
+    end
+
+    test "idea with lng nil but lat set → excluded when filter on" do
+      ideas = ideas_fixture()
+
+      result =
+        Filter.apply_post(ideas,
+          max_distance_km: 1_000_000,
+          ref_lat: @sirolo_lat,
+          ref_lng: @sirolo_lng
+        )
+
+      refute Enum.any?(result, &(&1.title == "Solo lat"))
+    end
+  end
+
   describe "apply/2 — module surface (slice 6 R5-1 extraction)" do
     test "exports apply/2 as a public function" do
       # R1 pin: the public API contract for the new `Ideajar.Ideas.Filter`

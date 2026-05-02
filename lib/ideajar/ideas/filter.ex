@@ -1,14 +1,35 @@
 defmodule Ideajar.Ideas.Filter do
   @moduledoc """
-  Pure filter composition for ideas listing.
+  Filter composition for the ideas listing — **dual-layer contract**.
 
-  Slice 6 R5-1 extraction. Previously `apply_filters/2` private in
-  `Ideajar.Ideas`; promoted to a public module so we can:
+  The filter pipeline operates in two layers:
+
+    1. **Query layer** — `apply/2` composes Ecto subqueries on top of
+       the input `Ecto.Query.t()`, returning a new query. SQL emission
+       is pinned by `Ecto.Adapters.SQL.to_sql/2`. Active across slices
+       4-6 (required/optional/durations/max_cost). Cheap, indexable,
+       SQL-native.
+    2. **Post-query layer** — `apply_post/2` operates on the in-memory
+       `[Idea.t()]` list AFTER `Repo.all` + `Repo.preload`. Reserved
+       for filters that don't translate cleanly to SQL on SQLite
+       without optional extensions, e.g. Haversine great-circle
+       distance (slice 7b `apply_max_distance/2`). The cost is O(N)
+       per query — acceptable while N is small.
+
+  The two layers compose: `Ideas.list_ideas/1` runs `apply/2` first,
+  then `Repo.all`, then `Repo.preload`, then `apply_post/2`. Each opt
+  belongs to exactly one layer (no opt is consulted twice).
+
+  ## Slice 6 R5-1 extraction history
+
+  Previously `apply_filters/2` was private in `Ideajar.Ideas`. Promoted
+  to a public module so we can:
 
     * unit-test each clause directly without paying a `Repo.preload`
       round-trip on every assertion (see `test/ideajar/ideas/filter_test.exs`)
-    * host the 4th clause (`apply_max_cost/2`, slice 6 step 6) without
-      growing the context module past its single-responsibility line.
+    * host the 4th query clause (`apply_max_cost/2`, slice 6 step 6)
+      without growing the context module past its single-responsibility
+      line.
 
   Slice 6 step 2 was a **conservative extraction**: the 3 existing
   clauses (required, optional, durations) moved verbatim — same subquery
@@ -16,12 +37,17 @@ defmodule Ideajar.Ideas.Filter do
   so the slice-4 SQL-emission pins (`HAVING COUNT(DISTINCT …)`) and the
   slice-5 NULL-exclusion contract (AA7) hold without test changes.
 
-  Slice 6 step 6 adds the 4th clause (`apply_max_cost/2`, BB8) with
-  NULL-exclude semantics uniform to the slice-5 durations clause: an
-  empty/nil opt is inactive (NULL-cost ideas pass through), a non-nil
+  Slice 6 step 6 adds the 4th query clause (`apply_max_cost/2`, BB8)
+  with NULL-exclude semantics uniform to the slice-5 durations clause:
+  an empty/nil opt is inactive (NULL-cost ideas pass through), a non-nil
   integer threshold emits `WHERE estimated_cost <= ^max AND
-  estimated_cost IS NOT NULL` (NULL excluded). The four clauses compose
-  in AND across opts.
+  estimated_cost IS NOT NULL` (NULL excluded). The four query clauses
+  compose in AND across opts.
+
+  Slice 7b step 3 introduces the post-query layer with one clause
+  (`apply_max_distance/2`). Trigger to extract a dedicated
+  `Ideajar.Ideas.Filter.PostQuery` module: ≥3 post-query clauses
+  cohabiting (rule of 3).
 
   Note on the `apply/2` name: it shadows `Kernel.apply/2` syntactically,
   but every caller uses the module-qualified form (`Filter.apply(...)`),
@@ -125,5 +151,66 @@ defmodule Ideajar.Ideas.Filter do
   defp apply_max_cost(query, max) when is_integer(max) do
     from i in query,
       where: i.estimated_cost <= ^max and not is_nil(i.estimated_cost)
+  end
+
+  @doc """
+  Composes every active **post-query** filter clause onto `ideas` based
+  on `opts`. Operates on the in-memory list returned by `Repo.all` +
+  `Repo.preload`.
+
+  Reserved for filters that cannot be expressed cleanly in SQL on
+  SQLite without optional extensions. Slice 7b's only clause is
+  `apply_max_distance/2` (Haversine great-circle distance via
+  `Ideajar.Ideas.Distance.km/4`).
+
+  Accepted opts:
+
+    * `:max_distance_km` — `integer | nil`; when an integer is given,
+      keeps only ideas whose `lat`/`lng` are non-nil AND within
+      `max_distance_km` of the reference point. `nil` (or omitting
+      the opt) leaves the list unchanged. The reference point is
+      passed via the coordinated opts `:ref_lat` / `:ref_lng`; if
+      either is `nil`, the clause silently no-ops (DD5 defensive).
+    * `:ref_lat` — `float | nil`; required for the distance filter
+      to take effect.
+    * `:ref_lng` — `float | nil`; required for the distance filter
+      to take effect.
+
+  ### NULL-exclude semantics (DD4)
+
+  Index 0 of the slider maps to `max_distance_km: nil` → filter
+  inactive, NULL-coord ideas pass through. Indices 1-5 map to a
+  finite km value → filter active, NULL-coord ideas excluded.
+  Index 6 maps to `1_000_000` → filter active with effectively no
+  upper cap, but NULL-coord ideas STILL excluded (the difference
+  between index 0 and index 6 is exactly the NULL treatment).
+
+  Returns a new list — never executes SQL.
+  """
+  @spec apply_post([Ideajar.Ideas.Idea.t()], keyword()) :: [Ideajar.Ideas.Idea.t()]
+  def apply_post(ideas, opts) when is_list(ideas) and is_list(opts) do
+    apply_max_distance(ideas, opts)
+  end
+
+  # Post-query clause: keep only ideas whose stored coords are within
+  # `max_km` of the reference point. NULL-coord ideas (lat or lng nil)
+  # are excluded when the clause is active. The clause silently no-ops
+  # if `max_distance_km`, `ref_lat`, or `ref_lng` is nil — the
+  # LiveView's slider is disabled until a reference point is set, so
+  # the no-op is the contract for both the "no slider" and "no ref
+  # point" states.
+  defp apply_max_distance(ideas, opts) do
+    max_km = Keyword.get(opts, :max_distance_km)
+    ref_lat = Keyword.get(opts, :ref_lat)
+    ref_lng = Keyword.get(opts, :ref_lng)
+
+    if is_number(max_km) and is_number(ref_lat) and is_number(ref_lng) do
+      Enum.filter(ideas, fn idea ->
+        is_number(idea.lat) and is_number(idea.lng) and
+          Ideajar.Ideas.Distance.km(idea.lat, idea.lng, ref_lat, ref_lng) <= max_km
+      end)
+    else
+      ideas
+    end
   end
 end
