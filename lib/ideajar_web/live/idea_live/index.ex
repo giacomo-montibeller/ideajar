@@ -359,6 +359,53 @@ defmodule IdeajarWeb.IdeaLive.Index do
 
   def handle_event("user_location_denied", _params, socket), do: {:noreply, socket}
 
+  # Slice 7b step 7 — search-driven reference point. Mirrors slice 7a
+  # `update_location_name` but lives on the filter side: assigns
+  # `@user_location_search_results` / `@user_location_search_state`.
+  # The text input does not pre-fill `@user_location_name` — the name
+  # is committed only on `select_user_location` (whereas the form's
+  # `update_location_name` populates `@selected_location_name` while
+  # typing, since the form submits the typed name verbatim).
+  def handle_event("update_user_location_name", %{"name" => name}, socket)
+      when is_binary(name) do
+    apply_user_location_search(socket, name)
+  end
+
+  def handle_event("update_user_location_name", _params, socket), do: {:noreply, socket}
+
+  # Slice 7b step 7 — picking a result from the filter dropdown.
+  # Defensive parse uniform with `select_location` (slice 7a iter2).
+  # On success: commits 3 user_* assigns + closes the dropdown,
+  # leaves `@max_distance_index` untouched (DD19 swap clause).
+  def handle_event(
+        "select_user_location",
+        %{"name" => name, "lat" => raw_lat, "lng" => raw_lng},
+        socket
+      )
+      when is_binary(name) do
+    with {:ok, lat} <- parse_coord(raw_lat, -90.0, 90.0),
+         {:ok, lng} <- parse_coord(raw_lng, -180.0, 180.0) do
+      {:noreply,
+       socket
+       |> assign(:user_lat, lat)
+       |> assign(:user_lng, lng)
+       |> assign(:user_location_name, name)
+       |> reset_user_location_search()}
+    else
+      _ -> {:noreply, socket}
+    end
+  end
+
+  def handle_event("select_user_location", _params, socket), do: {:noreply, socket}
+
+  # Slice 7b step 7 — `phx-click-away` for the filter dropdown. Same
+  # contract as slice 7a `dismiss_location_search` but on the filter
+  # assigns: closes the dropdown, leaves user_* assigns alone (a user
+  # who typed but didn't pick keeps no reference point).
+  def handle_event("dismiss_user_location_search", _params, socket) do
+    {:noreply, reset_user_location_search(socket)}
+  end
+
   def handle_event("save", %{"idea" => attrs}, socket) do
     attrs_with_categories =
       Map.put(attrs, "category_ids", MapSet.to_list(socket.assigns.selected_category_ids))
@@ -588,6 +635,44 @@ defmodule IdeajarWeb.IdeaLive.Index do
     |> assign(:user_lat, nil)
     |> assign(:user_lng, nil)
     |> assign(:user_location_name, nil)
+    |> reset_user_location_search()
+  end
+
+  # Slice 7b step 7 — search dropdown state for the filter side. Two
+  # assigns parallel to the slice-7a-iter2 form pattern but scoped to
+  # the filter's reference-point picker.
+  defp reset_user_location_search(socket) do
+    socket
+    |> assign(:user_location_search_results, [])
+    |> assign(:user_location_search_state, :idle)
+  end
+
+  defp apply_user_location_search(socket, name) do
+    case String.trim(name) do
+      trimmed when byte_size(trimmed) < 3 ->
+        {:noreply, reset_user_location_search(socket)}
+
+      trimmed ->
+        case Ideajar.Geocoding.search(trimmed) do
+          {:ok, []} ->
+            {:noreply,
+             socket
+             |> assign(:user_location_search_results, [])
+             |> assign(:user_location_search_state, :empty)}
+
+          {:ok, results} ->
+            {:noreply,
+             socket
+             |> assign(:user_location_search_results, results)
+             |> assign(:user_location_search_state, :results)}
+
+          {:error, :service_unavailable} ->
+            {:noreply,
+             socket
+             |> reset_user_location_search()
+             |> put_flash(:error, "Ricerca non disponibile, riprova")}
+        end
+    end
   end
 
   # Slice 7b step 6 — defensive coordinate parser shared between the

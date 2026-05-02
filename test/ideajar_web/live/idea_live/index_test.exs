@@ -5130,4 +5130,182 @@ defmodule IdeajarWeb.IdeaLive.IndexTest do
       assert Process.alive?(view.pid)
     end
   end
+
+  describe "user location filter search (slice 7b step 7)" do
+    defp user_search_stub_results!(view, results) do
+      Req.Test.stub(IdeajarStub, fn conn ->
+        conn
+        |> Plug.Conn.put_resp_header("content-type", "application/json")
+        |> Plug.Conn.send_resp(200, Jason.encode!(results))
+      end)
+
+      Req.Test.allow(IdeajarStub, self(), view.pid)
+      view
+    end
+
+    defp user_search_stub_unavailable!(view) do
+      Req.Test.stub(IdeajarStub, fn conn ->
+        Plug.Conn.send_resp(conn, 502, "bad gateway")
+      end)
+
+      Req.Test.allow(IdeajarStub, self(), view.pid)
+      view
+    end
+
+    test "mount: user_location_search_results == [] and state == :idle",
+         %{conn: conn} do
+      view = mount_authenticated(conn)
+
+      assigns = :sys.get_state(view.pid).socket.assigns
+      assert assigns.user_location_search_results == []
+      assert assigns.user_location_search_state == :idle
+    end
+
+    test "update_user_location_name with < 3 chars stays idle, no dropdown",
+         %{conn: conn} do
+      view = mount_authenticated(conn)
+
+      render_hook(view, "update_user_location_name", %{"name" => "ro"})
+
+      assigns = :sys.get_state(view.pid).socket.assigns
+      assert assigns.user_location_search_state == :idle
+    end
+
+    test "update_user_location_name ≥ 3 chars + 2 results → state :results, dropdown rendered",
+         %{conn: conn} do
+      view = mount_authenticated(conn)
+
+      user_search_stub_results!(view, [
+        %{"display_name" => "Roma, RM", "lat" => "41.9", "lon" => "12.5"},
+        %{"display_name" => "Roma Termini", "lat" => "41.901", "lon" => "12.501"}
+      ])
+
+      render_hook(view, "update_user_location_name", %{"name" => "roma"})
+
+      assigns = :sys.get_state(view.pid).socket.assigns
+      assert assigns.user_location_search_state == :results
+      assert length(assigns.user_location_search_results) == 2
+    end
+
+    test "update_user_location_name with empty results → state :empty",
+         %{conn: conn} do
+      view = mount_authenticated(conn)
+      user_search_stub_results!(view, [])
+
+      render_hook(view, "update_user_location_name", %{"name" => "qqxz"})
+
+      assigns = :sys.get_state(view.pid).socket.assigns
+      assert assigns.user_location_search_state == :empty
+    end
+
+    test "update_user_location_name with service unavailable → flash + state :idle",
+         %{conn: conn} do
+      view = mount_authenticated(conn)
+      user_search_stub_unavailable!(view)
+
+      render_hook(view, "update_user_location_name", %{"name" => "roma"})
+
+      assert render(view) =~ "Ricerca non disponibile, riprova"
+      assigns = :sys.get_state(view.pid).socket.assigns
+      assert assigns.user_location_search_state == :idle
+    end
+
+    test "select_user_location with valid result sets 3 user_* assigns + state :idle",
+         %{conn: conn} do
+      view = mount_authenticated(conn)
+
+      render_hook(view, "select_user_location", %{
+        "name" => "Roma, RM",
+        "lat" => "41.9",
+        "lng" => "12.5"
+      })
+
+      assigns = :sys.get_state(view.pid).socket.assigns
+      assert assigns.user_lat == 41.9
+      assert assigns.user_lng == 12.5
+      assert assigns.user_location_name == "Roma, RM"
+      assert assigns.user_location_search_state == :idle
+    end
+
+    test "select_user_location swap preserves @max_distance_index (DD19 swap clause)",
+         %{conn: conn} do
+      view = mount_authenticated(conn)
+
+      # Pre-state: user has set a reference + slider at index 3.
+      render_hook(view, "set_user_location", %{"lat" => 43.5, "lng" => 13.6})
+
+      :sys.replace_state(view.pid, fn state ->
+        new_assigns = Map.put(state.socket.assigns, :max_distance_index, 3)
+        %{state | socket: %{state.socket | assigns: new_assigns}}
+      end)
+
+      # Swap to a new search result.
+      render_hook(view, "select_user_location", %{
+        "name" => "Roma, RM",
+        "lat" => "41.9",
+        "lng" => "12.5"
+      })
+
+      assigns = :sys.get_state(view.pid).socket.assigns
+      assert assigns.user_location_name == "Roma, RM"
+      assert assigns.max_distance_index == 3
+    end
+
+    test "dismiss_user_location_search resets search state but leaves user_* assigns",
+         %{conn: conn} do
+      view = mount_authenticated(conn)
+
+      user_search_stub_results!(view, [
+        %{"display_name" => "Roma", "lat" => "41.9", "lon" => "12.5"}
+      ])
+
+      render_hook(view, "update_user_location_name", %{"name" => "roma"})
+
+      render_hook(view, "dismiss_user_location_search", %{})
+
+      assigns = :sys.get_state(view.pid).socket.assigns
+      assert assigns.user_location_search_state == :idle
+      # User had not selected a result; user_* still nil.
+      assert assigns.user_lat == nil
+      assert assigns.user_lng == nil
+      assert assigns.user_location_name == nil
+    end
+
+    test "select_user_location with hostile payloads is a no-op (S3 uniform list)",
+         %{conn: conn} do
+      view = mount_authenticated(conn)
+
+      hostile = [
+        %{},
+        %{"name" => "X"},
+        %{"name" => "X", "lat" => "abc", "lng" => "13.6"},
+        %{"name" => "X", "lat" => "91", "lng" => "13.6"},
+        %{"name" => "X", "lat" => "43.5", "lng" => "181"},
+        %{"name" => :atom, "lat" => "43.5", "lng" => "13.6"}
+      ]
+
+      Enum.each(hostile, fn params ->
+        render_hook(view, "select_user_location", params)
+      end)
+
+      assigns = :sys.get_state(view.pid).socket.assigns
+      assert assigns.user_lat == nil
+      assert assigns.user_lng == nil
+      assert assigns.user_location_name == nil
+      assert Process.alive?(view.pid)
+    end
+
+    test "update_user_location_name with non-binary payload is a no-op (S4)",
+         %{conn: conn} do
+      view = mount_authenticated(conn)
+
+      render_hook(view, "update_user_location_name", %{"name" => 123})
+      render_hook(view, "update_user_location_name", %{"name" => :atom})
+      render_hook(view, "update_user_location_name", %{})
+
+      assigns = :sys.get_state(view.pid).socket.assigns
+      assert assigns.user_location_search_state == :idle
+      assert Process.alive?(view.pid)
+    end
+  end
 end
