@@ -25,6 +25,7 @@ defmodule IdeajarWeb.IdeaLive.Index do
   use IdeajarWeb, :live_view
 
   import IdeajarWeb.Components.CategoryChip
+  import IdeajarWeb.Components.LocationSearchInput
   # DurationChip carries its own `filter_chip/1` (slice 5 step 6) which would
   # collide with `CategoryChip.filter_chip/1`. We import only the form-side
   # helpers and call the duration filter chip via the module-qualified form

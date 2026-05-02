@@ -108,53 +108,17 @@
       <fieldset class="fieldset">
         <legend class="label mb-1">Posizione</legend>
         <label for="idea-location-name" class="label">Luogo</label>
-        <div phx-click-away="dismiss_location_search" class="relative">
-          <input
-            type="text"
-            id="idea-location-name"
-            name="idea[location_name]"
-            value={@selected_location_name || ""}
-            placeholder="es. Casa di nonna"
-            phx-change="update_location_name"
-            phx-debounce="300"
-            maxlength="200"
-            autocomplete="off"
-            class="input w-full"
-          />
-          <ul
-            :if={@location_search_state != :idle}
-            class="absolute z-10 mt-1 w-full max-h-64 overflow-auto rounded-box border border-base-300 bg-base-100 shadow-lg"
-            role="listbox"
-          >
-            <li
-              :if={@location_search_state == :searching}
-              class="px-3 py-2 text-sm text-base-content/70"
-            >
-              Cerco…
-            </li>
-            <li
-              :if={@location_search_state == :empty}
-              class="px-3 py-2 text-sm text-base-content/70"
-            >
-              Nessun risultato
-            </li>
-            <li
-              :for={result <- @location_search_results}
-              class="border-t border-base-300 first:border-t-0"
-            >
-              <button
-                type="button"
-                phx-click="select_location"
-                phx-value-name={result.display_name}
-                phx-value-lat={result.lat}
-                phx-value-lng={result.lng}
-                class="block w-full text-left px-3 py-2 text-sm hover:bg-base-200"
-              >
-                {result.display_name}
-              </button>
-            </li>
-          </ul>
-        </div>
+        <.location_search_input
+          id="idea-location-name"
+          name="idea[location_name]"
+          name_value={@selected_location_name || ""}
+          placeholder="es. Casa di nonna"
+          search_results={@location_search_results}
+          search_state={@location_search_state}
+          on_change_event="update_location_name"
+          on_select_event="select_location"
+          on_dismiss_event="dismiss_location_search"
+        />
         <button
           :if={not is_nil(@selected_location_name) or not is_nil(@selected_lat)}
           type="button"
