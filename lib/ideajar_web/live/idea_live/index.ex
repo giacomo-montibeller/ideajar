@@ -59,6 +59,7 @@ defmodule IdeajarWeb.IdeaLive.Index do
      |> reset_budget()
      |> reset_location()
      |> reset_location_search()
+     |> reset_user_location()
      |> assign_form()
      |> reload_ideas()}
   end
@@ -320,6 +321,44 @@ defmodule IdeajarWeb.IdeaLive.Index do
      |> reload_ideas()}
   end
 
+  # Slice 7b step 6 — Geolocation hook success path. The hook in
+  # `assets/js/hooks/geolocation.js` resolves `getCurrentPosition` and
+  # pushEvents the coords here. We defensively parse + range-check both
+  # values and only commit the assigns when the pair is valid; any
+  # hostile shape (S1) routes to the catchall no-op below.
+  def handle_event("set_user_location", %{"lat" => raw_lat, "lng" => raw_lng}, socket) do
+    with {:ok, lat} <- parse_coord(raw_lat, -90.0, 90.0),
+         {:ok, lng} <- parse_coord(raw_lng, -180.0, 180.0) do
+      {:noreply,
+       socket
+       |> assign(:user_lat, lat)
+       |> assign(:user_lng, lng)
+       |> assign(:user_location_name, "La mia posizione")}
+    else
+      _ -> {:noreply, socket}
+    end
+  end
+
+  def handle_event("set_user_location", _params, socket), do: {:noreply, socket}
+
+  # Slice 7b step 6 — Geolocation hook denial path. The hook surfaces
+  # one of four documented reason strings (DD7); the LV maps them to
+  # the canonical IT flash strings. Any other reason value falls
+  # through to the generic message — we don't trust arbitrary input
+  # to round-trip into the UI.
+  def handle_event("user_location_denied", %{"reason" => reason}, socket)
+      when is_binary(reason) do
+    flash_msg =
+      case reason do
+        "permission_denied" -> "Permesso di geolocalizzazione negato"
+        _ -> "Posizione non disponibile, riprova"
+      end
+
+    {:noreply, put_flash(socket, :error, flash_msg)}
+  end
+
+  def handle_event("user_location_denied", _params, socket), do: {:noreply, socket}
+
   def handle_event("save", %{"idea" => attrs}, socket) do
     attrs_with_categories =
       Map.put(attrs, "category_ids", MapSet.to_list(socket.assigns.selected_category_ids))
@@ -531,6 +570,43 @@ defmodule IdeajarWeb.IdeaLive.Index do
     |> assign(:location_search_results, [])
     |> assign(:location_search_state, :idle)
   end
+
+  # Slice 7b step 6 — distance filter reference point. Three assigns:
+  #
+  #   * `@user_lat :: float | nil` — latitude of the reference point
+  #   * `@user_lng :: float | nil` — longitude of the reference point
+  #   * `@user_location_name :: String.t() | nil` — display label
+  #
+  # `LiveView-session only` (DD11): no localStorage, no DB; refresh
+  # reverts to nil. Set via either the geolocation hook
+  # (`set_user_location`, label "La mia posizione") or the filter
+  # search dropdown (`select_user_location`, label from the chosen
+  # geocoding result). `remove_user_location` resets all three plus
+  # cascades the slider to 0.
+  defp reset_user_location(socket) do
+    socket
+    |> assign(:user_lat, nil)
+    |> assign(:user_lng, nil)
+    |> assign(:user_location_name, nil)
+  end
+
+  # Slice 7b step 6 — defensive coordinate parser shared between the
+  # geolocation hook handler and the filter search-select handler.
+  # Accepts either a raw float (geolocation) or a binary (search
+  # dropdown's phx-value-* params). Out-of-range values map to
+  # `:error` so the calling `with` clause routes to the no-op.
+  defp parse_coord(value, lo, hi) when is_number(value) do
+    if value >= lo and value <= hi, do: {:ok, value * 1.0}, else: :error
+  end
+
+  defp parse_coord(value, lo, hi) when is_binary(value) do
+    case Float.parse(value) do
+      {n, ""} when n >= lo and n <= hi -> {:ok, n}
+      _ -> :error
+    end
+  end
+
+  defp parse_coord(_, _, _), do: :error
 
   # Decision C1 — typing in the text input after a previous successful
   # select must drop the picked lat/lng. Otherwise the form would post

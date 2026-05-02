@@ -5045,4 +5045,89 @@ defmodule IdeajarWeb.IdeaLive.IndexTest do
       assert app_js =~ "Geolocation"
     end
   end
+
+  describe "user location handlers (slice 7b step 6)" do
+    test "mount initialises user_lat / user_lng / user_location_name to nil",
+         %{conn: conn} do
+      view = mount_authenticated(conn)
+      assigns = :sys.get_state(view.pid).socket.assigns
+
+      assert assigns.user_lat == nil
+      assert assigns.user_lng == nil
+      assert assigns.user_location_name == nil
+    end
+
+    test "set_user_location with valid coords sets the three assigns + canonical IT name",
+         %{conn: conn} do
+      view = mount_authenticated(conn)
+
+      render_hook(view, "set_user_location", %{"lat" => 43.6, "lng" => 13.5})
+
+      assigns = :sys.get_state(view.pid).socket.assigns
+      assert assigns.user_lat == 43.6
+      assert assigns.user_lng == 13.5
+      assert assigns.user_location_name == "La mia posizione"
+    end
+
+    test "user_location_denied with reason permission_denied flashes the canonical IT message",
+         %{conn: conn} do
+      view = mount_authenticated(conn)
+
+      render_hook(view, "user_location_denied", %{"reason" => "permission_denied"})
+
+      assert render(view) =~ "Permesso di geolocalizzazione negato"
+    end
+
+    test "user_location_denied with reason timeout flashes the generic IT message",
+         %{conn: conn} do
+      view = mount_authenticated(conn)
+      render_hook(view, "user_location_denied", %{"reason" => "timeout"})
+
+      assert render(view) =~ "Posizione non disponibile, riprova"
+    end
+
+    test "user_location_denied with reason unavailable flashes the generic IT message",
+         %{conn: conn} do
+      view = mount_authenticated(conn)
+      render_hook(view, "user_location_denied", %{"reason" => "unavailable"})
+
+      assert render(view) =~ "Posizione non disponibile, riprova"
+    end
+
+    test "user_location_denied with reason unsupported flashes the generic IT message",
+         %{conn: conn} do
+      view = mount_authenticated(conn)
+      render_hook(view, "user_location_denied", %{"reason" => "unsupported"})
+
+      assert render(view) =~ "Posizione non disponibile, riprova"
+    end
+
+    # Hostile uniform list S1 — eight malformed payloads. Each must
+    # leave the LV process alive AND the three user_* assigns at nil.
+    test "set_user_location is a no-op for non-numeric, out-of-range, missing, and non-binary payloads",
+         %{conn: conn} do
+      view = mount_authenticated(conn)
+
+      hostile = [
+        %{"lat" => "abc", "lng" => 13.6},
+        %{"lat" => 91.0, "lng" => 13.6},
+        %{"lat" => -91.0, "lng" => 13.6},
+        %{"lat" => 43.5, "lng" => 181.0},
+        %{"lat" => 43.5, "lng" => -181.0},
+        %{},
+        %{"lat" => [], "lng" => 13.6},
+        %{"lat" => 43.5}
+      ]
+
+      Enum.each(hostile, fn params ->
+        render_hook(view, "set_user_location", params)
+      end)
+
+      assigns = :sys.get_state(view.pid).socket.assigns
+      assert assigns.user_lat == nil
+      assert assigns.user_lng == nil
+      assert assigns.user_location_name == nil
+      assert Process.alive?(view.pid)
+    end
+  end
 end
