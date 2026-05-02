@@ -293,15 +293,7 @@
         </button>
       </div>
       <button
-        :if={
-          filter_active?(
-            @filter_state,
-            @duration_filter,
-            @cost_filter,
-            @max_distance_index,
-            @user_lat
-          ) and @ideas != []
-        }
+        :if={filter_active?(assigns) and @ideas != []}
         id="mostra-tutte"
         type="button"
         phx-click="clear_filters"
@@ -312,32 +304,14 @@
     </section>
 
     <p
-      :if={
-        @ideas == [] and
-          not filter_active?(
-            @filter_state,
-            @duration_filter,
-            @cost_filter,
-            @max_distance_index,
-            @user_lat
-          )
-      }
+      :if={@ideas == [] and not filter_active?(assigns)}
       class="text-base-content/70"
     >
       Nessuna idea ancora. Aggiungine una qui sopra.
     </p>
 
     <div
-      :if={
-        @ideas == [] and
-          filter_active?(
-            @filter_state,
-            @duration_filter,
-            @cost_filter,
-            @max_distance_index,
-            @user_lat
-          )
-      }
+      :if={@ideas == [] and filter_active?(assigns)}
       data-testid="empty-filter-state"
       class="rounded-box border border-base-300 p-4 space-y-3"
     >

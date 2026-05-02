@@ -874,28 +874,24 @@ defmodule IdeajarWeb.IdeaLive.Index do
   end
 
   @doc """
-  Returns true when at least one filter is active across categories
-  (`@filter_state`), durations (`@duration_filter`) or budget (`@cost_filter`).
-  Used by the template to decide whether to render the `Mostra tutte`
-  reset button and the empty-filter message.
+  Returns true when at least one filter axis is active. Used by the
+  template to decide whether to render the `Mostra tutte` reset button
+  and the empty-filter message.
 
-  Slice 5 step 6 extended this from `/1` (categoria-only) to `/2` (categoria
-  + durata). Slice 6 step 8 extends to `/3` (categoria + durata + budget)
-  so the empty-filter affordance fires even when the only active filter
-  is on budget. The arity change is pinned in slice 6 step 9.
+  Arity history: slice 4 `/1`, slice 5 `/2`, slice 6 `/3`, slice 7b `/5`,
+  slice 8 `/1` socket-based (DD-S8-7). The `/1` shape pattern-matches
+  the assigns map at the call site so adding a new axis is a body change,
+  not a signature change. Behavior-preserving refactor; the text-search
+  axis was added to the body in slice 8 step 5.
   """
-  def filter_active?(filter_state, duration_filter, cost_filter) do
-    filter_state != %{} or MapSet.size(duration_filter) > 0 or not is_nil(cost_filter)
-  end
-
-  @doc """
-  Slice 7b step 8 — extends `filter_active?/3` with the distance axis.
-  Distance is "active" when a reference point is set OR the slider is
-  moved off index 0. Either condition is enough to surface `Mostra
-  tutte` so the user can clear it.
-  """
-  def filter_active?(filter_state, duration_filter, cost_filter, max_distance_index, user_lat) do
-    filter_active?(filter_state, duration_filter, cost_filter) or
+  def filter_active?(%{
+        filter_state: filter_state,
+        duration_filter: duration_filter,
+        cost_filter: cost_filter,
+        max_distance_index: max_distance_index,
+        user_lat: user_lat
+      }) do
+    filter_state != %{} or MapSet.size(duration_filter) > 0 or not is_nil(cost_filter) or
       max_distance_index > 0 or not is_nil(user_lat)
   end
 

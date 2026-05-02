@@ -4164,24 +4164,15 @@ defmodule IdeajarWeb.IdeaLive.IndexTest do
       assert assigns.filter_state == %{}
     end
 
-    # 12. Strategic W2 — pin the arity change of `filter_active?`. After
-    # slice 6 step 8 the helper is `/3` (categoria + durata + budget); the
-    # `/2` form was deleted in the same step. This test makes the change
-    # explicit so a future regression that re-introduces `/2` (or drops
-    # an argument from a template call site) fails loudly here in
-    # addition to the HEEx compile error.
-    test "filter_active?/3 is exported and /2 is not (arity regression pin)" do
-      assert function_exported?(IdeajarWeb.IdeaLive.Index, :filter_active?, 3)
-      refute function_exported?(IdeajarWeb.IdeaLive.Index, :filter_active?, 2)
-    end
-
-    # Slice 7b step 8: extending to /5 to include max_distance_index +
-    # user_lat in the active-filter check (so `Mostra tutte` shows up
-    # when distance is the only active filter). Same regression-pin
-    # rationale as the /3 ↔ /2 transition.
-    test "filter_active?/5 is exported and /4 is not (arity regression pin, slice 7b)" do
-      assert function_exported?(IdeajarWeb.IdeaLive.Index, :filter_active?, 5)
-      refute function_exported?(IdeajarWeb.IdeaLive.Index, :filter_active?, 4)
+    # 12. Strategic W2 — pin the arity of `filter_active?`. Arity history:
+    # slice 4 `/1`, slice 5 `/2`, slice 6 `/3`, slice 7b `/5`, slice 8
+    # `/1` socket-based (DD-S8-7). Pinning the current shape and the
+    # disappearance of the legacy positional shapes prevents a future
+    # regression from re-introducing them.
+    test "filter_active?/1 socket-based is exported; legacy /3 + /5 are not" do
+      assert function_exported?(IdeajarWeb.IdeaLive.Index, :filter_active?, 1)
+      refute function_exported?(IdeajarWeb.IdeaLive.Index, :filter_active?, 3)
+      refute function_exported?(IdeajarWeb.IdeaLive.Index, :filter_active?, 5)
     end
   end
 
@@ -5915,6 +5906,57 @@ defmodule IdeajarWeb.IdeaLive.IndexTest do
 
       assigns = :sys.get_state(view.pid).socket.assigns
       assert assigns.text_search_query == ""
+    end
+  end
+
+  describe "filter_active? refactor /5 → /1 (slice 8 step 4 — DD-S8-7)" do
+    # Slice 7b extended filter_active?/3 → /5 (adding max_distance_index
+    # + user_lat). Slice 8 collapses /5 → /1 socket-based BEFORE adding
+    # the 6th text-search axis. This step is a behavior-preserving
+    # refactor: tests pin the new arity, the disappearance of /5, and
+    # invariance of the boolean output across all 5 existing axes.
+
+    test "filter_active?/1 is exported and /5 is not (arity regression pin)" do
+      assert function_exported?(IdeajarWeb.IdeaLive.Index, :filter_active?, 1)
+      refute function_exported?(IdeajarWeb.IdeaLive.Index, :filter_active?, 5)
+    end
+
+    test "behavior-preservation: all-inactive assigns → false", %{conn: conn} do
+      view = mount_authenticated(conn)
+      assigns = :sys.get_state(view.pid).socket.assigns
+
+      refute IdeajarWeb.IdeaLive.Index.filter_active?(assigns)
+    end
+
+    test "behavior-preservation: any single axis active → true", %{conn: conn} do
+      view = mount_authenticated(conn)
+      base = :sys.get_state(view.pid).socket.assigns
+
+      # category active
+      assert IdeajarWeb.IdeaLive.Index.filter_active?(%{base | filter_state: %{1 => :required}})
+      # duration active
+      assert IdeajarWeb.IdeaLive.Index.filter_active?(%{
+               base
+               | duration_filter: MapSet.new([:weekend])
+             })
+
+      # cost active
+      assert IdeajarWeb.IdeaLive.Index.filter_active?(%{base | cost_filter: 100})
+      # distance index > 0
+      assert IdeajarWeb.IdeaLive.Index.filter_active?(%{base | max_distance_index: 3})
+      # reference point set
+      assert IdeajarWeb.IdeaLive.Index.filter_active?(%{base | user_lat: 43.5})
+    end
+
+    test "step 4 invariant: text_search_query alone does NOT yet make filter active",
+         %{conn: conn} do
+      # Step 4 is a pure refactor — the text axis is added to the body
+      # in step 5. Pinning that step 4 leaves text_search out of the
+      # active-filter check.
+      view = mount_authenticated(conn)
+      base = :sys.get_state(view.pid).socket.assigns
+
+      refute IdeajarWeb.IdeaLive.Index.filter_active?(%{base | text_search_query: "mar"})
     end
   end
 end
