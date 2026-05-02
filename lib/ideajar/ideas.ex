@@ -49,6 +49,16 @@ defmodule Ideajar.Ideas do
       AND estimated_cost IS NOT NULL` are returned (NULL-exclude uniforme
       con AA7). `nil` (or omitting the opt) leaves NULL-cost ideas in
       the result.
+    * `:max_distance_km` — `integer | nil`, great-circle radius cap (slice 7b).
+      Coordinated with `:ref_lat`/`:ref_lng`. When all three are given,
+      keeps only ideas with non-nil `lat`/`lng` and great-circle distance
+      ≤ `max_distance_km` from the reference point. Any of the three
+      being `nil` makes the clause inactive (NULL-coord ideas pass
+      through). Implemented in the post-query layer (`Filter.apply_post/2`)
+      because SQLite has no native Haversine without optional math
+      extensions.
+    * `:ref_lat` — `float | nil`, paired with `:max_distance_km`/`:ref_lng`.
+    * `:ref_lng` — `float | nil`, paired with `:max_distance_km`/`:ref_lat`.
 
   `list_ideas/0` and `list_ideas([])` are equivalent (regression-pinned).
   """
@@ -63,6 +73,7 @@ defmodule Ideajar.Ideas do
     |> build_query()
     |> Repo.all()
     |> Repo.preload(categories: Categories.preload_query())
+    |> Filter.apply_post(opts)
   end
 
   @doc false

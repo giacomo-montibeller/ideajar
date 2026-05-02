@@ -1300,6 +1300,226 @@ defmodule Ideajar.IdeasTest do
     end
   end
 
+  describe "list_ideas/1 with :max_distance_km/:ref_lat/:ref_lng opts (slice 7b step 4)" do
+    # Seven ideas around Sirolo, AN baseline. Mix of priced/unpriced + with-
+    # and without-coords cases so we can pin DM9-DM11, NULL-exclude under
+    # active distance filter, the post-query ordering invariant, and the
+    # 5-way combined-AND composition (categoria × durata × budget ×
+    # distanza × ref point).
+    defp seed_7_ideas_with_coords do
+      %{
+        sirolo:
+          insert_idea_full!(
+            "Sirolo",
+            [by_name("mare"), by_name("viaggio")],
+            :weekend,
+            200,
+            43.5,
+            13.6,
+            ~U[2026-04-27 10:00:00Z]
+          ),
+        ancona:
+          insert_idea_full!(
+            "Ancona",
+            [by_name("museo"), by_name("cultura")],
+            :giornata,
+            50,
+            43.6,
+            13.5,
+            ~U[2026-04-27 10:01:00Z]
+          ),
+        roma:
+          insert_idea_full!(
+            "Roma",
+            [by_name("cultura"), by_name("museo")],
+            :weekend,
+            500,
+            41.9,
+            12.5,
+            ~U[2026-04-27 10:02:00Z]
+          ),
+        parigi:
+          insert_idea_full!(
+            "Parigi",
+            [by_name("viaggio"), by_name("cultura")],
+            :piu_giorni,
+            1000,
+            48.85,
+            2.35,
+            ~U[2026-04-27 10:03:00Z]
+          ),
+        senza_coords:
+          insert_idea_full!(
+            "Senza coords",
+            [by_name("mare")],
+            :weekend,
+            100,
+            nil,
+            nil,
+            ~U[2026-04-27 10:04:00Z]
+          ),
+        solo_lat:
+          insert_idea_full!(
+            "Solo lat",
+            [by_name("mare")],
+            :weekend,
+            100,
+            43.5,
+            nil,
+            ~U[2026-04-27 10:05:00Z]
+          ),
+        solo_lng:
+          insert_idea_full!(
+            "Solo lng",
+            [by_name("mare")],
+            :weekend,
+            100,
+            nil,
+            13.6,
+            ~U[2026-04-27 10:06:00Z]
+          )
+      }
+    end
+
+    test "DM9 regression: list_ideas([]) returns every idea, NULL coords included" do
+      _ = seed_7_ideas_with_coords()
+
+      titles = Ideas.list_ideas([]) |> Enum.map(& &1.title)
+
+      assert "Sirolo" in titles
+      assert "Ancona" in titles
+      assert "Roma" in titles
+      assert "Parigi" in titles
+      assert "Senza coords" in titles
+      assert "Solo lat" in titles
+      assert "Solo lng" in titles
+    end
+
+    test "DM10: max_distance_km: 50 + ref Sirolo → only ideas within 50 km AND non-nil coords" do
+      _ = seed_7_ideas_with_coords()
+
+      titles =
+        Ideas.list_ideas(max_distance_km: 50, ref_lat: 43.5, ref_lng: 13.6)
+        |> Enum.map(& &1.title)
+
+      assert "Sirolo" in titles
+      assert "Ancona" in titles
+      refute "Roma" in titles
+      refute "Parigi" in titles
+      refute "Senza coords" in titles
+      refute "Solo lat" in titles
+      refute "Solo lng" in titles
+    end
+
+    test "DM11 5-way combined AND: required + durations + max_cost + max_distance_km + ref" do
+      _ = seed_7_ideas_with_coords()
+      mare = by_name("mare").id
+
+      # required: mare AND durations: weekend AND max_cost: 300 AND distance ≤ 50 km from Sirolo
+      # Sirolo (43.5,13.6) — mare ✓ weekend ✓ 200€ ≤ 300 ✓ 0 km ≤ 50 ✓ → IN
+      # Ancona — museo+cultura (no mare) → OUT
+      # Roma — cultura+museo (no mare) → OUT
+      # Parigi — viaggio+cultura (no mare) → OUT
+      # Senza coords — mare ✓ weekend ✓ 100€ ✓ but NULL coords → OUT (NULL-exclude)
+      # Solo lat / Solo lng — NULL coords → OUT
+      titles =
+        Ideas.list_ideas(
+          required: [mare],
+          durations: [:weekend],
+          max_cost: 300,
+          max_distance_km: 50,
+          ref_lat: 43.5,
+          ref_lng: 13.6
+        )
+        |> Enum.map(& &1.title)
+
+      assert titles == ["Sirolo"]
+    end
+
+    test "ref_lat or ref_lng nil → distance opt no-ops (DD5)" do
+      _ = seed_7_ideas_with_coords()
+
+      no_ref_lat =
+        Ideas.list_ideas(max_distance_km: 5, ref_lat: nil, ref_lng: 13.6)
+        |> length()
+
+      no_ref_lng =
+        Ideas.list_ideas(max_distance_km: 5, ref_lat: 43.5, ref_lng: nil)
+        |> length()
+
+      empty = Ideas.list_ideas([]) |> length()
+
+      assert no_ref_lat == empty
+      assert no_ref_lng == empty
+    end
+
+    test "O3 SQL-emission regression: max_cost-only query is unchanged by slice 7b" do
+      # Slice 6 pinned the SQL shape for `:max_cost`. Slice 7b's distance
+      # opt lives in `apply_post/2` (post-query, in-memory) and MUST NOT
+      # touch the SQL emitted by `apply/2`. This regression pin guards
+      # against a future maintainer accidentally moving the distance
+      # filter into the query layer.
+      query = Ideas.build_query(max_cost: 100, max_distance_km: 50, ref_lat: 43.5, ref_lng: 13.6)
+      {sql, _params} = Repo.to_sql(:all, query)
+
+      assert sql =~ ~r/"estimated_cost"\s+<=/i
+
+      # WHERE clause must NOT reference lat/lng columns (they belong to
+      # the post-query layer). The SELECT projection MAY name them
+      # because SELECT * unfolds the schema columns — the assertion
+      # below isolates the WHERE clause and pins distance-free SQL.
+      where_clause =
+        case Regex.run(~r/WHERE\s+(.*?)\s+ORDER BY/is, sql) do
+          [_, captured] -> captured
+          _ -> ""
+        end
+
+      refute where_clause =~ ~r/"lat"/i
+      refute where_clause =~ ~r/"lng"/i
+      refute where_clause =~ ~r/distance/i
+    end
+
+    test "ordering invariant: inserted_at DESC, id DESC preserved post-apply_post" do
+      _ = seed_7_ideas_with_coords()
+
+      # max_distance_km big enough to pass everyone with coords, ref Sirolo.
+      result =
+        Ideas.list_ideas(max_distance_km: 1_000_000, ref_lat: 43.5, ref_lng: 13.6)
+
+      titles = Enum.map(result, & &1.title)
+
+      # Seeded inserted_at ordering (newest first):
+      # Solo lng (10:06) — but NULL-excluded
+      # Solo lat (10:05) — NULL-excluded
+      # Senza coords (10:04) — NULL-excluded
+      # Parigi (10:03)
+      # Roma (10:02)
+      # Ancona (10:01)
+      # Sirolo (10:00)
+      assert titles == ["Parigi", "Roma", "Ancona", "Sirolo"]
+    end
+  end
+
+  defp insert_idea_full!(title, cats, duration, cost, lat, lng, %DateTime{} = at) do
+    idea =
+      %Idea{
+        title: title,
+        duration: duration,
+        estimated_cost: cost,
+        lat: lat,
+        lng: lng,
+        location_name: title
+      }
+      |> Ecto.Changeset.change()
+      |> Ecto.Changeset.put_assoc(:categories, cats)
+      |> Repo.insert!()
+
+    Repo.update!(
+      Ecto.Changeset.change(idea, inserted_at: at, updated_at: at),
+      force: true
+    )
+  end
+
   defp insert_idea_with_categories!(title, cats, %DateTime{} = at) do
     idea =
       %Idea{title: title}
