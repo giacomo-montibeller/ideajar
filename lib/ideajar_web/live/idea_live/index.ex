@@ -188,51 +188,6 @@ defmodule IdeajarWeb.IdeaLive.Index do
     end
   end
 
-  # `phx-change` on a form-bound input sends the full form params shape
-  # (`%{"idea" => %{"location_name" => "..."}}`), while direct
-  # `render_hook/render_change` test dispatches use the bare `%{"name" => "..."}`
-  # shape. We accept both so production typing works AND the slice-7a-step-4
-  # hostile-uniform-list tests keep passing. Hostile/missing payloads return
-  # `:error` and trigger the no-op catchall.
-  defp extract_location_name(%{"idea" => %{"location_name" => name}}) when is_binary(name),
-    do: {:ok, name}
-
-  defp extract_location_name(%{"name" => name}) when is_binary(name), do: {:ok, name}
-  defp extract_location_name(_), do: :error
-
-  defp apply_location_name_change(socket, name) do
-    socket =
-      socket
-      |> assign(:selected_location_name, name)
-      |> maybe_clear_coords_on_text_change()
-
-    case String.trim(name) do
-      trimmed when byte_size(trimmed) < 3 ->
-        {:noreply, reset_location_search(socket)}
-
-      trimmed ->
-        case Ideajar.Geocoding.search(trimmed) do
-          {:ok, []} ->
-            {:noreply,
-             socket
-             |> assign(:location_search_results, [])
-             |> assign(:location_search_state, :empty)}
-
-          {:ok, results} ->
-            {:noreply,
-             socket
-             |> assign(:location_search_results, results)
-             |> assign(:location_search_state, :results)}
-
-          {:error, :service_unavailable} ->
-            {:noreply,
-             socket
-             |> reset_location_search()
-             |> put_flash(:error, "Ricerca non disponibile, riprova")}
-        end
-    end
-  end
-
   # Slice 7a iter2 — selecting a result from the search dropdown.
   # Defensive parse of lat/lng (string → float) plus range validation
   # ([-90, 90] / [-180, 180]). Hostile or out-of-range payloads no-op.
@@ -384,6 +339,51 @@ defmodule IdeajarWeb.IdeaLive.Index do
     |> create_idea_fun()
     |> apply([attrs_with_location])
     |> handle_save_result(socket, attrs)
+  end
+
+  # `phx-change` on a form-bound input sends the full form params shape
+  # (`%{"idea" => %{"location_name" => "..."}}`), while direct
+  # `render_hook/render_change` test dispatches use the bare `%{"name" => "..."}`
+  # shape. We accept both so production typing works AND the slice-7a-step-4
+  # hostile-uniform-list tests keep passing. Hostile/missing payloads return
+  # `:error` and trigger the no-op catchall.
+  defp extract_location_name(%{"idea" => %{"location_name" => name}}) when is_binary(name),
+    do: {:ok, name}
+
+  defp extract_location_name(%{"name" => name}) when is_binary(name), do: {:ok, name}
+  defp extract_location_name(_), do: :error
+
+  defp apply_location_name_change(socket, name) do
+    socket =
+      socket
+      |> assign(:selected_location_name, name)
+      |> maybe_clear_coords_on_text_change()
+
+    case String.trim(name) do
+      trimmed when byte_size(trimmed) < 3 ->
+        {:noreply, reset_location_search(socket)}
+
+      trimmed ->
+        case Ideajar.Geocoding.search(trimmed) do
+          {:ok, []} ->
+            {:noreply,
+             socket
+             |> assign(:location_search_results, [])
+             |> assign(:location_search_state, :empty)}
+
+          {:ok, results} ->
+            {:noreply,
+             socket
+             |> assign(:location_search_results, results)
+             |> assign(:location_search_state, :results)}
+
+          {:error, :service_unavailable} ->
+            {:noreply,
+             socket
+             |> reset_location_search()
+             |> put_flash(:error, "Ricerca non disponibile, riprova")}
+        end
+    end
   end
 
   # Slice 5: inject the chip-derived duration into the form params.
