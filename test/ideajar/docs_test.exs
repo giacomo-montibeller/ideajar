@@ -425,4 +425,48 @@ defmodule Ideajar.DocsTest do
       assert content =~ "slice 7b"
     end
   end
+
+  describe "docs/conventions.md — slice 8 UI copy" do
+    setup do
+      {:ok, content: File.read!(Path.join(File.cwd!(), "docs/conventions.md"))}
+    end
+
+    test "all slice-8 text-search UI strings appear verbatim", %{content: content} do
+      needles = [
+        "Filtra per testo",
+        "La ricerca trova le idee con la parola in titolo o descrizione.",
+        "Cerca idee",
+        "Rimuovi filtro testo"
+      ]
+
+      for needle <- needles do
+        assert content =~ needle, "missing slice-8 UI copy in conventions.md: #{needle}"
+      end
+    end
+  end
+
+  describe "CONTEXT.md — slice 8 text-search NULL exception + implemented marker" do
+    setup do
+      {:ok, content: File.read!(Path.join(File.cwd!(), "CONTEXT.md"))}
+    end
+
+    test "the NULL-exclude decision documents the text-search exception",
+         %{content: content} do
+      # Slice 8 deviates from the uniform NULL-exclude pattern by
+      # letting NULL-description ideas pass when title matches.
+      assert content =~ ~r/eccezione documentata.*filtro testo/is or
+               content =~ ~r/text-search/i or
+               content =~ ~r/text\s+filter/i
+
+      # The OR semantics is mentioned.
+      assert content =~ ~r/title LIKE.*OR.*description LIKE/is or
+               content =~ ~r/semantica `OR`/is
+    end
+
+    test "filtri section marks Ricerca testuale as implemented (slice 8)",
+         %{content: content} do
+      assert content =~ "Ricerca testuale"
+      assert content =~ "slice 8"
+    end
+  end
 end

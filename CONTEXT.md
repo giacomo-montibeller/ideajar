@@ -82,7 +82,11 @@ Modificabili tramite seed/migration in fase di rilascio.
    - LiveView hook `Geolocation` (~30 LOC) per inviare coordinate al server
    - Calcolo Haversine in Elixir nel modulo `Ideajar.Ideas.Distance.km/4` (con poche centinaia di idee è istantaneo)
    - Filtro implementato come post-query in `Ideajar.Ideas.Filter.apply_post/2` (SQLite no Haversine native senza estensioni math)
-5. **Ricerca testuale** — su `title` + `description`
+5. **Ricerca testuale** (slice 8 — implementato) — su `title` + `description`
+   - SQLite `LIKE %q%` case-insensitive con `LOWER()` su entrambi i lati
+   - Wildcards `%`, `_`, `\` in input escapate a literal characters
+   - Min query 3 chars (parallel slice 7a/7b)
+   - phx-debounce 300ms (live filtering)
 
 ## Decisione su filtri non applicabili
 
@@ -90,7 +94,7 @@ Per i filtri **durata** (slice 5), **budget** (slice 6) e **distanza** (slice 7b
 
 Per il filtro distanza la regola si applica così: index slider 0 = filtro inattivo, NULL passa; index 1-6 = filtro attivo, idee con `lat: nil` o `lng: nil` escluse. Index 6 ("oltre 1000 km") differisce da index 0 SOLO per il NULL treatment.
 
-Per filtri futuri (`text search` slice 8) la decisione sarà rivalutata caso per caso, ma il default è NULL-exclude.
+**Eccezione documentata — filtro testo (slice 8)**: per la ricerca testuale la semantica `OR` naturale prevale (`title LIKE q OR description LIKE q`). Idee con `description = nil` ma `title` matchante PASSANO. Razionale: il text filter è "trova le idee che contengono X"; una description NULL non contribuisce al match ma non penalizza l'idea (a differenza di durata/budget/distanza dove NULL = "informazione mancante = non confermo match"). Il NULL-exclude verrebbe applicato esplicitamente solo se il sistema decidesse di richiedere description per ogni idea — non è il caso.
 
 ## Punti di forza dell'approccio LiveView per questo caso d'uso
 - I filtri (categoria × durata × costo × distanza × testo) si compongono server-side sulla stessa query Ecto.

@@ -178,6 +178,16 @@ Stringhe aggiunte in slice 7b (distance filter on ideas):
 | Flash error generico geolocation               | `Posizione non disponibile, riprova`                                         |
 | Flash error ricerca punto di partenza non disponibile | `Ricerca non disponibile, riprova`                                    |
 
+Stringhe aggiunte in slice 8 (text search on ideas):
+
+| Elemento                                       | Testo IT                                                                     |
+|------------------------------------------------|------------------------------------------------------------------------------|
+| Sub-label visibile filtro Testo                | `Testo`                                                                      |
+| Aria-label sub-block (screen reader)           | `Filtra per testo`                                                           |
+| Helper text NULL-exception                     | `La ricerca trova le idee con la parola in titolo o descrizione.`            |
+| Placeholder text input                         | `Cerca idee`                                                                 |
+| Bottone rimuovi filtro testo                   | `Rimuovi filtro testo`                                                       |
+
 Nuova copy aggiunta da slice future va appesa qui per evitare drift.
 
 ## Architettura
