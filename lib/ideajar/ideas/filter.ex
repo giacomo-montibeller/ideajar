@@ -86,6 +86,7 @@ defmodule Ideajar.Ideas.Filter do
     |> apply_optional(Keyword.get(opts, :optional, []))
     |> apply_durations(Keyword.get(opts, :durations, []))
     |> apply_max_cost(Keyword.get(opts, :max_cost, nil))
+    |> apply_text_search(Keyword.get(opts, :text_search, nil))
   end
 
   # AND clause: an idea passes only if every required category id is
@@ -151,6 +152,68 @@ defmodule Ideajar.Ideas.Filter do
   defp apply_max_cost(query, max) when is_integer(max) do
     from i in query,
       where: i.estimated_cost <= ^max and not is_nil(i.estimated_cost)
+  end
+
+  # Slice 8 — text-search clause. Case-insensitive substring match on
+  # title OR description. Active only for binaries of ≥ 3 chars (server-
+  # side authoritative; UI may also debounce/min-length, but this guard
+  # is the contract).
+  #
+  # ## NULL-description exception (DD-S8-4)
+  #
+  # Slice 5 (durata), 6 (budget), 7b (distanza) uniformly EXCLUDE NULL-
+  # field ideas when their filter is active. Slice 8 is the documented
+  # exception: a NULL `description` does not auto-exclude an idea — the
+  # match can still happen on `title`. Implementation: `description IS
+  # NOT NULL AND LOWER(description) LIKE ...` is gated explicitly so
+  # the SQL three-valued logic is unambiguous, while `title` (NOT NULL
+  # in the schema) needs no such guard. The two predicates are joined
+  # with `OR` so a title-only match still passes.
+  #
+  # ## LIKE wildcard escape (DD-S8-3)
+  #
+  # User input is wrapped in `%...%` to behave as a substring search.
+  # Literal `%`, `_`, and `\` characters in the input are escaped via
+  # `escape_like/1` and the SQL `ESCAPE '\'` clause so they remain
+  # literal characters and do NOT bypass the substring semantics.
+  # Without this, a user typing `%` would match every idea.
+  #
+  # ## Elixir → SQL byte mapping (DD-S8-2, iter1 review B1 fix)
+  #
+  # Elixir source `"\\"` is 1 byte runtime `\`. SQLite ESCAPE requires
+  # exactly 1 byte. The fragment template uses Elixir source
+  # `"ESCAPE '\\'"` (4 chars: `'`, `\`, `\`, `'`) which produces SQL
+  # `ESCAPE '\'` (escape char is the single byte `\`). Do NOT use
+  # `"ESCAPE '\\\\'"` — that produces SQL `ESCAPE '\\'` (2 bytes) and
+  # SQLite raises `ESCAPE expression must be a single character`.
+  defp apply_text_search(query, nil), do: query
+
+  defp apply_text_search(query, q) when is_binary(q) and byte_size(q) < 3, do: query
+
+  defp apply_text_search(query, q) when is_binary(q) do
+    pattern = "%" <> escape_like(q) <> "%"
+
+    from i in query,
+      where:
+        fragment("LOWER(?) LIKE LOWER(?) ESCAPE '\\'", i.title, ^pattern) or
+          fragment(
+            "? IS NOT NULL AND LOWER(?) LIKE LOWER(?) ESCAPE '\\'",
+            i.description,
+            i.description,
+            ^pattern
+          )
+  end
+
+  defp apply_text_search(query, _), do: query
+
+  # Escape order matters: `\` must be escaped first so that the
+  # backslash-prefixed forms produced for `%` and `_` are NOT
+  # double-escaped.
+  defp escape_like(s) when is_binary(s) do
+    s
+    |> String.replace("\\", "\\\\")
+    |> String.replace("%", "\\%")
+    |> String.replace("_", "\\_")
   end
 
   @doc """

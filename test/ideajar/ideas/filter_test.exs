@@ -291,4 +291,168 @@ defmodule Ideajar.Ideas.FilterTest do
       assert ids == Enum.sort([cheap.id, boundary.id])
     end
   end
+
+  describe "apply/2 — :text_search clause (slice 8)" do
+    # Text-search filter on title + description. Case-insensitive LIKE
+    # with literal-character escape for `%`, `_`, `\`. NULL-description
+    # ideas pass through if title matches (DD-S8-4 documented exception
+    # to the slice 5/6/7b uniform NULL-exclude pattern).
+
+    defp insert_idea_with_title_desc!(title, desc, %DateTime{} = at) do
+      mare = by_name("mare")
+
+      idea =
+        %Idea{title: title, description: desc}
+        |> Ecto.Changeset.change()
+        |> Ecto.Changeset.put_assoc(:categories, [mare])
+        |> Repo.insert!()
+
+      Repo.update!(
+        Ecto.Changeset.change(idea, inserted_at: at, updated_at: at),
+        force: true
+      )
+    end
+
+    test "text_search: nil returns the query unchanged (clause inactive)" do
+      query = base_query()
+
+      assert Repo.to_sql(:all, Filter.apply(query, text_search: nil)) ==
+               Repo.to_sql(:all, query)
+    end
+
+    test "text_search: \"\" empty string is a no-op (< 3 chars)" do
+      query = base_query()
+
+      assert Repo.to_sql(:all, Filter.apply(query, text_search: "")) ==
+               Repo.to_sql(:all, query)
+    end
+
+    test "text_search: \"ma\" (< 3 chars) is a no-op" do
+      query = base_query()
+
+      assert Repo.to_sql(:all, Filter.apply(query, text_search: "ma")) ==
+               Repo.to_sql(:all, query)
+    end
+
+    test "text_search: \"mar\" emits LOWER LIKE LOWER ESCAPE '\\' on title + description" do
+      # SQL emission pin (DM3, B1 fix iter1). Elixir source `"\\"` is 1
+      # byte runtime `\`; Elixir source `"\\\\"` is 2 byte runtime `\\`.
+      # SQLite ESCAPE requires exactly 1 byte. The fragment template
+      # uses `"ESCAPE '\\'"` (Elixir source 4 chars: ' \ \ ') producing
+      # SQL byte sequence `ESCAPE '\'` (1 byte escape char). The regex
+      # below uses Elixir source `\\` to match the 1-byte runtime `\`.
+      query = base_query()
+      {sql, params} = Repo.to_sql(:all, Filter.apply(query, text_search: "mar"))
+
+      assert sql =~ ~r/LOWER\(.*?\) LIKE LOWER\(.*?\) ESCAPE '\\'/
+      # Description clause must include the IS NOT NULL guard (DD-S8-4).
+      assert sql =~ ~r/IS NOT NULL.*LIKE/is
+
+      # The pattern is parametrised — `%mar%` literal substring with
+      # wildcards wrapping. No SQL injection surface.
+      assert "%mar%" in params
+    end
+
+    test "text_search: 123 (non-binary) is a no-op (defensive)" do
+      query = base_query()
+
+      assert Repo.to_sql(:all, Filter.apply(query, text_search: 123)) ==
+               Repo.to_sql(:all, query)
+    end
+
+    test "DB roundtrip: text_search matches title or description, case-insensitive, NULL desc passes if title matches" do
+      a = insert_idea_with_title_desc!("Sirolo", "Mare bellissimo", ~U[2026-04-27 10:00:00Z])
+      b = insert_idea_with_title_desc!("Uffizi", "Galleria di Firenze", ~U[2026-04-27 10:01:00Z])
+      c = insert_idea_with_title_desc!("Picnic improvviso", nil, ~U[2026-04-27 10:02:00Z])
+      d = insert_idea_with_title_desc!("MARE in tempesta", nil, ~U[2026-04-27 10:03:00Z])
+
+      # Lowercase query → case-insensitive match on both title and
+      # description; NULL-description "MARE in tempesta" matches via
+      # title; NULL-description "Picnic improvviso" excluded (neither
+      # field matches "mare").
+      ids =
+        base_query()
+        |> Filter.apply(text_search: "mare")
+        |> Repo.all()
+        |> Enum.map(& &1.id)
+        |> Enum.sort()
+
+      assert ids == Enum.sort([a.id, d.id])
+      refute b.id in ids
+      refute c.id in ids
+    end
+
+    test "case-insensitive: query MARE matches title 'sirolo' description 'mare bellissimo'" do
+      _ = insert_idea_with_title_desc!("Sirolo", "mare bellissimo", ~U[2026-04-27 10:00:00Z])
+
+      ids =
+        base_query()
+        |> Filter.apply(text_search: "MARE")
+        |> Repo.all()
+        |> Enum.map(& &1.id)
+
+      assert length(ids) == 1
+    end
+
+    test "LIKE wildcard escape: query \"%\" treats it as literal, only ideas containing literal % match" do
+      # Without escape, `%` would be an SQL wildcard matching every
+      # row. With escape, only ideas whose title or description
+      # contains a literal `%` character pass.
+      with_pct = insert_idea_with_title_desc!("Sale 50% off", nil, ~U[2026-04-27 10:00:00Z])
+      _no_pct = insert_idea_with_title_desc!("Senza simboli", nil, ~U[2026-04-27 10:01:00Z])
+
+      ids =
+        base_query()
+        |> Filter.apply(text_search: "50%")
+        |> Repo.all()
+        |> Enum.map(& &1.id)
+
+      assert ids == [with_pct.id]
+    end
+
+    test "LIKE wildcard escape: query \"a_b\" treats `_` as literal" do
+      with_underscore =
+        insert_idea_with_title_desc!("test_a_b_test", nil, ~U[2026-04-27 10:00:00Z])
+
+      _without =
+        insert_idea_with_title_desc!("test axb test", nil, ~U[2026-04-27 10:01:00Z])
+
+      ids =
+        base_query()
+        |> Filter.apply(text_search: "a_b")
+        |> Repo.all()
+        |> Enum.map(& &1.id)
+
+      assert ids == [with_underscore.id]
+    end
+
+    test "LIKE escape character: query containing literal \\ is treated as literal char" do
+      # Elixir runtime: "\\foo" is 4 bytes: \ f o o.
+      with_backslash = insert_idea_with_title_desc!("\\foo", nil, ~U[2026-04-27 10:00:00Z])
+      _without = insert_idea_with_title_desc!("foo", nil, ~U[2026-04-27 10:01:00Z])
+
+      ids =
+        base_query()
+        |> Filter.apply(text_search: "\\foo")
+        |> Repo.all()
+        |> Enum.map(& &1.id)
+
+      assert ids == [with_backslash.id]
+    end
+
+    test "description-only match: title doesn't match but description does → idea returned" do
+      a =
+        insert_idea_with_title_desc!("Concerto rock", "Stadio Olimpico", ~U[2026-04-27 10:00:00Z])
+
+      _b = insert_idea_with_title_desc!("Sirolo", "Mare bellissimo", ~U[2026-04-27 10:01:00Z])
+
+      ids =
+        base_query()
+        |> Filter.apply(text_search: "stadio")
+        |> Repo.all()
+        |> Enum.map(& &1.id)
+
+      assert ids == [a.id]
+    end
+  end
 end
