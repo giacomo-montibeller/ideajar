@@ -1500,6 +1500,134 @@ defmodule Ideajar.IdeasTest do
     end
   end
 
+  describe "list_ideas/1 with :text_search opt (slice 8 step 2)" do
+    defp seed_ideas_with_text! do
+      mare = by_name("mare")
+
+      a =
+        %Idea{title: "Sirolo", description: "Mare bellissimo, spiaggia bianca"}
+        |> Ecto.Changeset.change()
+        |> Ecto.Changeset.put_assoc(:categories, [mare])
+        |> Repo.insert!()
+
+      b =
+        %Idea{title: "Uffizi", description: "Galleria di Firenze"}
+        |> Ecto.Changeset.change()
+        |> Ecto.Changeset.put_assoc(:categories, [mare])
+        |> Repo.insert!()
+
+      c =
+        %Idea{title: "Picnic improvviso", description: nil}
+        |> Ecto.Changeset.change()
+        |> Ecto.Changeset.put_assoc(:categories, [mare])
+        |> Repo.insert!()
+
+      d =
+        %Idea{title: "MARE in tempesta", description: nil}
+        |> Ecto.Changeset.change()
+        |> Ecto.Changeset.put_assoc(:categories, [mare])
+        |> Repo.insert!()
+
+      %{a: a, b: b, c: c, d: d}
+    end
+
+    test "DM5 regression: list_ideas([]) unchanged by slice 8" do
+      _ = seed_ideas_with_text!()
+      titles = Ideas.list_ideas([]) |> Enum.map(& &1.title)
+
+      assert "Sirolo" in titles
+      assert "Uffizi" in titles
+      assert "Picnic improvviso" in titles
+      assert "MARE in tempesta" in titles
+    end
+
+    test "text_search nil → all ideas (regression equivalence with [])" do
+      _ = seed_ideas_with_text!()
+
+      assert length(Ideas.list_ideas(text_search: nil)) ==
+               length(Ideas.list_ideas([]))
+    end
+
+    test "text_search < 3 chars → all ideas (filter inactive)" do
+      _ = seed_ideas_with_text!()
+
+      assert length(Ideas.list_ideas(text_search: "ma")) ==
+               length(Ideas.list_ideas([]))
+    end
+
+    test "DM6 text_search 'mare' → only matching ideas (Sirolo desc + MARE title)" do
+      ideas = seed_ideas_with_text!()
+      titles = Ideas.list_ideas(text_search: "mare") |> Enum.map(& &1.title)
+
+      assert "Sirolo" in titles
+      assert "MARE in tempesta" in titles
+      refute "Uffizi" in titles
+      refute "Picnic improvviso" in titles
+      _ = ideas
+    end
+
+    test "F8 NULL description: title 'Picnic improvviso' matches when desc nil" do
+      _ = seed_ideas_with_text!()
+      titles = Ideas.list_ideas(text_search: "picnic") |> Enum.map(& &1.title)
+
+      assert "Picnic improvviso" in titles
+    end
+
+    test "DM7 6-way combined AND: required + durations + max_cost + max_distance + ref + text_search" do
+      mare = by_name("mare")
+
+      _matching =
+        %Idea{
+          title: "Mare a Sirolo",
+          description: "Spiaggia bianca",
+          duration: :weekend,
+          estimated_cost: 100,
+          lat: 43.5,
+          lng: 13.6
+        }
+        |> Ecto.Changeset.change()
+        |> Ecto.Changeset.put_assoc(:categories, [mare])
+        |> Repo.insert!()
+
+      _wrong_text =
+        %Idea{
+          title: "Pizza in terrazza",
+          description: "Cena estiva",
+          duration: :weekend,
+          estimated_cost: 100,
+          lat: 43.5,
+          lng: 13.6
+        }
+        |> Ecto.Changeset.change()
+        |> Ecto.Changeset.put_assoc(:categories, [mare])
+        |> Repo.insert!()
+
+      titles =
+        Ideas.list_ideas(
+          required: [mare.id],
+          durations: [:weekend],
+          max_cost: 500,
+          max_distance_km: 50,
+          ref_lat: 43.5,
+          ref_lng: 13.6,
+          text_search: "spiaggia"
+        )
+        |> Enum.map(& &1.title)
+
+      assert titles == ["Mare a Sirolo"]
+    end
+
+    test "O4 SQL emission pin: build_query(text_search: 'mar') contains LIKE clauses; nil does not" do
+      query_with = Ideas.build_query(text_search: "mar")
+      {sql_with, _} = Repo.to_sql(:all, query_with)
+      assert sql_with =~ ~r/LIKE/i
+
+      query_without = Ideas.build_query(text_search: nil)
+      {sql_without, _} = Repo.to_sql(:all, query_without)
+      refute sql_without =~ ~r/LIKE/i
+    end
+  end
+
   defp insert_idea_full!(title, cats, duration, cost, lat, lng, %DateTime{} = at) do
     idea =
       %Idea{

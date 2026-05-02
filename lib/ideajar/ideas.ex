@@ -59,6 +59,12 @@ defmodule Ideajar.Ideas do
       extensions.
     * `:ref_lat` — `float | nil`, paired with `:max_distance_km`/`:ref_lng`.
     * `:ref_lng` — `float | nil`, paired with `:max_distance_km`/`:ref_lat`.
+    * `:text_search` — `String.t() | nil`, case-insensitive substring on
+      `title` OR `description` (slice 8). Inactive when `nil` or shorter
+      than 3 chars. NULL-`description` ideas still match if their title
+      matches — documented exception to the slice 5/6/7b uniform
+      NULL-exclude pattern (DD-S8-4). LIKE wildcards `%`/`_`/`\` in user
+      input are escaped to literal characters via `escape_like/1`.
 
   `list_ideas/0` and `list_ideas([])` are equivalent (regression-pinned).
   """
