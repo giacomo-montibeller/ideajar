@@ -68,4 +68,23 @@ defmodule Ideajar.Ideas.Budget do
   """
   @spec label(non_neg_integer) :: String.t()
   def label(value) when value in @values, do: Map.fetch!(@labels, value)
+
+  @index_to_value %{1 => 0, 2 => 20, 3 => 50, 4 => 100, 5 => 200, 6 => 500, 7 => 1000}
+
+  @doc """
+  Slice 9 — mappa l'index del budget slider 0..7 al valore canonical
+  integer. Index 0 → `nil` (filter inactive / form unspecified).
+  Index 1..7 → integer in `[0, 20, 50, 100, 200, 500, 1000]`.
+
+  Out-of-range integer e qualsiasi altro tipo (binary, atom, float, ecc.)
+  → `nil` (safe-fallback). NON solleva, NON ritorna `:error`. Il return
+  type contract è `integer | nil` puro così che ogni caller (es.
+  `derive_filter_opts/1`, `maybe_inject_budget/2`) possa passare il
+  risultato direttamente a `Filter.apply_max_cost/2` o `Map.put/3` senza
+  case-on-:error guards.
+  """
+  @spec index_to_value(any) :: integer | nil
+  def index_to_value(0), do: nil
+  def index_to_value(n) when is_integer(n) and n in 1..7, do: Map.fetch!(@index_to_value, n)
+  def index_to_value(_), do: nil
 end

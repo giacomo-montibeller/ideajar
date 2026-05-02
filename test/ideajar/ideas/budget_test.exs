@@ -51,6 +51,48 @@ defmodule Ideajar.Ideas.BudgetTest do
     end
   end
 
+  describe "index_to_value/1 (slice 9)" do
+    test "index 0 → nil (filter inactive / form unspecified)" do
+      assert Budget.index_to_value(0) == nil
+    end
+
+    test "indices 1..7 map to canonical integers in order" do
+      assert Budget.index_to_value(1) == 0
+      assert Budget.index_to_value(2) == 20
+      assert Budget.index_to_value(3) == 50
+      assert Budget.index_to_value(4) == 100
+      assert Budget.index_to_value(5) == 200
+      assert Budget.index_to_value(6) == 500
+      assert Budget.index_to_value(7) == 1000
+    end
+
+    test "out-of-range integers clamp to nil (NOT :error)" do
+      assert Budget.index_to_value(-1) == nil
+      assert Budget.index_to_value(8) == nil
+      assert Budget.index_to_value(99) == nil
+      assert Budget.index_to_value(-999) == nil
+    end
+
+    test "non-integer inputs clamp to nil (safe-fallback)" do
+      assert Budget.index_to_value("abc") == nil
+      assert Budget.index_to_value(:atom) == nil
+      assert Budget.index_to_value(nil) == nil
+      assert Budget.index_to_value(3.5) == nil
+      assert Budget.index_to_value([]) == nil
+    end
+
+    test "type contract pin (DM3a): return is integer | nil, never :error" do
+      Enum.each([-1, 0, 1, 4, 7, 8, 99, "abc", nil, :atom], fn input ->
+        result = Budget.index_to_value(input)
+
+        assert is_integer(result) or is_nil(result),
+               "expected integer | nil for #{inspect(input)}, got #{inspect(result)}"
+
+        refute result == :error
+      end)
+    end
+  end
+
   describe "label/1" do
     test "labels 0 as 'gratis'" do
       assert Budget.label(0) == "gratis"
