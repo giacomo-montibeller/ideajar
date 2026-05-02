@@ -721,6 +721,7 @@ defmodule IdeajarWeb.IdeaLive.Index do
     socket
     |> assign(:user_location_search_results, [])
     |> assign(:user_location_search_state, :idle)
+    |> assign(:user_location_search_query, "")
   end
 
   # Multi-shape extractor for the filter search input. Mirrors slice 7a
@@ -736,9 +737,16 @@ defmodule IdeajarWeb.IdeaLive.Index do
   defp extract_user_location_name(_), do: :error
 
   defp apply_user_location_search(socket, name) do
+    # Always mirror the typed text into `@user_location_search_query` so
+    # re-renders don't reset the input's `value` attribute back to "".
+    socket = assign(socket, :user_location_search_query, name)
+
     case String.trim(name) do
       trimmed when byte_size(trimmed) < 3 ->
-        {:noreply, reset_user_location_search(socket)}
+        {:noreply,
+         socket
+         |> assign(:user_location_search_results, [])
+         |> assign(:user_location_search_state, :idle)}
 
       trimmed ->
         case Ideajar.Geocoding.search(trimmed) do

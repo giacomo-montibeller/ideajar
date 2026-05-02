@@ -122,11 +122,15 @@ defmodule IdeajarWeb.IdeaLive.IndexTest do
       assert html =~ "Nessuna idea ancora. Aggiungine una qui sopra."
     end
 
-    # Scenario: Add-idea form is collapsed by default
+    # Scenario: Add-idea form is collapsed by default. Slice 7b step 8
+    # added two filter forms in the distance sub-block (search input +
+    # slider), which are unrelated to the add-idea form gated on
+    # `@form_visible?`. The assertion below targets the add-idea form
+    # specifically (id="idea-form" + the "Salva" submit button).
     test "does not render the form on first mount", %{conn: conn} do
       assert {:ok, _view, html} = live_isolated(conn, Index, session: @authenticated_session)
 
-      refute html =~ ~s(<form)
+      refute html =~ ~s(id="idea-form")
       refute html =~ "Salva"
     end
 
@@ -5356,6 +5360,65 @@ defmodule IdeajarWeb.IdeaLive.IndexTest do
       assert assigns.user_location_search_state == :results
       assert length(assigns.user_location_search_results) == 1
     end
+
+    # Browser-context regression pin: `view |> form(selector, ...)` only
+    # resolves when the input is inside a `<form>` element with that id.
+    # `render_hook/3` bypasses the browser's form-context requirement,
+    # so the unit tests above stayed green even when the filter inputs
+    # were bare (and `phx-change` therefore never fired in real browsers).
+    # This pin guards both the form wrapper AND the form-shape param flow.
+    test "filter search form wraps the input so phx-change fires in real browsers",
+         %{conn: conn} do
+      view = mount_authenticated(conn)
+
+      user_search_stub_results!(view, [
+        %{"display_name" => "Roma, RM", "lat" => "41.9", "lon" => "12.5"}
+      ])
+
+      view
+      |> form("#filter-distance-search-form", filter: %{user_location_name: "roma"})
+      |> render_change()
+
+      assigns = :sys.get_state(view.pid).socket.assigns
+      assert assigns.user_location_search_state == :results
+    end
+
+    test "@user_location_search_query tracks the typed text so re-renders don't reset the input",
+         %{conn: conn} do
+      view = mount_authenticated(conn)
+
+      user_search_stub_results!(view, [
+        %{"display_name" => "Roma, RM", "lat" => "41.9", "lon" => "12.5"}
+      ])
+
+      render_hook(view, "update_user_location_name", %{"name" => "roma"})
+
+      assigns = :sys.get_state(view.pid).socket.assigns
+      assert assigns.user_location_search_query == "roma"
+
+      html = render(view)
+      assert html =~ ~s(value="roma")
+    end
+
+    test "select_user_location clears @user_location_search_query so the input empties",
+         %{conn: conn} do
+      view = mount_authenticated(conn)
+
+      user_search_stub_results!(view, [
+        %{"display_name" => "Roma, RM", "lat" => "41.9", "lon" => "12.5"}
+      ])
+
+      render_hook(view, "update_user_location_name", %{"name" => "roma"})
+
+      render_hook(view, "select_user_location", %{
+        "name" => "Roma, RM",
+        "lat" => "41.9",
+        "lng" => "12.5"
+      })
+
+      assigns = :sys.get_state(view.pid).socket.assigns
+      assert assigns.user_location_search_query == ""
+    end
   end
 
   describe "distance filter sub-block (slice 7b step 8)" do
@@ -5496,6 +5559,19 @@ defmodule IdeajarWeb.IdeaLive.IndexTest do
 
       html = render(view)
       assert html =~ ~s(aria-valuetext="oltre 1000 km")
+    end
+
+    test "slider form wraps the range input so phx-change fires in real browsers",
+         %{conn: conn} do
+      view = mount_authenticated(conn)
+      render_hook(view, "set_user_location", %{"lat" => 43.5, "lng" => 13.6})
+
+      view
+      |> form("#filter-distance-slider-form", value: "3")
+      |> render_change()
+
+      assigns = :sys.get_state(view.pid).socket.assigns
+      assert assigns.max_distance_index == 3
     end
 
     test "update_max_distance hostile uniform list → no-op (DD9)",
