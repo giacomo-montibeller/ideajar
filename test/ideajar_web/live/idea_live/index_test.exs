@@ -1244,16 +1244,27 @@ defmodule IdeajarWeb.IdeaLive.IndexTest do
     end
   end
 
-  # ── Slice 4 Step 9 / Slice 5 Step 6 / Slice 6 Step 8 (BB18): out-of-scope guard ──
-  # Slice 5 step 6 introduced `Durata`; slice 6 step 8 introduces `Budget`
-  # legitimately (filter sub-block label, form legend, badge, helper text). The
-  # negative list narrows further to the still-out-of-scope features
-  # (`Distanza`, `Cerca`). We also add positive assertions that BOTH `Durata`
-  # and `Budget` are visible filter sub-block labels.
-  describe "out-of-scope guard (slice 4 A13 + slice 5 AA13 + slice 6 BB18)" do
-    test "no Distanza/Cerca filter UI strings appear", %{conn: conn} do
+  # ── Slice 4 A13 / Slice 5 AA13 / Slice 6 BB18 / Slice 7b D5: out-of-scope guard ──
+  # Slice 5 step 6 introduced `Durata`; slice 6 step 8 introduces `Budget`;
+  # slice 7b step 8 introduces `Distanza` legitimately (filter sub-block
+  # label, helper texts, slider valuetext) AND the SCOPED string
+  # `Cerca punto di partenza` as the placeholder of the reference-point
+  # search input. The guard now narrows to slice 8's still-out-of-scope
+  # text-search filter. Positive assertions pin all four sub-block labels.
+  describe "out-of-scope guard (slice 4 A13 / 5 AA13 / 6 BB18 / 7b D5)" do
+    test "scoped 'Cerca punto di partenza' is the only Cerca-* string in the render",
+         %{conn: conn} do
       {:ok, _view, html} = live_isolated(conn, Index, session: @authenticated_session)
-      refute html =~ ~r/Distanza|Cerca/i
+
+      # The only legitimate `Cerca` string in slice 7b is the filter
+      # placeholder. Slice 8 (text search) would add another one and is
+      # currently out of scope.
+      assert html =~ "Cerca punto di partenza"
+
+      # Strip the legitimate slice-7b string and ensure no other
+      # `Cerca…` string survives.
+      stripped = String.replace(html, "Cerca punto di partenza", "")
+      refute stripped =~ ~r/Cerca/i
     end
 
     test "Durata appears as a visible sub-block label in the filter row",
@@ -1266,6 +1277,12 @@ defmodule IdeajarWeb.IdeaLive.IndexTest do
          %{conn: conn} do
       {:ok, _view, html} = live_isolated(conn, Index, session: @authenticated_session)
       assert html =~ ~r{<p[^>]*class="[^"]*text-xs[^"]*"[^>]*>\s*Budget\s*</p>}
+    end
+
+    test "Distanza appears as a visible sub-block label in the filter row (slice 7b D5)",
+         %{conn: conn} do
+      {:ok, _view, html} = live_isolated(conn, Index, session: @authenticated_session)
+      assert html =~ ~r{<p[^>]*class="[^"]*text-xs[^"]*"[^>]*>\s*Distanza\s*</p>}
     end
   end
 
@@ -4153,6 +4170,15 @@ defmodule IdeajarWeb.IdeaLive.IndexTest do
       assert function_exported?(IdeajarWeb.IdeaLive.Index, :filter_active?, 3)
       refute function_exported?(IdeajarWeb.IdeaLive.Index, :filter_active?, 2)
     end
+
+    # Slice 7b step 8: extending to /5 to include max_distance_index +
+    # user_lat in the active-filter check (so `Mostra tutte` shows up
+    # when distance is the only active filter). Same regression-pin
+    # rationale as the /3 ↔ /2 transition.
+    test "filter_active?/5 is exported and /4 is not (arity regression pin, slice 7b)" do
+      assert function_exported?(IdeajarWeb.IdeaLive.Index, :filter_active?, 5)
+      refute function_exported?(IdeajarWeb.IdeaLive.Index, :filter_active?, 4)
+    end
   end
 
   # ── Slice 7a step 4: form Posizione fieldset, text input, LV handlers ──
@@ -5306,6 +5332,254 @@ defmodule IdeajarWeb.IdeaLive.IndexTest do
       assigns = :sys.get_state(view.pid).socket.assigns
       assert assigns.user_location_search_state == :idle
       assert Process.alive?(view.pid)
+    end
+  end
+
+  describe "distance filter sub-block (slice 7b step 8)" do
+    test "renders the role=group sub-block with aria-label after Budget",
+         %{conn: conn} do
+      view = mount_authenticated(conn)
+      html = render(view)
+
+      assert html =~ ~s(role="group" aria-label="Filtra per distanza")
+
+      [_, after_budget] = String.split(html, ~s(aria-label="Filtra per budget"), parts: 2)
+      assert after_budget =~ ~s(aria-label="Filtra per distanza")
+    end
+
+    test "mount: @max_distance_index defaults to 0", %{conn: conn} do
+      view = mount_authenticated(conn)
+      assigns = :sys.get_state(view.pid).socket.assigns
+      assert assigns.max_distance_index == 0
+    end
+
+    test "renders the slider with the full ARIA contract on mount (A1)",
+         %{conn: conn} do
+      view = mount_authenticated(conn)
+      html = render(view)
+
+      assert html =~ ~s(type="range")
+      assert html =~ ~s(min="0")
+      assert html =~ ~s(max="6")
+      assert html =~ ~s(aria-valuemin="0")
+      assert html =~ ~s(aria-valuemax="6")
+      assert html =~ ~s(aria-valuenow="0")
+      assert html =~ ~s(aria-valuetext="Disattivo")
+    end
+
+    test "slider is disabled and aria-disabled when no reference point is set",
+         %{conn: conn} do
+      view = mount_authenticated(conn)
+      html = render(view)
+
+      [slider_html] = Regex.run(~r/<input[^>]*type="range"[^>]*>/, html)
+
+      assert slider_html =~ "disabled"
+      assert slider_html =~ ~s(aria-disabled="true")
+    end
+
+    test "renders the helper text instructing to set a reference point when @user_lat is nil",
+         %{conn: conn} do
+      view = mount_authenticated(conn)
+      html = render(view)
+
+      assert html =~ "Imposta un punto di riferimento per usare il filtro distanza"
+    end
+
+    # DD13 combined-state pin — the disabled slider AND the helper text
+    # must coexist in the same render call. Two separate tests assert
+    # them individually, but the contract is "both together when no
+    # reference point is set".
+    test "DD13 combined-state: when @user_lat is nil, slider has disabled AND helper text is rendered",
+         %{conn: conn} do
+      view = mount_authenticated(conn)
+      html = render(view)
+
+      [slider_html] = Regex.run(~r/<input[^>]*type="range"[^>]*>/, html)
+      assert slider_html =~ "disabled"
+      assert slider_html =~ ~s(aria-disabled="true")
+      assert html =~ "Imposta un punto di riferimento per usare il filtro distanza"
+    end
+
+    test "always renders the NULL-exclude helper text in the sub-block (DD14)",
+         %{conn: conn} do
+      view = mount_authenticated(conn)
+      html = render(view)
+
+      assert html =~ "Le idee senza posizione sono nascoste quando un filtro è attivo."
+    end
+
+    test "renders the geolocation button with phx-hook=Geolocation",
+         %{conn: conn} do
+      view = mount_authenticated(conn)
+      html = render(view)
+
+      assert html =~ ~s(phx-hook="Geolocation")
+      assert html =~ "Usa la mia posizione"
+    end
+
+    test "renders the LocationSearchInput with the filter event names + IT placeholder",
+         %{conn: conn} do
+      view = mount_authenticated(conn)
+      html = render(view)
+
+      assert html =~ ~s(phx-change="update_user_location_name")
+      assert html =~ ~s(phx-click-away="dismiss_user_location_search")
+      assert html =~ ~s(placeholder="Cerca punto di partenza")
+    end
+
+    test "after set_user_location, slider becomes enabled and aria-disabled=false",
+         %{conn: conn} do
+      view = mount_authenticated(conn)
+
+      render_hook(view, "set_user_location", %{"lat" => 43.5, "lng" => 13.6})
+
+      html = render(view)
+      [slider_html] = Regex.run(~r/<input[^>]*type="range"[^>]*>/, html)
+
+      refute slider_html =~ ~r/\sdisabled[\s>]/
+      assert slider_html =~ ~s(aria-disabled="false")
+    end
+
+    test "after set_user_location, the 'Punto di riferimento: La mia posizione' label appears",
+         %{conn: conn} do
+      view = mount_authenticated(conn)
+      render_hook(view, "set_user_location", %{"lat" => 43.5, "lng" => 13.6})
+
+      html = render(view)
+      assert html =~ "Punto di riferimento: La mia posizione"
+    end
+
+    test "update_max_distance with value '3' assigns @max_distance_index 3 + aria-valuetext = 'fino a 50 km'",
+         %{conn: conn} do
+      view = mount_authenticated(conn)
+      render_hook(view, "set_user_location", %{"lat" => 43.5, "lng" => 13.6})
+
+      render_hook(view, "update_max_distance", %{"value" => "3"})
+
+      assigns = :sys.get_state(view.pid).socket.assigns
+      assert assigns.max_distance_index == 3
+
+      html = render(view)
+      assert html =~ ~s(aria-valuenow="3")
+      assert html =~ ~s(aria-valuetext="fino a 50 km")
+    end
+
+    test "update_max_distance index 6 → aria-valuetext = 'oltre 1000 km'",
+         %{conn: conn} do
+      view = mount_authenticated(conn)
+      render_hook(view, "set_user_location", %{"lat" => 43.5, "lng" => 13.6})
+      render_hook(view, "update_max_distance", %{"value" => "6"})
+
+      html = render(view)
+      assert html =~ ~s(aria-valuetext="oltre 1000 km")
+    end
+
+    test "update_max_distance hostile uniform list → no-op (DD9)",
+         %{conn: conn} do
+      view = mount_authenticated(conn)
+      render_hook(view, "set_user_location", %{"lat" => 43.5, "lng" => 13.6})
+
+      hostile = [
+        %{"value" => "abc"},
+        %{"value" => "-1"},
+        %{"value" => "7"},
+        %{"value" => "3.5"},
+        %{}
+      ]
+
+      Enum.each(hostile, fn p ->
+        render_hook(view, "update_max_distance", p)
+      end)
+
+      assigns = :sys.get_state(view.pid).socket.assigns
+      assert assigns.max_distance_index == 0
+      assert Process.alive?(view.pid)
+    end
+
+    test "renders the touch-target CSS rule for the slider thumb (A8)" do
+      app_css = File.read!(Path.join(File.cwd!(), "assets/css/app.css"))
+
+      assert app_css =~ "::-webkit-slider-thumb"
+      assert app_css =~ "::-moz-range-thumb"
+    end
+
+    test "filter row sub-block source order: Categorie → Durata → Budget → Distanza (F19)",
+         %{conn: conn} do
+      view = mount_authenticated(conn)
+      html = render(view)
+
+      cat_pos = :binary.match(html, "Filtra per categoria") |> elem(0)
+      dur_pos = :binary.match(html, "Filtra per durata") |> elem(0)
+      bud_pos = :binary.match(html, "Filtra per budget") |> elem(0)
+      dist_pos = :binary.match(html, "Filtra per distanza") |> elem(0)
+
+      assert cat_pos < dur_pos
+      assert dur_pos < bud_pos
+      assert bud_pos < dist_pos
+    end
+  end
+
+  describe "distance filter integration with list_ideas (slice 7b step 8 GREEN)" do
+    defp seed_idea_with_coords!(title, lat, lng) do
+      mare = Ideajar.Repo.get_by!(Ideajar.Categories.Category, name: "mare")
+
+      %Ideajar.Ideas.Idea{
+        title: title,
+        lat: lat,
+        lng: lng,
+        location_name: title,
+        duration: :weekend,
+        estimated_cost: 100
+      }
+      |> Ecto.Changeset.change()
+      |> Ecto.Changeset.put_assoc(:categories, [mare])
+      |> Ideajar.Repo.insert!()
+    end
+
+    test "F11: slider index 0 + ref point + mix coords/NULL ideas → render shows all (NULL passes)",
+         %{conn: conn} do
+      seed_idea_with_coords!("Sirolo", 43.5, 13.6)
+      seed_idea_with_coords!("Senza coords", nil, nil)
+
+      view = mount_authenticated(conn)
+      render_hook(view, "set_user_location", %{"lat" => 43.5, "lng" => 13.6})
+
+      html = render(view)
+      assert html =~ "Sirolo"
+      assert html =~ "Senza coords"
+    end
+
+    test "F12: slider index 1 (5km) + ref Sirolo → only ideas within 5 km, NULL excluded",
+         %{conn: conn} do
+      seed_idea_with_coords!("Sirolo", 43.5, 13.6)
+      seed_idea_with_coords!("Roma", 41.9, 12.5)
+      seed_idea_with_coords!("Senza coords", nil, nil)
+
+      view = mount_authenticated(conn)
+      render_hook(view, "set_user_location", %{"lat" => 43.5, "lng" => 13.6})
+      render_hook(view, "update_max_distance", %{"value" => "1"})
+
+      html = render(view)
+      assert html =~ "Sirolo"
+      refute html =~ "Roma"
+      refute html =~ "Senza coords"
+    end
+
+    test "F13: slider index 6 + ref Sirolo → all ideas with coords, NULL excluded",
+         %{conn: conn} do
+      seed_idea_with_coords!("Sirolo", 43.5, 13.6)
+      seed_idea_with_coords!("Roma", 41.9, 12.5)
+      seed_idea_with_coords!("Senza coords", nil, nil)
+
+      view = mount_authenticated(conn)
+      render_hook(view, "set_user_location", %{"lat" => 43.5, "lng" => 13.6})
+      render_hook(view, "update_max_distance", %{"value" => "6"})
+
+      html = render(view)
+      assert html =~ "Sirolo"
+      assert html =~ "Roma"
+      refute html =~ "Senza coords"
     end
   end
 end

@@ -199,8 +199,80 @@
           tabindex={if idx == 0, do: 0, else: -1}
         />
       </div>
+      <p class="text-xs">Distanza</p>
+      <p class="text-xs text-base-content/70">
+        Le idee senza posizione sono nascoste quando un filtro è attivo.
+      </p>
+      <div
+        id="filter-distance-group"
+        role="group"
+        aria-label="Filtra per distanza"
+        class="space-y-2"
+      >
+        <div class="flex flex-col gap-2 sm:flex-row sm:items-center">
+          <button
+            id="user-location-button"
+            type="button"
+            phx-hook="Geolocation"
+            class="btn btn-sm min-h-11 min-w-11"
+          >
+            <span aria-hidden="true">📍</span> Usa la mia posizione
+          </button>
+          <.location_search_input
+            id="filter-location-search"
+            name="filter[user_location_name]"
+            name_value=""
+            placeholder="Cerca punto di partenza"
+            search_results={@user_location_search_results}
+            search_state={@user_location_search_state}
+            on_change_event="update_user_location_name"
+            on_select_event="select_user_location"
+            on_dismiss_event="dismiss_user_location_search"
+          />
+        </div>
+
+        <p :if={is_nil(@user_lat)} class="text-xs text-base-content/70">
+          Imposta un punto di riferimento per usare il filtro distanza
+        </p>
+
+        <p :if={not is_nil(@user_lat)} class="text-sm">
+          Punto di riferimento: {@user_location_name}
+        </p>
+
+        <input
+          type="range"
+          id="filter-distance-slider"
+          min="0"
+          max="6"
+          step="1"
+          value={@max_distance_index}
+          phx-change="update_max_distance"
+          phx-debounce="200"
+          name="value"
+          disabled={is_nil(@user_lat)}
+          aria-disabled={if is_nil(@user_lat), do: "true", else: "false"}
+          aria-valuemin="0"
+          aria-valuemax="6"
+          aria-valuenow={@max_distance_index}
+          aria-valuetext={distance_label(@max_distance_index)}
+          class={[
+            "range range-sm w-full",
+            is_nil(@user_lat) && "opacity-50 cursor-not-allowed"
+          ]}
+        />
+
+        <p class="text-sm">Distanza: {distance_label(@max_distance_index)}</p>
+      </div>
       <button
-        :if={filter_active?(@filter_state, @duration_filter, @cost_filter) and @ideas != []}
+        :if={
+          filter_active?(
+            @filter_state,
+            @duration_filter,
+            @cost_filter,
+            @max_distance_index,
+            @user_lat
+          ) and @ideas != []
+        }
         id="mostra-tutte"
         type="button"
         phx-click="clear_filters"
@@ -211,14 +283,32 @@
     </section>
 
     <p
-      :if={@ideas == [] and not filter_active?(@filter_state, @duration_filter, @cost_filter)}
+      :if={
+        @ideas == [] and
+          not filter_active?(
+            @filter_state,
+            @duration_filter,
+            @cost_filter,
+            @max_distance_index,
+            @user_lat
+          )
+      }
       class="text-base-content/70"
     >
       Nessuna idea ancora. Aggiungine una qui sopra.
     </p>
 
     <div
-      :if={@ideas == [] and filter_active?(@filter_state, @duration_filter, @cost_filter)}
+      :if={
+        @ideas == [] and
+          filter_active?(
+            @filter_state,
+            @duration_filter,
+            @cost_filter,
+            @max_distance_index,
+            @user_lat
+          )
+      }
       data-testid="empty-filter-state"
       class="rounded-box border border-base-300 p-4 space-y-3"
     >

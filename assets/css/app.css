@@ -103,3 +103,25 @@
 [data-phx-session], [data-phx-teleported-src] { display: contents }
 
 /* This file is for your main application CSS */
+
+/* Slice 7b — distance filter slider. The mobile touch target for the
+   thumb must be ≥ 44×44 px (A8). daisyUI's `.range` defaults to a
+   smaller thumb on mobile, so we override the WebKit + Mozilla pseudo-
+   elements explicitly. The track height is also bumped to keep the
+   visual proportions sane. */
+input[type="range"]#filter-distance-slider::-webkit-slider-thumb {
+  width: 44px;
+  height: 44px;
+  border-radius: 50%;
+}
+
+input[type="range"]#filter-distance-slider::-moz-range-thumb {
+  width: 44px;
+  height: 44px;
+  border-radius: 50%;
+  border: none;
+}
+
+input[type="range"]#filter-distance-slider {
+  height: 12px;
+}

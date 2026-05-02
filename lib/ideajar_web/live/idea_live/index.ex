@@ -45,6 +45,31 @@ defmodule IdeajarWeb.IdeaLive.Index do
   alias IdeajarWeb.Components.DurationChip
   alias IdeajarWeb.Components.LocationBadge
 
+  # Slice 7b step 8 — slider step indices ↔ km mapping. Indices 0-6
+  # are the only valid values; index 0 means "filter inactive" (NULL-
+  # coord ideas pass through); index 6 means "no upper cap" with
+  # NULL-coord ideas STILL excluded (the only difference between 0 and
+  # 6 is the NULL treatment, DD4).
+  @distance_steps %{
+    0 => nil,
+    1 => 5,
+    2 => 25,
+    3 => 50,
+    4 => 200,
+    5 => 500,
+    6 => 1_000_000
+  }
+
+  @distance_labels %{
+    0 => "Disattivo",
+    1 => "fino a 5 km",
+    2 => "fino a 25 km",
+    3 => "fino a 50 km",
+    4 => "fino a 200 km",
+    5 => "fino a 500 km",
+    6 => "oltre 1000 km"
+  }
+
   @impl Phoenix.LiveView
   def mount(_params, %{"authenticated" => true}, socket) do
     {:ok,
@@ -60,6 +85,7 @@ defmodule IdeajarWeb.IdeaLive.Index do
      |> reset_location()
      |> reset_location_search()
      |> reset_user_location()
+     |> assign(:max_distance_index, 0)
      |> assign_form()
      |> reload_ideas()}
   end
@@ -318,6 +344,8 @@ defmodule IdeajarWeb.IdeaLive.Index do
      |> assign(:filter_state, %{})
      |> assign(:duration_filter, MapSet.new())
      |> assign(:cost_filter, nil)
+     |> reset_user_location()
+     |> reset_distance_filter()
      |> reload_ideas()}
   end
 
@@ -405,6 +433,22 @@ defmodule IdeajarWeb.IdeaLive.Index do
   def handle_event("dismiss_user_location_search", _params, socket) do
     {:noreply, reset_user_location_search(socket)}
   end
+
+  # Slice 7b step 8 — slider drag → server-side index commit. `phx-
+  # change` on the HTML5 range input ships the value as a string. We
+  # parse to an integer in [0, 6] and reject anything else (DD9
+  # hostile uniform list: "abc", "-1", "7", "3.5", missing key).
+  def handle_event("update_max_distance", %{"value" => raw}, socket) when is_binary(raw) do
+    case Integer.parse(raw) do
+      {n, ""} when n >= 0 and n <= 6 ->
+        {:noreply, socket |> assign(:max_distance_index, n) |> reload_ideas()}
+
+      _ ->
+        {:noreply, socket}
+    end
+  end
+
+  def handle_event("update_max_distance", _params, socket), do: {:noreply, socket}
 
   def handle_event("save", %{"idea" => attrs}, socket) do
     attrs_with_categories =
@@ -638,6 +682,12 @@ defmodule IdeajarWeb.IdeaLive.Index do
     |> reset_user_location_search()
   end
 
+  # Slice 7b step 8 — slider state reset (DD10). Used by `clear_filters`,
+  # `remove_distance_filter` (step 9), and `remove_user_location` (step 9
+  # cascade). Keeping the helper centralised guarantees a single source
+  # of truth for "filter inactive".
+  defp reset_distance_filter(socket), do: assign(socket, :max_distance_index, 0)
+
   # Slice 7b step 7 — search dropdown state for the filter side. Two
   # assigns parallel to the slice-7a-iter2 form pattern but scoped to
   # the filter's reference-point picker.
@@ -711,17 +761,25 @@ defmodule IdeajarWeb.IdeaLive.Index do
   # underlying ideas (cycle, clear, save, toggle_duration_filter,
   # toggle_budget_filter).
   defp reload_ideas(socket) do
-    opts =
-      derive_filter_opts(
-        socket.assigns.filter_state,
-        socket.assigns.duration_filter,
-        socket.assigns.cost_filter
-      )
-
-    assign(socket, :ideas, Ideas.list_ideas(opts))
+    assign(socket, :ideas, Ideas.list_ideas(derive_filter_opts(socket)))
   end
 
-  defp derive_filter_opts(filter_state, duration_filter, cost_filter) do
+  # Slice 7b step 8 (DD12 refactor) — collapsed `derive_filter_opts/3`
+  # to `/1` taking the socket directly. Reading every assign at the
+  # call site keeps the signature stable as more filter axes are
+  # added (slice 8 text search would push to /5+ with the old shape).
+  defp derive_filter_opts(socket) do
+    %{
+      assigns: %{
+        filter_state: filter_state,
+        duration_filter: duration_filter,
+        cost_filter: cost_filter,
+        max_distance_index: max_distance_index,
+        user_lat: user_lat,
+        user_lng: user_lng
+      }
+    } = socket
+
     filter_state
     |> Enum.reduce([required: [], optional: []], fn
       {id, :required}, acc -> Keyword.update!(acc, :required, &[id | &1])
@@ -729,6 +787,9 @@ defmodule IdeajarWeb.IdeaLive.Index do
     end)
     |> Keyword.put(:durations, MapSet.to_list(duration_filter))
     |> Keyword.put(:max_cost, cost_filter)
+    |> Keyword.put(:max_distance_km, distance_max_km(max_distance_index))
+    |> Keyword.put(:ref_lat, user_lat)
+    |> Keyword.put(:ref_lng, user_lng)
   end
 
   @doc """
@@ -745,6 +806,29 @@ defmodule IdeajarWeb.IdeaLive.Index do
   def filter_active?(filter_state, duration_filter, cost_filter) do
     filter_state != %{} or MapSet.size(duration_filter) > 0 or not is_nil(cost_filter)
   end
+
+  @doc """
+  Slice 7b step 8 — extends `filter_active?/3` with the distance axis.
+  Distance is "active" when a reference point is set OR the slider is
+  moved off index 0. Either condition is enough to surface `Mostra
+  tutte` so the user can clear it.
+  """
+  def filter_active?(filter_state, duration_filter, cost_filter, max_distance_index, user_lat) do
+    filter_active?(filter_state, duration_filter, cost_filter) or
+      max_distance_index > 0 or not is_nil(user_lat)
+  end
+
+  @doc """
+  Slice 7b step 8 — slider helpers. `distance_max_km/1` resolves the
+  index to the kilometre cap that `Filter.apply_post/2` consumes;
+  `distance_label/1` is the source of `aria-valuetext` and the visible
+  caption beneath the slider.
+  """
+  def distance_max_km(index) when index in 0..6, do: Map.fetch!(@distance_steps, index)
+  def distance_max_km(_), do: nil
+
+  def distance_label(index) when index in 0..6, do: Map.fetch!(@distance_labels, index)
+  def distance_label(_), do: "Disattivo"
 
   # Tri-state cycle: off → optional → required → off.
   defp cycle_state(map, id) do
