@@ -77,17 +77,20 @@ Modificabili tramite seed/migration in fase di rilascio.
 1. **Categorie** — chip multi-select
 2. **Durata** — chip: poche ore / mezza giornata / giornata / weekend / più giorni
 3. **Budget max** — slider con step: 0, 20, 50, 100, 200, 500, 1000+ €
-4. **Distanza max da me** — slider: 5 / 25 / 50 / 200 / 500 / 1000+ km
-   - Richiede geolocation del browser (opt-in, bottone "📍 usa la mia posizione")
-   - LiveView hook lato browser per inviare coordinate al server
-   - Calcolo Haversine in Elixir (con poche centinaia di idee è istantaneo)
+4. **Distanza max da me** (slice 7b — implementato) — slider HTML5 7 step (off / 5 / 25 / 50 / 200 / 500 / oltre 1000 km)
+   - Punto di riferimento via geolocation (bottone "📍 Usa la mia posizione") OPPURE ricerca testuale (Nominatim)
+   - LiveView hook `Geolocation` (~30 LOC) per inviare coordinate al server
+   - Calcolo Haversine in Elixir nel modulo `Ideajar.Ideas.Distance.km/4` (con poche centinaia di idee è istantaneo)
+   - Filtro implementato come post-query in `Ideajar.Ideas.Filter.apply_post/2` (SQLite no Haversine native senza estensioni math)
 5. **Ricerca testuale** — su `title` + `description`
 
 ## Decisione su filtri non applicabili
 
-Per i filtri **durata** (slice 5) e **budget** (slice 6): un'idea con valore NULL viene **esclusa** quando ≥1 chip del rispettivo filtro è on. Pattern uniforme. Razionale: chi filtra sta restringendo attivamente; un'idea senza valore non è "sicuramente non match" ma "non confermata match" → fuori.
+Per i filtri **durata** (slice 5), **budget** (slice 6) e **distanza** (slice 7b): un'idea con valore NULL viene **esclusa** quando il rispettivo filtro è attivo. Pattern uniforme. Razionale: chi filtra sta restringendo attivamente; un'idea senza valore non è "sicuramente non match" ma "non confermata match" → fuori.
 
-Per filtri futuri (`distanza` slice 7, `text search` slice 8) la decisione sarà rivalutata caso per caso, ma il default è NULL-exclude.
+Per il filtro distanza la regola si applica così: index slider 0 = filtro inattivo, NULL passa; index 1-6 = filtro attivo, idee con `lat: nil` o `lng: nil` escluse. Index 6 ("oltre 1000 km") differisce da index 0 SOLO per il NULL treatment.
+
+Per filtri futuri (`text search` slice 8) la decisione sarà rivalutata caso per caso, ma il default è NULL-exclude.
 
 ## Punti di forza dell'approccio LiveView per questo caso d'uso
 - I filtri (categoria × durata × costo × distanza × testo) si compongono server-side sulla stessa query Ecto.

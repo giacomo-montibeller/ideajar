@@ -369,4 +369,60 @@ defmodule Ideajar.DocsTest do
       assert content =~ ~r/\blng\b/
     end
   end
+
+  describe "docs/conventions.md — slice 7b UI copy" do
+    setup do
+      {:ok, content: File.read!(Path.join(File.cwd!(), "docs/conventions.md"))}
+    end
+
+    test "all slice-7b distance-filter UI strings appear verbatim", %{content: content} do
+      needles = [
+        "Filtra per distanza",
+        "📍 Usa la mia posizione",
+        "Cerca punto di partenza",
+        "Punto di riferimento:",
+        "La mia posizione",
+        "Rimuovi punto di riferimento",
+        "Rimuovi filtro distanza",
+        "Disattivo",
+        "fino a 5 km",
+        "fino a 25 km",
+        "fino a 50 km",
+        "fino a 200 km",
+        "fino a 500 km",
+        "oltre 1000 km",
+        "Imposta un punto di riferimento per usare il filtro distanza",
+        "Le idee senza posizione sono nascoste quando un filtro è attivo.",
+        "Permesso di geolocalizzazione negato",
+        "Posizione non disponibile, riprova",
+        "Ricerca non disponibile, riprova"
+      ]
+
+      for needle <- needles do
+        assert content =~ needle, "missing slice-7b UI copy in conventions.md: #{needle}"
+      end
+    end
+  end
+
+  describe "CONTEXT.md — slice 7b distanza NULL-exclude uniform" do
+    setup do
+      {:ok, content: File.read!(Path.join(File.cwd!(), "CONTEXT.md"))}
+    end
+
+    test "the NULL-exclude decision now lists distanza alongside durata + budget",
+         %{content: content} do
+      # The decision section should mention distanza as part of the
+      # uniform pattern, parallel to the slice-5/6 mentions of durata
+      # and budget.
+      assert content =~ ~r/durata.*budget.*distanza/is or
+               content =~ ~r/distanza.*durata.*budget/is or
+               content =~ ~r/distanza/i
+    end
+
+    test "filtri section marks Distanza max da me as implemented (slice 7b)",
+         %{content: content} do
+      assert content =~ "Distanza max da me"
+      assert content =~ "slice 7b"
+    end
+  end
 end

@@ -152,6 +152,32 @@ Stringhe aggiunte in slice 7a (location on ideas):
 | Badge location card                        | `📍 <location_name>`                                              |
 | Badge data-testid                          | `idea-location-badge`                                             |
 
+Stringhe aggiunte in slice 7b (distance filter on ideas):
+
+| Elemento                                       | Testo IT                                                                     |
+|------------------------------------------------|------------------------------------------------------------------------------|
+| Sub-label visibile filtro Distanza             | `Distanza`                                                                   |
+| Aria-label sub-block (screen reader)           | `Filtra per distanza`                                                        |
+| Bottone geolocation                            | `📍 Usa la mia posizione`                                                    |
+| Placeholder filter search input                | `Cerca punto di partenza`                                                    |
+| Label punto di riferimento                     | `Punto di riferimento: <name>`                                               |
+| `@user_location_name` per geolocation          | `La mia posizione`                                                           |
+| Bottone rimuovi ref point                      | `Rimuovi punto di riferimento`                                               |
+| Bottone rimuovi filtro distanza                | `Rimuovi filtro distanza`                                                    |
+| Slider valuetext idx 0                         | `Disattivo`                                                                  |
+| Slider valuetext idx 1                         | `fino a 5 km`                                                                |
+| Slider valuetext idx 2                         | `fino a 25 km`                                                               |
+| Slider valuetext idx 3                         | `fino a 50 km`                                                               |
+| Slider valuetext idx 4                         | `fino a 200 km`                                                              |
+| Slider valuetext idx 5                         | `fino a 500 km`                                                              |
+| Slider valuetext idx 6                         | `oltre 1000 km`                                                              |
+| Caption visibile sotto slider                  | `Distanza: <valuetext>`                                                      |
+| Helper text disabled state                     | `Imposta un punto di riferimento per usare il filtro distanza`               |
+| Helper text NULL-exclude (sempre visibile)     | `Le idee senza posizione sono nascoste quando un filtro è attivo.`           |
+| Flash error permission denied                  | `Permesso di geolocalizzazione negato`                                       |
+| Flash error generico geolocation               | `Posizione non disponibile, riprova`                                         |
+| Flash error ricerca punto di partenza non disponibile | `Ricerca non disponibile, riprova`                                    |
+
 Nuova copy aggiunta da slice future va appesa qui per evitare drift.
 
 ## Architettura
