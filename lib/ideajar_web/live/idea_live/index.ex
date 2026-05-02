@@ -394,12 +394,19 @@ defmodule IdeajarWeb.IdeaLive.Index do
   # is committed only on `select_user_location` (whereas the form's
   # `update_location_name` populates `@selected_location_name` while
   # typing, since the form submits the typed name verbatim).
-  def handle_event("update_user_location_name", %{"name" => name}, socket)
-      when is_binary(name) do
-    apply_user_location_search(socket, name)
+  #
+  # Slice 7b step 7-bis (real-browser bug fix, parallel slice 7a iter2
+  # 868f3fc): `phx-change` on a bracketed `name="filter[…]"` input
+  # ships params as `%{"filter" => %{"user_location_name" => v}}` in
+  # the actual browser, while `render_hook/3` test calls use the bare
+  # `%{"name" => v}` shape. We accept both via `extract_user_location_name/1`
+  # so production typing fires the search.
+  def handle_event("update_user_location_name", params, socket) do
+    case extract_user_location_name(params) do
+      {:ok, name} -> apply_user_location_search(socket, name)
+      :error -> {:noreply, socket}
+    end
   end
-
-  def handle_event("update_user_location_name", _params, socket), do: {:noreply, socket}
 
   # Slice 7b step 7 — picking a result from the filter dropdown.
   # Defensive parse uniform with `select_location` (slice 7a iter2).
@@ -715,6 +722,18 @@ defmodule IdeajarWeb.IdeaLive.Index do
     |> assign(:user_location_search_results, [])
     |> assign(:user_location_search_state, :idle)
   end
+
+  # Multi-shape extractor for the filter search input. Mirrors slice 7a
+  # `extract_location_name/1` but on the filter assigns. The browser
+  # form-shape uses the bracketed `name="filter[user_location_name]"`,
+  # the test synthetic shape uses the bare `%{"name" => v}`, and any
+  # other shape is hostile and routes to no-op.
+  defp extract_user_location_name(%{"filter" => %{"user_location_name" => name}})
+       when is_binary(name),
+       do: {:ok, name}
+
+  defp extract_user_location_name(%{"name" => name}) when is_binary(name), do: {:ok, name}
+  defp extract_user_location_name(_), do: :error
 
   defp apply_user_location_search(socket, name) do
     case String.trim(name) do

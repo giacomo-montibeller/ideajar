@@ -5333,6 +5333,29 @@ defmodule IdeajarWeb.IdeaLive.IndexTest do
       assert assigns.user_location_search_state == :idle
       assert Process.alive?(view.pid)
     end
+
+    # Real-browser regression pin (parallel slice 7a iter2 commit 868f3fc):
+    # `phx-change` on the filter input fires with the form-bracketed
+    # name attribute as the params shape, NOT the synthetic `%{"name" => …}`
+    # shape that `render_hook/3` uses. The handler must accept both, or
+    # typing in the actual browser silently no-ops while the unit tests
+    # stay green.
+    test "form-shape params (filter.user_location_name) drive the search the same way",
+         %{conn: conn} do
+      view = mount_authenticated(conn)
+
+      user_search_stub_results!(view, [
+        %{"display_name" => "Roma, RM", "lat" => "41.9", "lon" => "12.5"}
+      ])
+
+      render_hook(view, "update_user_location_name", %{
+        "filter" => %{"user_location_name" => "roma"}
+      })
+
+      assigns = :sys.get_state(view.pid).socket.assigns
+      assert assigns.user_location_search_state == :results
+      assert length(assigns.user_location_search_results) == 1
+    end
   end
 
   describe "distance filter sub-block (slice 7b step 8)" do
