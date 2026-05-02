@@ -105,11 +105,10 @@ Per il filtro distanza la regola si applica così: index slider 0 = filtro inatt
 - **Dipendenza da WebSocket**: su connessioni mobili instabili può presentare micro-lag/riconnessioni. Accettato per questo caso d'uso.
 
 ## Prossimi passi
-1. Inizializzare progetto Phoenix
-2. Definire schema + migrations + seed categorie
-3. Primo LiveView con lista idee + filtri base
-4. Form aggiunta idea (titolo, categorie, durata, costo, descrizione, link)
-5. Integrazione mappa (Leaflet) per selezione posizione
-6. Geolocation hook + filtro distanza
-7. PWA manifest + service worker
-8. Deploy su Gigalixir
+Slice 1-8 implementati e shippati su `main` (auth, schema, list, filter chip categoria, durata, budget, location, distance filter, text search). Slice 9 inserito post slice 8: budget chip → slider conversion (UX uniformity con slice 7b distance slider, no semantic change).
+
+Roadmap residuo (post slice 9):
+1. **Slice 10 — PWA manifest + service worker**: installable on home screen, minimal SW per offline cache shell.
+2. **Slice 11 — Deploy su Gigalixir**: production deploy, real-user feedback unblock.
+
+I primi 8 step della roadmap originale sono stati completati. Slice 9 è un refactor UX inserito tra slice 8 (text search) e PWA per mantenere coerenza pattern slider tra distance (slice 7b) e budget. Slice 9 NON aggiunge feature: chip budget eliminati, slider HTML5 introdotto in filter + form, semantica `max_cost <= X` invariata.
