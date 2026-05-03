@@ -107,10 +107,12 @@ Per il filtro distanza la regola si applica così: index slider 0 = filtro inatt
 ## Prossimi passi
 Slice 1-8 implementati e shippati su `main` (auth, schema, list, filter chip categoria, durata, budget, location, distance filter, text search). Slice 9 inserito post slice 8: budget chip → slider conversion (UX uniformity con slice 7b distance slider, no semantic change).
 
-Roadmap residuo (post slice 11a):
-1. **Slice 11b — Deploy su Gigalixir**: production deploy via Gigalixir + Postgres addon, real-user feedback unblock. È anche il prerequisito per validare i gate manuali V1/V2 di slice 10 (Lighthouse PWA audit + install prompt manuali richiedono HTTPS).
+Roadmap completata fino a slice 11b (production deploy).
 
-Slice 11a (SQLite → Postgres migration) implementato: adapter swap, migration history collassata in 1 initial_schema + seed_categories, docker-compose.yml committato per Postgres locale, CI Postgres service container.
+- **Slice 11a (SQLite → Postgres migration)** implementato: adapter swap, migration history collassata in 1 initial_schema + seed_categories, docker-compose.yml committato per Postgres locale, CI Postgres service container.
+- **Slice 11b (Gigalixir Docker deploy)** implementato: `mix release` config + `Ideajar.Release` module + Dockerfile multi-stage + `/health` endpoint + `config/runtime.exs` prod block fully wired (SECRET_KEY_BASE, PHX_HOST, DATABASE_URL, WORKSPACE_PASSWORD raise on missing). Runbook in `docs/deploy.md`.
+
+Manual post-deploy steps: vedi `docs/deploy.md` per signup Gigalixir, env vars, first deploy, migration trigger via `gigalixir run -- bin/ideajar eval "Ideajar.Release.migrate"`, e i V1/V2 gate Lighthouse + install prompt manuali ora reachable su HTTPS.
 
 Slice 10 (PWA installability) implementato: manifest.json + sw.js (D2 strategy: cache static-only) + 2 PNG maskable + 3 root layout tags + SW registration in app.js.
 

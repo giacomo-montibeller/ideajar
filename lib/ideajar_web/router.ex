@@ -26,6 +26,15 @@ defmodule IdeajarWeb.Router do
     post "/login", LoginController, :create
   end
 
+  # Slice 11b — public health check. Used by Gigalixir's HTTP probe;
+  # bypasses :require_auth (no session needed) and uses the :api
+  # pipeline so it returns JSON without going through the root layout.
+  scope "/", IdeajarWeb do
+    pipe_through :api
+
+    get "/health", HealthController, :show
+  end
+
   scope "/", IdeajarWeb do
     pipe_through [:browser, :require_auth]
 

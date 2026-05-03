@@ -62,19 +62,27 @@ if config_env() == :prod do
     url: database_url,
     pool_size: String.to_integer(System.get_env("POOL_SIZE") || "10")
 
-  host = System.get_env("PHX_HOST") || "example.com"
+  host =
+    System.get_env("PHX_HOST") ||
+      raise """
+      environment variable PHX_HOST is missing.
+      For example: ideajar.gigalixirapp.com
+      """
 
   config :ideajar, :dns_cluster_query, System.get_env("DNS_CLUSTER_QUERY")
 
+  # Slice 11b — Gigalixir terminates SSL at the edge, so the container
+  # sees plain HTTP. The `force_ssl: [rewrite_on: [:x_forwarded_proto]]`
+  # in `config/prod.exs` is compile-time and trusts the X-Forwarded-Proto
+  # header as source of truth, so secure cookies activate correctly when
+  # the request actually arrived over TLS even though the container saw
+  # HTTP.
   config :ideajar, IdeajarWeb.Endpoint,
     url: [host: host, port: 443, scheme: "https"],
     http: [
-      # Enable IPv6 and bind on all interfaces.
-      # Set it to  {0, 0, 0, 0, 0, 0, 0, 1} for local network only access.
-      # See the documentation on https://hexdocs.pm/bandit/Bandit.html#t:options/0
-      # for details about using IPv6 vs IPv4 and loopback vs public addresses.
       ip: {0, 0, 0, 0, 0, 0, 0, 0}
-    ]
+    ],
+    server: true
 
   # ## SSL Support
   #
