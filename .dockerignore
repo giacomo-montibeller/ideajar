@@ -1,0 +1,27 @@
+# Slice 11b — exclude developer/build artifacts and IDE noise from the
+# Docker build context. The release inside the container builds fresh
+# from sources at each `docker build`, so the host's _build / deps are
+# not only useless but actively harmful (they may carry the wrong arch
+# or wrong MIX_ENV).
+
+_build/
+deps/
+node_modules/
+.git/
+.elixir_ls/
+.vscode/
+.idea/
+
+# Local SQLite remnants and Postgres data.
+*.db
+*.db-*
+
+# Test/dev databases bundled by Postgres docker volume.
+docker-compose.yml
+ideajar_postgres_data/
+
+# Local logs and temp files.
+priv/static/uploads
+*.log
+*.swp
+.DS_Store
