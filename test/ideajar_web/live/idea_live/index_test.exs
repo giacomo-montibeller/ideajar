@@ -4267,16 +4267,45 @@ defmodule IdeajarWeb.IdeaLive.IndexTest do
       assert assigns.user_location_name == nil
     end
 
-    test "set_user_location with valid coords sets the three assigns + canonical IT name",
+    test "set_user_location with valid coords sets lat/lng + falls back to 'La mia posizione' when reverse-geocode is unavailable",
          %{conn: conn} do
       view = mount_authenticated(conn)
 
+      # No Req.Test stub installed → Geocoding.reverse/2 returns
+      # {:error, :service_unavailable} (defensive rescue path), the
+      # handler falls back silently to the generic IT label.
       render_hook(view, "set_user_location", %{"lat" => 43.6, "lng" => 13.5})
 
       assigns = :sys.get_state(view.pid).socket.assigns
       assert assigns.user_lat == 43.6
       assert assigns.user_lng == 13.5
       assert assigns.user_location_name == "La mia posizione"
+    end
+
+    test "set_user_location uses Nominatim reverse-geocode display_name when available",
+         %{conn: conn} do
+      view = mount_authenticated(conn)
+
+      Req.Test.stub(IdeajarStub, fn conn ->
+        conn
+        |> Plug.Conn.put_resp_header("content-type", "application/json")
+        |> Plug.Conn.send_resp(
+          200,
+          Jason.encode!(%{
+            "display_name" => "Sirolo, Provincia di Ancona, Marche, Italia",
+            "lat" => "43.6",
+            "lon" => "13.5"
+          })
+        )
+      end)
+
+      Req.Test.allow(IdeajarStub, self(), view.pid)
+      render_hook(view, "set_user_location", %{"lat" => 43.6, "lng" => 13.5})
+
+      assigns = :sys.get_state(view.pid).socket.assigns
+      assert assigns.user_lat == 43.6
+      assert assigns.user_lng == 13.5
+      assert assigns.user_location_name == "Sirolo, Provincia di Ancona, Marche, Italia"
     end
 
     test "user_location_denied with reason permission_denied flashes the canonical IT message",

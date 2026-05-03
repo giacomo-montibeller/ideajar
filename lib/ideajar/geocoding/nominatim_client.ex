@@ -85,6 +85,56 @@ defmodule Ideajar.Geocoding.NominatimClient do
     end
   end
 
+  @doc """
+  Slice 9 follow-up — reverse-geocode lat/lng. Calls Nominatim's
+  `/reverse` endpoint and returns the response's `display_name` when
+  the body is well-formed. Defensive: any unexpected shape, transport
+  error, missing stub, or parse failure collapses to
+  `{:error, :service_unavailable}` so the LV handler can fall back to
+  the generic "La mia posizione" label without crashing the LV
+  process.
+  """
+  @spec reverse(float(), float()) :: {:ok, String.t()} | {:error, :service_unavailable}
+  def reverse(lat, lng) when is_number(lat) and is_number(lng) do
+    opts = Application.get_env(:ideajar, __MODULE__, [])
+    base_url = Keyword.get(opts, :base_url, @default_base_url)
+    plug = get_in(opts, [:req_options, :plug])
+
+    url = "#{base_url}/reverse"
+
+    req_opts =
+      [
+        headers: [{"user-agent", @user_agent}],
+        params: [
+          lat: lat,
+          lon: lng,
+          format: "json",
+          "accept-language": "it"
+        ],
+        retry: false
+      ]
+      |> maybe_put_plug(plug)
+
+    try do
+      case Req.get(url, req_opts) do
+        {:ok, %Req.Response{status: 200, body: %{"display_name" => name}}}
+        when is_binary(name) ->
+          {:ok, name}
+
+        {:ok, %Req.Response{status: 200, body: body}} when is_binary(body) ->
+          case Jason.decode(body) do
+            {:ok, %{"display_name" => name}} when is_binary(name) -> {:ok, name}
+            _ -> {:error, :service_unavailable}
+          end
+
+        _ ->
+          {:error, :service_unavailable}
+      end
+    rescue
+      _ -> {:error, :service_unavailable}
+    end
+  end
+
   defp maybe_put_plug(opts, nil), do: opts
   defp maybe_put_plug(opts, plug), do: Keyword.put(opts, :plug, plug)
 

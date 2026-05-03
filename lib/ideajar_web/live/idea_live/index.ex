@@ -368,14 +368,27 @@ defmodule IdeajarWeb.IdeaLive.Index do
   # pushEvents the coords here. We defensively parse + range-check both
   # values and only commit the assigns when the pair is valid; any
   # hostile shape (S1) routes to the catchall no-op below.
+  #
+  # Slice 9 follow-up — reverse-geocode the coords through Nominatim
+  # so the UI shows a real address ("Sirolo, Provincia di Ancona, ...")
+  # instead of the generic "La mia posizione". Any failure (HTTP 5xx,
+  # transport, malformed body, missing stub in tests) falls back
+  # silently to the generic label so the geolocation flow itself is
+  # never blocked by the decorative reverse lookup.
   def handle_event("set_user_location", %{"lat" => raw_lat, "lng" => raw_lng}, socket) do
     with {:ok, lat} <- parse_coord(raw_lat, -90.0, 90.0),
          {:ok, lng} <- parse_coord(raw_lng, -180.0, 180.0) do
+      name =
+        case Ideajar.Geocoding.reverse(lat, lng) do
+          {:ok, display_name} -> display_name
+          {:error, _} -> "La mia posizione"
+        end
+
       {:noreply,
        socket
        |> assign(:user_lat, lat)
        |> assign(:user_lng, lng)
-       |> assign(:user_location_name, "La mia posizione")}
+       |> assign(:user_location_name, name)}
     else
       _ -> {:noreply, socket}
     end
