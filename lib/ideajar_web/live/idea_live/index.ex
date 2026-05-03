@@ -41,6 +41,7 @@ defmodule IdeajarWeb.IdeaLive.Index do
   # (both are imported above), so we leave it module-qualified in the
   # template via `<BudgetChip.form_chip … />` (BB12 — same pattern as
   # DurationChip.filter_chip).
+  alias IdeajarWeb.Components.BudgetBadge
   alias IdeajarWeb.Components.BudgetChip
   alias IdeajarWeb.Components.DurationChip
   alias IdeajarWeb.Components.LocationBadge
@@ -76,7 +77,7 @@ defmodule IdeajarWeb.IdeaLive.Index do
      socket
      |> assign(:filter_state, %{})
      |> assign(:duration_filter, MapSet.new())
-     |> assign(:cost_filter, nil)
+     |> assign(:max_budget_index, 0)
      |> assign(:categories, Categories.list_categories())
      |> assign(:form_visible?, false)
      |> reset_categories()
@@ -319,32 +320,30 @@ defmodule IdeajarWeb.IdeaLive.Index do
   # bucket swaps the single selection (F14 cycle, F15 swap). Membership-gated
   # parse via `Budget.parse/1`; hostile payloads (out-of-whitelist integers,
   # non-numeric strings, non-string types) land in the catchall as no-ops (S1).
-  def handle_event("toggle_budget_filter", %{"cost" => raw}, socket)
-      when is_binary(raw) do
-    case Budget.parse(raw) do
-      {:ok, val} ->
-        new_value = if socket.assigns.cost_filter == val, do: nil, else: val
-
-        {:noreply,
-         socket
-         |> assign(:cost_filter, new_value)
-         |> reload_ideas()}
-
-      :error ->
-        {:noreply, socket}
+  # Slice 9 step 2 — budget filter slider. Replaces `toggle_budget_filter`
+  # chip handler. Multi-shape extractor (DD-S9-6) per parallel slice 7b/8:
+  # bare `%{"value" => v}` (synthetic test) + form-shape
+  # `%{"filter" => %{"budget" => v}}` (real browser via
+  # `<form id="filter-budget-slider-form">` wrapper). Defensive parse
+  # to integer 0..7; hostile shapes route to no-op.
+  def handle_event("update_max_budget", params, socket) do
+    case extract_max_budget_index(params) do
+      {:ok, n} -> {:noreply, socket |> assign(:max_budget_index, n) |> reload_ideas()}
+      :error -> {:noreply, socket}
     end
   end
 
-  # Catchall for hostile or malformed phx-value-cost payloads on the filter
-  # row (non-string types, missing key). Pinned by S1 hostile uniform list.
-  def handle_event("toggle_budget_filter", _params, socket), do: {:noreply, socket}
+  # Slice 9 step 2 — scoped reset of the budget filter slider.
+  def handle_event("remove_budget_filter", _params, socket) do
+    {:noreply, socket |> assign(:max_budget_index, 0) |> reload_ideas()}
+  end
 
   def handle_event("clear_filters", _params, socket) do
     {:noreply,
      socket
      |> assign(:filter_state, %{})
      |> assign(:duration_filter, MapSet.new())
-     |> assign(:cost_filter, nil)
+     |> assign(:max_budget_index, 0)
      |> reset_user_location()
      |> reset_distance_filter()
      |> assign(:text_search_query, "")
@@ -729,6 +728,27 @@ defmodule IdeajarWeb.IdeaLive.Index do
     |> reset_user_location_search()
   end
 
+  # Slice 9 step 2 (DD-S9-6) — multi-shape extractor for the filter
+  # budget slider input. Browser ships params as
+  # `%{"filter" => %{"budget" => v}}` (form-bracketed name attr),
+  # `render_hook/3` synthetic calls use `%{"value" => v}`. Both must
+  # work. Hostile bypass: out-of-range integer / non-numeric / float /
+  # missing key → :error (no-op routed by the calling handler).
+  defp extract_max_budget_index(%{"filter" => %{"budget" => raw}}) when is_binary(raw),
+    do: parse_budget_index(raw)
+
+  defp extract_max_budget_index(%{"value" => raw}) when is_binary(raw),
+    do: parse_budget_index(raw)
+
+  defp extract_max_budget_index(_), do: :error
+
+  defp parse_budget_index(raw) do
+    case Integer.parse(raw) do
+      {n, ""} when n in 0..7 -> {:ok, n}
+      _ -> :error
+    end
+  end
+
   # Slice 8 step 3 (DD-S8-6) — multi-shape extractor for the filter
   # text-search input. Browser ships params as
   # `%{"filter" => %{"text_search" => v}}` (form-bracketed name attr),
@@ -854,7 +874,7 @@ defmodule IdeajarWeb.IdeaLive.Index do
       assigns: %{
         filter_state: filter_state,
         duration_filter: duration_filter,
-        cost_filter: cost_filter,
+        max_budget_index: max_budget_index,
         max_distance_index: max_distance_index,
         user_lat: user_lat,
         user_lng: user_lng,
@@ -868,7 +888,7 @@ defmodule IdeajarWeb.IdeaLive.Index do
       {id, :optional}, acc -> Keyword.update!(acc, :optional, &[id | &1])
     end)
     |> Keyword.put(:durations, MapSet.to_list(duration_filter))
-    |> Keyword.put(:max_cost, cost_filter)
+    |> Keyword.put(:max_cost, Budget.index_to_value(max_budget_index))
     |> Keyword.put(:max_distance_km, distance_max_km(max_distance_index))
     |> Keyword.put(:ref_lat, user_lat)
     |> Keyword.put(:ref_lng, user_lng)
@@ -889,12 +909,12 @@ defmodule IdeajarWeb.IdeaLive.Index do
   def filter_active?(%{
         filter_state: filter_state,
         duration_filter: duration_filter,
-        cost_filter: cost_filter,
+        max_budget_index: max_budget_index,
         max_distance_index: max_distance_index,
         user_lat: user_lat,
         text_search_query: text_search_query
       }) do
-    filter_state != %{} or MapSet.size(duration_filter) > 0 or not is_nil(cost_filter) or
+    filter_state != %{} or MapSet.size(duration_filter) > 0 or max_budget_index > 0 or
       max_distance_index > 0 or not is_nil(user_lat) or text_search_query != ""
   end
 

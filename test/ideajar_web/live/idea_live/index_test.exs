@@ -2281,6 +2281,20 @@ defmodule IdeajarWeb.IdeaLive.IndexTest do
     view
   end
 
+  # Slice 9 step 2 — bridge helper. Pre-slice-9 the budget filter was a
+  # chip toggle; tests called `cycle_budget(view, 100)` to set the
+  # filter to "fino a 100€". Slice 9 replaced the chips with an index
+  # slider (0..7), so this helper now translates the legacy cost
+  # argument to the slider event so the slice-6 step-9 integration
+  # tests keep working unchanged. Cost → index mapping mirrors
+  # `Budget.index_to_value/1` inverse.
+  @cost_to_index %{0 => 1, 20 => 2, 50 => 3, 100 => 4, 200 => 5, 500 => 6, 1000 => 7}
+  defp cycle_budget(view, cost) when is_integer(cost) and is_map_key(@cost_to_index, cost) do
+    index = Map.fetch!(@cost_to_index, cost)
+    render_hook(view, "update_max_budget", %{"value" => Integer.to_string(index)})
+    view
+  end
+
   describe "duration filter sub-block (slice 5 step 6)" do
     # 1. Sub-block durata reso (AA11/AA21)
     test "renders <div role=group aria-label='Filtra per durata'> with hook + 5 chip buttons",
@@ -3233,22 +3247,25 @@ defmodule IdeajarWeb.IdeaLive.IndexTest do
       assert Process.alive?(view.pid)
     end
 
-    # BB17 / A10 — DOM id distinctness across the 4 (eventually 5) chip families.
-    test "with form open, chip ids across all families are distinct",
+    # BB17 / A10 — DOM id distinctness across the remaining chip families.
+    # Slice 9 eliminated `filter-budget-chip-*` (replaced by slider). The
+    # `form-budget-chip-*` family is removed by step 3. This pin keeps
+    # surveying the remaining chip-id collisions across the categoria,
+    # durata (filter + form), and budget (form, until step 3) families.
+    test "with form open, chip ids across remaining families are distinct",
          %{conn: conn} do
       view = mount_authenticated(conn) |> open_form()
       html = render(view)
 
       ids =
         Regex.scan(
-          ~r{id="(form-budget-chip-\d+|form-duration-chip-\w+|category-chip-\d+|filter-chip-\d+|filter-duration-chip-\w+|filter-budget-chip-\d+)"},
+          ~r{id="(form-budget-chip-\d+|form-duration-chip-\w+|category-chip-\d+|filter-chip-\d+|filter-duration-chip-\w+)"},
           html
         )
         |> Enum.map(&Enum.at(&1, 1))
 
       assert ids == Enum.uniq(ids)
 
-      # Sanity: each family is present with the expected count.
       assert length(Enum.filter(ids, &String.starts_with?(&1, "form-budget-chip-"))) == 7
 
       assert length(Enum.filter(ids, &String.starts_with?(&1, "form-duration-chip-"))) ==
@@ -3256,9 +3273,6 @@ defmodule IdeajarWeb.IdeaLive.IndexTest do
 
       assert length(Enum.filter(ids, &String.starts_with?(&1, "filter-duration-chip-"))) ==
                5
-
-      assert length(Enum.filter(ids, &String.starts_with?(&1, "filter-budget-chip-"))) ==
-               7
     end
 
     # A7 — form chip budget: no roving-tabindex hook, no explicit tabindex.
@@ -3344,452 +3358,6 @@ defmodule IdeajarWeb.IdeaLive.IndexTest do
       html = render_click(view, "clear_filters")
       refute html =~ ~r/id="filter-status"/
       refute html =~ "Filtri rimossi"
-    end
-  end
-
-  # ── Slice 6 Step 8: budget filter sub-block ─────────────────────────
-  defp insert_idea_with_categories_and_cost!(
-         title,
-         category_names,
-         cost,
-         %DateTime{} = at
-       ) do
-    cats = Enum.map(category_names, &CategoriesFixtures.category_by_name!/1)
-
-    idea =
-      %Idea{title: title, estimated_cost: cost}
-      |> Ecto.Changeset.change()
-      |> Ecto.Changeset.put_assoc(:categories, cats)
-      |> Repo.insert!()
-
-    Repo.update!(
-      Ecto.Changeset.change(idea, inserted_at: at, updated_at: at),
-      force: true
-    )
-  end
-
-  defp seed_6_lv_ideas_with_costs do
-    %{
-      caffe:
-        insert_idea_with_categories_and_cost!(
-          "Caffè al volo",
-          ["ristorante"],
-          0,
-          ~U[2026-04-27 10:00:00Z]
-        ),
-      uffizi:
-        insert_idea_with_categories_and_cost!(
-          "Uffizi",
-          ["museo", "cultura"],
-          50,
-          ~U[2026-04-27 10:01:00Z]
-        ),
-      stadio:
-        insert_idea_with_categories_and_cost!(
-          "Stadio",
-          ["sport"],
-          100,
-          ~U[2026-04-27 10:02:00Z]
-        ),
-      sirolo:
-        insert_idea_with_categories_and_cost!(
-          "Sirolo",
-          ["mare", "viaggio"],
-          200,
-          ~U[2026-04-27 10:03:00Z]
-        ),
-      parigi:
-        insert_idea_with_categories_and_cost!(
-          "Parigi",
-          ["viaggio"],
-          1000,
-          ~U[2026-04-27 10:04:00Z]
-        ),
-      bagno:
-        insert_idea_with_categories_and_cost!(
-          "Bagno",
-          ["mare"],
-          nil,
-          ~U[2026-04-27 10:05:00Z]
-        )
-    }
-  end
-
-  defp cycle_budget(view, cost) do
-    render_click(view, "toggle_budget_filter", %{"cost" => Integer.to_string(cost)})
-    view
-  end
-
-  describe "budget filter sub-block (slice 6 step 8)" do
-    # 1. Sub-block budget rendered (BB18, A9)
-    test "renders <div role=group aria-label='Filtra per budget'> with hook + 7 chip buttons",
-         %{conn: conn} do
-      {:ok, _view, html} = live_isolated(conn, Index, session: @authenticated_session)
-
-      [group_open] =
-        Regex.run(~r{<div[^>]*id="filter-budgets-group"[^>]*>}, html) ||
-          [nil] |> List.wrap()
-
-      assert group_open,
-             "Expected <div id=\"filter-budgets-group\"> to be rendered"
-
-      assert group_open =~ ~s(role="group")
-      assert group_open =~ ~s(aria-label="Filtra per budget")
-      assert group_open =~ ~s(data-roving-tabindex-group="filter-budgets")
-      assert group_open =~ ~s(phx-hook="RovingTabindex")
-
-      filter_budget_buttons =
-        Regex.scan(~r{<button[^>]*id="filter-budget-chip-\d+"[^>]*>}, html)
-        |> Enum.map(&hd/1)
-
-      assert length(filter_budget_buttons) == 7
-    end
-
-    # 2. Visible sub-label `Budget` inside the budget sub-block
-    test "renders visible 'Budget' sub-label in the filter section",
-         %{conn: conn} do
-      {:ok, _view, html} = live_isolated(conn, Index, session: @authenticated_session)
-
-      assert html =~ ~r{<p[^>]*class="[^"]*text-xs[^"]*"[^>]*>\s*Budget\s*</p>}
-    end
-
-    # 3. A11 helper text NULL-exclusion exactly once, scoped to budget sub-block
-    test "renders the budget NULL-exclusion helper text exactly once, between sub-label and chip group",
-         %{conn: conn} do
-      {:ok, _view, html} = live_isolated(conn, Index, session: @authenticated_session)
-
-      helper_text = "Le idee senza prezzo sono nascoste quando un filtro è attivo."
-
-      occurrences =
-        Regex.scan(~r{Le idee senza prezzo sono nascoste quando un filtro è attivo\.}, html)
-        |> length()
-
-      assert occurrences == 1, "Expected the budget helper text to appear exactly once"
-
-      budget_label_pos =
-        case Regex.run(
-               ~r{<p[^>]*class="[^"]*text-xs[^"]*"[^>]*>\s*Budget\s*</p>},
-               html,
-               return: :index
-             ) do
-          [{pos, _len}] -> pos
-          _ -> nil
-        end
-
-      helper_pos =
-        case :binary.match(html, helper_text) do
-          {pos, _} -> pos
-          :nomatch -> nil
-        end
-
-      first_chip_pos =
-        case :binary.match(html, ~s(id="filter-budget-chip-0")) do
-          {pos, _} -> pos
-          :nomatch -> nil
-        end
-
-      assert is_integer(budget_label_pos)
-      assert is_integer(helper_pos)
-      assert is_integer(first_chip_pos)
-
-      assert budget_label_pos < helper_pos,
-             "Helper text must appear AFTER the 'Budget' sub-label"
-
-      assert helper_pos < first_chip_pos,
-             "Helper text must appear BEFORE the first budget chip"
-    end
-
-    # 4. 3rd rover (A6): only filter-budget-chip-0 (first) has tabindex=0
-    test "terzo rover: only first budget chip (cost=0) has tabindex=0",
-         %{conn: conn} do
-      {:ok, _view, html} = live_isolated(conn, Index, session: @authenticated_session)
-
-      budget_chip_buttons =
-        Regex.scan(~r{<button[^>]*id="filter-budget-chip-\d+"[^>]*>}, html)
-        |> Enum.map(&hd/1)
-
-      assert length(budget_chip_buttons) == 7
-
-      tabindex_zero =
-        budget_chip_buttons |> Enum.filter(&(&1 =~ ~r/tabindex="0"/)) |> length()
-
-      tabindex_minus_one =
-        budget_chip_buttons |> Enum.filter(&(&1 =~ ~r/tabindex="-1"/)) |> length()
-
-      assert tabindex_zero == 1
-      assert tabindex_minus_one == 6
-
-      [zero_btn] =
-        Regex.run(
-          ~r{<button[^>]*id="filter-budget-chip-0"[^>]*>},
-          html
-        ) || [nil] |> List.wrap()
-
-      assert zero_btn =~ ~r/tabindex="0"/
-    end
-
-    # 5. L2 chip count: exactly 7 filter-budget-chip-* buttons.
-    test "renders exactly 7 filter-budget-chip buttons (one per Budget bucket)",
-         %{conn: conn} do
-      {:ok, _view, html} = live_isolated(conn, Index, session: @authenticated_session)
-
-      filter_budget_buttons =
-        Regex.scan(~r{<button[^>]*id="filter-budget-chip-\d+"[^>]*>}, html)
-        |> Enum.map(&hd/1)
-
-      assert length(filter_budget_buttons) == 7
-
-      ids =
-        filter_budget_buttons
-        |> Enum.map(fn btn ->
-          [_, id] = Regex.run(~r{id="filter-budget-chip-(\d+)"}, btn)
-          String.to_integer(id)
-        end)
-        |> Enum.sort()
-
-      assert ids == [0, 20, 50, 100, 200, 500, 1000]
-    end
-
-    # 6. L1 sub-block DOM order: Categorie → Durata → Budget
-    test "filter sub-blocks are rendered in DOM order: Categorie → Durata → Budget",
-         %{conn: conn} do
-      {:ok, _view, html} = live_isolated(conn, Index, session: @authenticated_session)
-
-      pos = fn re ->
-        case Regex.run(re, html, return: :index) do
-          [{p, _len}] -> p
-          _ -> nil
-        end
-      end
-
-      categorie_pos =
-        pos.(~r{<p[^>]*class="[^"]*text-xs[^"]*"[^>]*>\s*Categorie\s*</p>})
-
-      durata_pos =
-        pos.(~r{<p[^>]*class="[^"]*text-xs[^"]*"[^>]*>\s*Durata\s*</p>})
-
-      budget_pos =
-        pos.(~r{<p[^>]*class="[^"]*text-xs[^"]*"[^>]*>\s*Budget\s*</p>})
-
-      assert is_integer(categorie_pos)
-      assert is_integer(durata_pos)
-      assert is_integer(budget_pos)
-
-      assert categorie_pos < durata_pos
-      assert durata_pos < budget_pos
-    end
-
-    # 7. F14 cycle 2-state on
-    test "cycle cost=100 on: @cost_filter == 100; chip flipped to :on; list filtered",
-         %{conn: conn} do
-      _ = seed_6_lv_ideas_with_costs()
-      view = mount_authenticated(conn)
-
-      html = view |> cycle_budget(100) |> render()
-
-      assigns = :sys.get_state(view.pid).socket.assigns
-      assert assigns.cost_filter == 100
-
-      [chip_btn] =
-        Regex.run(
-          ~r{<button[^>]*id="filter-budget-chip-100"[^>]*>},
-          html
-        ) || [nil] |> List.wrap()
-
-      assert chip_btn
-      assert chip_btn =~ ~s(data-budget-filter-state="on")
-
-      [_full, inner] =
-        Regex.run(
-          ~r{<button[^>]*id="filter-budget-chip-100"[^>]*>(.*?)</button>}s,
-          html
-        )
-
-      assert inner =~ "hero-check"
-    end
-
-    # 8. F14 cycle off
-    test "cycle cost=100 twice: @cost_filter back to nil; chip back to :off",
-         %{conn: conn} do
-      _ = seed_6_lv_ideas_with_costs()
-      view = mount_authenticated(conn)
-
-      view |> cycle_budget(100)
-      html = view |> cycle_budget(100) |> render()
-
-      assigns = :sys.get_state(view.pid).socket.assigns
-      assert assigns.cost_filter == nil
-
-      [chip_btn] =
-        Regex.run(
-          ~r{<button[^>]*id="filter-budget-chip-100"[^>]*>},
-          html
-        ) || [nil] |> List.wrap()
-
-      assert chip_btn
-      assert chip_btn =~ ~s(data-budget-filter-state="off")
-    end
-
-    # 9. F15 swap (single-select): cycle 100 on, then 200 → 200 on, 100 off.
-    test "F15 single-select swap: cycle 100 on then 200 → @cost_filter == 200; chip 100 off",
-         %{conn: conn} do
-      _ = seed_6_lv_ideas_with_costs()
-      view = mount_authenticated(conn)
-
-      view |> cycle_budget(100)
-      html = view |> cycle_budget(200) |> render()
-
-      assigns = :sys.get_state(view.pid).socket.assigns
-      assert assigns.cost_filter == 200
-
-      [btn_100] =
-        Regex.run(~r{<button[^>]*id="filter-budget-chip-100"[^>]*>}, html) ||
-          [nil] |> List.wrap()
-
-      [btn_200] =
-        Regex.run(~r{<button[^>]*id="filter-budget-chip-200"[^>]*>}, html) ||
-          [nil] |> List.wrap()
-
-      assert btn_100 =~ ~s(data-budget-filter-state="off")
-      assert btn_200 =~ ~s(data-budget-filter-state="on")
-    end
-
-    # 10. F9 filter matching ≤100: only Caffè al volo (0), Uffizi (50), Stadio (100).
-    test "cycle cost=100: list contains only ideas with cost <= 100 AND NOT NULL",
-         %{conn: conn} do
-      _ = seed_6_lv_ideas_with_costs()
-      view = mount_authenticated(conn)
-
-      html = view |> cycle_budget(100) |> render()
-
-      assert html =~ "Caffè al volo"
-      assert html =~ "Uffizi"
-      assert html =~ "Stadio"
-      refute html =~ "Sirolo"
-      refute html =~ "Parigi"
-      refute html =~ "Bagno"
-    end
-
-    # 11. F11 all priced (1000): 5 priced ideas; NULL Bagno excluded.
-    test "cycle cost=1000: list contains all 5 priced ideas; NULL idea (Bagno) excluded",
-         %{conn: conn} do
-      _ = seed_6_lv_ideas_with_costs()
-      view = mount_authenticated(conn)
-
-      html = view |> cycle_budget(1000) |> render()
-
-      for title <- ["Caffè al volo", "Uffizi", "Stadio", "Sirolo", "Parigi"] do
-        assert html =~ title, "Expected #{title} after cost <= 1000"
-      end
-
-      refute html =~ "Bagno"
-    end
-
-    # 12. F10 gratis only: cycle 0 → only Caffè al volo. Bagno (NULL) excluded.
-    test "cycle cost=0: only the gratis idea (Caffè al volo) is shown; NULL excluded",
-         %{conn: conn} do
-      _ = seed_6_lv_ideas_with_costs()
-      view = mount_authenticated(conn)
-
-      html = view |> cycle_budget(0) |> render()
-
-      assert html =~ "Caffè al volo"
-      refute html =~ "Uffizi"
-      refute html =~ "Stadio"
-      refute html =~ "Sirolo"
-      refute html =~ "Parigi"
-      refute html =~ "Bagno"
-    end
-
-    # 13. Empty state with budget filter
-    test "cycle cost=0 on a workspace with no gratis idea: empty-filter state",
-         %{conn: conn} do
-      # Insert a single non-gratis idea (cost 100). Filter cost=0 must yield zero
-      # matches — but `@cost_filter` is non-nil so we expect the empty-filter
-      # branch (NOT the bare "Nessuna idea ancora" prompt).
-      _ =
-        insert_idea_with_categories_and_cost!(
-          "Stadio",
-          ["sport"],
-          100,
-          ~U[2026-04-27 10:00:00Z]
-        )
-
-      view = mount_authenticated(conn)
-
-      html = view |> cycle_budget(0) |> render()
-
-      assert html =~ "Nessuna idea per i filtri attivi."
-      assert html =~ "Mostra tutte"
-      refute html =~ "Nessuna idea ancora. Aggiungine una qui sopra."
-
-      [zero_btn] =
-        Regex.run(
-          ~r{<button[^>]*id="filter-budget-chip-0"[^>]*>},
-          html
-        ) || [nil] |> List.wrap()
-
-      assert zero_btn
-      assert zero_btn =~ ~s(data-budget-filter-state="on")
-    end
-
-    # 14. Hostile uniform list (S1) — strings.
-    for value <- ["175", "-50", "abc", "", "<script>"] do
-      test "toggle_budget_filter with hostile string #{inspect(value)} is a no-op",
-           %{conn: conn} do
-        view = mount_authenticated(conn)
-
-        render_click(view, "toggle_budget_filter", %{"cost" => unquote(value)})
-
-        assigns = :sys.get_state(view.pid).socket.assigns
-        assert assigns.cost_filter == nil
-        assert Process.alive?(view.pid)
-      end
-    end
-
-    for value <- [42, [], %{}] do
-      test "toggle_budget_filter with hostile non-string #{inspect(value)} is a no-op",
-           %{conn: conn} do
-        view = mount_authenticated(conn)
-
-        render_click(view, "toggle_budget_filter", %{
-          "cost" => unquote(Macro.escape(value))
-        })
-
-        assigns = :sys.get_state(view.pid).socket.assigns
-        assert assigns.cost_filter == nil
-        assert Process.alive?(view.pid)
-      end
-    end
-
-    # 16. Form/filter chip ARIA non collide.
-    test "form open + filter cost=100 on: both form-budget-chip-100 and filter-budget-chip-100 rendered with distinct ARIA contracts",
-         %{conn: conn} do
-      view = mount_authenticated(conn)
-      view |> cycle_budget(100)
-      _ = render_click(view, "toggle_form")
-      html = render(view)
-
-      [form_chip_100] =
-        Regex.run(
-          ~r{<button[^>]*id="form-budget-chip-100"[^>]*>},
-          html
-        ) || [nil] |> List.wrap()
-
-      [filter_chip_100] =
-        Regex.run(
-          ~r{<button[^>]*id="filter-budget-chip-100"[^>]*>},
-          html
-        ) || [nil] |> List.wrap()
-
-      assert form_chip_100
-      assert filter_chip_100
-
-      assert form_chip_100 =~ "aria-pressed"
-      refute form_chip_100 =~ "aria-label"
-
-      assert filter_chip_100 =~ "aria-label"
-      refute filter_chip_100 =~ "aria-pressed"
     end
   end
 
@@ -3890,14 +3458,14 @@ defmodule IdeajarWeb.IdeaLive.IndexTest do
       pre = :sys.get_state(view.pid).socket.assigns
       assert pre.filter_state == %{mare.id => :required}
       assert pre.duration_filter == MapSet.new([:weekend])
-      assert pre.cost_filter == 100
+      assert pre.max_budget_index == 4
 
       html = render_click(view, "clear_filters")
 
       assigns = :sys.get_state(view.pid).socket.assigns
       assert assigns.filter_state == %{}
       assert assigns.duration_filter == MapSet.new()
-      assert assigns.cost_filter == nil
+      assert assigns.max_budget_index == 0
 
       for title <- ["Sirolo", "Parigi", "Uffizi", "Stadio", "Cinema", "Bagno"] do
         assert html =~ title, "Expected #{title} after clear_filters"
@@ -3915,14 +3483,14 @@ defmodule IdeajarWeb.IdeaLive.IndexTest do
       pre = :sys.get_state(view.pid).socket.assigns
       assert pre.filter_state == %{}
       assert pre.duration_filter == MapSet.new()
-      assert pre.cost_filter == nil
+      assert pre.max_budget_index == 0
 
       render_click(view, "clear_filters")
 
       assigns = :sys.get_state(view.pid).socket.assigns
       assert assigns.filter_state == %{}
       assert assigns.duration_filter == MapSet.new()
-      assert assigns.cost_filter == nil
+      assert assigns.max_budget_index == 0
       assert Process.alive?(view.pid)
     end
 
@@ -4013,14 +3581,14 @@ defmodule IdeajarWeb.IdeaLive.IndexTest do
 
       view |> cycle_budget(200)
       pre = :sys.get_state(view.pid).socket.assigns
-      assert pre.cost_filter == 200
+      assert pre.max_budget_index == 5
 
       view |> open_form()
       render_click(view, "toggle_form_budget", %{"cost" => "100"})
       html = submit(view, %{title: "BudgetSurvivor"})
 
       assigns = :sys.get_state(view.pid).socket.assigns
-      assert assigns.cost_filter == 200
+      assert assigns.max_budget_index == 5
       persisted = Repo.get_by(Idea, title: "BudgetSurvivor")
       assert persisted
       assert persisted.estimated_cost == 100
@@ -4042,7 +3610,7 @@ defmodule IdeajarWeb.IdeaLive.IndexTest do
       html = submit(view, %{title: "OltreFiltro"})
 
       assigns = :sys.get_state(view.pid).socket.assigns
-      assert assigns.cost_filter == 50
+      assert assigns.max_budget_index == 3
       persisted = Repo.get_by(Idea, title: "OltreFiltro")
       assert persisted
       assert persisted.estimated_cost == 200
@@ -4077,7 +3645,7 @@ defmodule IdeajarWeb.IdeaLive.IndexTest do
       refute html =~ "SenzaPrezzo"
 
       assigns = :sys.get_state(view.pid).socket.assigns
-      assert assigns.cost_filter == 50
+      assert assigns.max_budget_index == 3
     end
 
     # 9. Isolation — clear_filters does NOT touch the form's @selected_cost
@@ -4099,7 +3667,7 @@ defmodule IdeajarWeb.IdeaLive.IndexTest do
 
       assigns = :sys.get_state(view.pid).socket.assigns
       assert assigns.selected_cost == 100
-      assert assigns.cost_filter == nil
+      assert assigns.max_budget_index == 0
 
       [hundred_form_btn] =
         Regex.run(
@@ -4111,10 +3679,11 @@ defmodule IdeajarWeb.IdeaLive.IndexTest do
       assert hundred_form_btn =~ ~s(aria-pressed="true")
     end
 
-    # 10. Isolation — toggle_budget_filter does NOT touch the form's
-    # @selected_cost. The two state slots live side by side and never
-    # cross. Parallel to slice 5 step 8 isolation #5.
-    test "isolation: toggle_budget_filter does not touch form @selected_cost (regression pin)",
+    # 10. Isolation — the filter slider does NOT touch the form's
+    # @selected_cost (slice 9 update of the original chip-vs-chip
+    # isolation pin: filter is now slider, form is still chip in step 2).
+    # The two state slots live side by side and never cross.
+    test "isolation: filter slider update_max_budget does not touch form @selected_cost",
          %{conn: conn} do
       _ = seed_6_lv_ideas_full()
       view = mount_authenticated(conn) |> open_form()
@@ -4123,29 +3692,11 @@ defmodule IdeajarWeb.IdeaLive.IndexTest do
       pre = :sys.get_state(view.pid).socket.assigns
       assert pre.selected_cost == 100
 
-      html = view |> cycle_budget(200) |> render()
+      view |> cycle_budget(200)
 
       assigns = :sys.get_state(view.pid).socket.assigns
       assert assigns.selected_cost == 100
-      assert assigns.cost_filter == 200
-
-      [hundred_form_btn] =
-        Regex.run(
-          ~r{<button[^>]*id="form-budget-chip-100"[^>]*>},
-          html
-        ) || [nil] |> List.wrap()
-
-      assert hundred_form_btn
-      assert hundred_form_btn =~ ~s(aria-pressed="true")
-
-      [twohundred_filter_btn] =
-        Regex.run(
-          ~r{<button[^>]*id="filter-budget-chip-200"[^>]*>},
-          html
-        ) || [nil] |> List.wrap()
-
-      assert twohundred_filter_btn
-      assert twohundred_filter_btn =~ ~s(data-budget-filter-state="on")
+      assert assigns.max_budget_index == 5
     end
 
     # 11. Refresh — @cost_filter is process-local state. A fresh mount
@@ -4157,13 +3708,13 @@ defmodule IdeajarWeb.IdeaLive.IndexTest do
       view = mount_authenticated(conn)
       view |> cycle_budget(100)
       pre = :sys.get_state(view.pid).socket.assigns
-      assert pre.cost_filter == 100
+      assert pre.max_budget_index == 4
 
       {:ok, fresh_view, _html} =
         live_isolated(conn, Index, session: @authenticated_session)
 
       assigns = :sys.get_state(fresh_view.pid).socket.assigns
-      assert assigns.cost_filter == nil
+      assert assigns.max_budget_index == 0
       assert assigns.duration_filter == MapSet.new()
       assert assigns.filter_state == %{}
     end
@@ -5453,7 +5004,7 @@ defmodule IdeajarWeb.IdeaLive.IndexTest do
       view = mount_authenticated(conn)
       html = render(view)
 
-      [slider_html] = Regex.run(~r/<input[^>]*type="range"[^>]*>/, html)
+      [slider_html] = Regex.run(~r/<input[^>]*id="filter-distance-slider"[^>]*>/, html)
 
       assert slider_html =~ "disabled"
       assert slider_html =~ ~s(aria-disabled="true")
@@ -5476,7 +5027,7 @@ defmodule IdeajarWeb.IdeaLive.IndexTest do
       view = mount_authenticated(conn)
       html = render(view)
 
-      [slider_html] = Regex.run(~r/<input[^>]*type="range"[^>]*>/, html)
+      [slider_html] = Regex.run(~r/<input[^>]*id="filter-distance-slider"[^>]*>/, html)
       assert slider_html =~ "disabled"
       assert slider_html =~ ~s(aria-disabled="true")
       assert html =~ "Imposta un punto di riferimento per usare il filtro distanza"
@@ -5516,7 +5067,7 @@ defmodule IdeajarWeb.IdeaLive.IndexTest do
       render_hook(view, "set_user_location", %{"lat" => 43.5, "lng" => 13.6})
 
       html = render(view)
-      [slider_html] = Regex.run(~r/<input[^>]*type="range"[^>]*>/, html)
+      [slider_html] = Regex.run(~r/<input[^>]*id="filter-distance-slider"[^>]*>/, html)
 
       refute slider_html =~ ~r/\sdisabled[\s>]/
       assert slider_html =~ ~s(aria-disabled="false")
@@ -5693,7 +5244,7 @@ defmodule IdeajarWeb.IdeaLive.IndexTest do
       assert assigns.max_distance_index == 0
 
       html = render(view)
-      [slider_html] = Regex.run(~r/<input[^>]*type="range"[^>]*>/, html)
+      [slider_html] = Regex.run(~r/<input[^>]*id="filter-distance-slider"[^>]*>/, html)
       assert slider_html =~ "disabled"
     end
 
@@ -5944,8 +5495,8 @@ defmodule IdeajarWeb.IdeaLive.IndexTest do
                | duration_filter: MapSet.new([:weekend])
              })
 
-      # cost active
-      assert IdeajarWeb.IdeaLive.Index.filter_active?(%{base | cost_filter: 100})
+      # budget active (slice 9: index > 0)
+      assert IdeajarWeb.IdeaLive.Index.filter_active?(%{base | max_budget_index: 4})
       # distance index > 0
       assert IdeajarWeb.IdeaLive.Index.filter_active?(%{base | max_distance_index: 3})
       # reference point set
@@ -6176,6 +5727,212 @@ defmodule IdeajarWeb.IdeaLive.IndexTest do
       html = render(view)
       refute html =~ "<script>alert(1)</script>"
       assert html =~ "&lt;script&gt;"
+    end
+  end
+
+  describe "filter budget slider (slice 9 step 2)" do
+    defp seed_idea_with_cost!(title, cost) do
+      mare = Ideajar.Repo.get_by!(Ideajar.Categories.Category, name: "mare")
+
+      %Ideajar.Ideas.Idea{title: title, estimated_cost: cost}
+      |> Ecto.Changeset.change()
+      |> Ecto.Changeset.put_assoc(:categories, [mare])
+      |> Ideajar.Repo.insert!()
+    end
+
+    test "F1/F3 mount: slider HTML5 + full ARIA, @max_budget_index default 0",
+         %{conn: conn} do
+      view = mount_authenticated(conn)
+      html = render(view)
+
+      assigns = :sys.get_state(view.pid).socket.assigns
+      assert assigns.max_budget_index == 0
+
+      assert html =~ ~s(type="range")
+      assert html =~ ~s(id="filter-budget-slider")
+      assert html =~ ~s(min="0")
+      assert html =~ ~s(max="7")
+      assert html =~ ~s(aria-valuemin="0")
+      assert html =~ ~s(aria-valuemax="7")
+      assert html =~ ~s(aria-valuenow="0")
+      assert html =~ ~s(aria-valuetext="Disattivo")
+    end
+
+    test "F2/A3 sub-block ha role=group aria-label='Filtra per budget'",
+         %{conn: conn} do
+      view = mount_authenticated(conn)
+      html = render(view)
+      assert html =~ ~s(role="group" aria-label="Filtra per budget")
+    end
+
+    test "F8/F4 update_max_budget index 0 → tutte le idee (NULL-cost passa)",
+         %{conn: conn} do
+      seed_idea_with_cost!("Caffè", 0)
+      seed_idea_with_cost!("Sirolo", 200)
+      seed_idea_with_cost!("Bagno", nil)
+
+      view = mount_authenticated(conn)
+      render_hook(view, "update_max_budget", %{"value" => "0"})
+      html = render(view)
+
+      assert html =~ "Caffè"
+      assert html =~ "Sirolo"
+      assert html =~ "Bagno"
+    end
+
+    test "F5 slider index 1 (gratis) → solo cost == 0, NULL escluse",
+         %{conn: conn} do
+      seed_idea_with_cost!("Caffè", 0)
+      seed_idea_with_cost!("Sirolo", 200)
+      seed_idea_with_cost!("Bagno", nil)
+
+      view = mount_authenticated(conn)
+      render_hook(view, "update_max_budget", %{"value" => "1"})
+      html = render(view)
+
+      assert html =~ "Caffè"
+      refute html =~ "Sirolo"
+      refute html =~ "Bagno"
+    end
+
+    test "F6 slider index 4 (100€) → cost ≤ 100, NULL escluse", %{conn: conn} do
+      seed_idea_with_cost!("Caffè", 0)
+      seed_idea_with_cost!("Uffizi", 50)
+      seed_idea_with_cost!("Stadio", 100)
+      seed_idea_with_cost!("Sirolo", 200)
+      seed_idea_with_cost!("Bagno", nil)
+
+      view = mount_authenticated(conn)
+      render_hook(view, "update_max_budget", %{"value" => "4"})
+      html = render(view)
+
+      assert html =~ "Caffè"
+      assert html =~ "Uffizi"
+      assert html =~ "Stadio"
+      refute html =~ "Sirolo"
+      refute html =~ "Bagno"
+    end
+
+    test "F9 form-shape %{filter: %{budget: '3'}} → identico a bare-shape",
+         %{conn: conn} do
+      view = mount_authenticated(conn)
+      render_hook(view, "update_max_budget", %{"filter" => %{"budget" => "3"}})
+
+      assigns = :sys.get_state(view.pid).socket.assigns
+      assert assigns.max_budget_index == 3
+    end
+
+    test "F10/S1/S2/S3 hostile uniform list → no-op", %{conn: conn} do
+      view = mount_authenticated(conn)
+
+      hostile = [
+        %{"value" => "-1"},
+        %{"value" => "8"},
+        %{"value" => "abc"},
+        %{"value" => "3.5"},
+        %{}
+      ]
+
+      Enum.each(hostile, fn p ->
+        render_hook(view, "update_max_budget", p)
+      end)
+
+      assigns = :sys.get_state(view.pid).socket.assigns
+      assert assigns.max_budget_index == 0
+      assert Process.alive?(view.pid)
+    end
+
+    test "F12 'Rimuovi filtro budget' button hidden when index 0, visible when > 0",
+         %{conn: conn} do
+      view = mount_authenticated(conn)
+      refute render(view) =~ "Rimuovi filtro budget"
+
+      render_hook(view, "update_max_budget", %{"value" => "3"})
+      html = render(view)
+      assert html =~ "Rimuovi filtro budget"
+      assert html =~ ~s(phx-click="remove_budget_filter")
+    end
+
+    test "F11 click 'Rimuovi filtro budget' → @max_budget_index = 0",
+         %{conn: conn} do
+      view = mount_authenticated(conn)
+      render_hook(view, "update_max_budget", %{"value" => "3"})
+
+      render_click(view, "remove_budget_filter")
+
+      assigns = :sys.get_state(view.pid).socket.assigns
+      assert assigns.max_budget_index == 0
+    end
+
+    test "F13 clear_filters cascade reset @max_budget_index = 0", %{conn: conn} do
+      view = mount_authenticated(conn)
+      render_hook(view, "update_max_budget", %{"value" => "3"})
+
+      render_click(view, "clear_filters")
+
+      assigns = :sys.get_state(view.pid).socket.assigns
+      assert assigns.max_budget_index == 0
+    end
+
+    test "F14 refresh resets @max_budget_index (LV remount)", %{conn: conn} do
+      view1 = mount_authenticated(conn)
+      render_hook(view1, "update_max_budget", %{"value" => "4"})
+
+      view2 = mount_authenticated(conn)
+      assigns = :sys.get_state(view2.pid).socket.assigns
+      assert assigns.max_budget_index == 0
+    end
+
+    test "F16 phx-debounce='200' pinned in slider attributes", %{conn: conn} do
+      view = mount_authenticated(conn)
+      html = render(view)
+      assert html =~ ~s(phx-debounce="200")
+    end
+
+    test "F17 filter-budget-slider-form wraps the input (real-browser pin)",
+         %{conn: conn} do
+      view = mount_authenticated(conn)
+
+      view
+      |> form("#filter-budget-slider-form", filter: %{budget: "3"})
+      |> render_change()
+
+      assigns = :sys.get_state(view.pid).socket.assigns
+      assert assigns.max_budget_index == 3
+    end
+
+    test "A6 'Rimuovi filtro budget' hit area ≥ 44×44", %{conn: conn} do
+      view = mount_authenticated(conn)
+      render_hook(view, "update_max_budget", %{"value" => "3"})
+      html = render(view)
+
+      [button] = Regex.run(~r/<button[^>]*phx-click="remove_budget_filter"[^>]*>/, html)
+      assert button =~ "min-h-11"
+      assert button =~ "min-w-11"
+    end
+
+    test "A8 sub-block source order Categorie → Durata → Budget → Distanza → Testo invariato",
+         %{conn: conn} do
+      view = mount_authenticated(conn)
+      html = render(view)
+
+      cat = :binary.match(html, "Filtra per categoria") |> elem(0)
+      dur = :binary.match(html, "Filtra per durata") |> elem(0)
+      bud = :binary.match(html, "Filtra per budget") |> elem(0)
+      dist = :binary.match(html, "Filtra per distanza") |> elem(0)
+      txt = :binary.match(html, "Filtra per testo") |> elem(0)
+
+      assert cat < dur
+      assert dur < bud
+      assert bud < dist
+      assert dist < txt
+    end
+
+    test "@cost_filter assign no longer exists post-rename (DD-S9-5)", %{conn: conn} do
+      view = mount_authenticated(conn)
+      assigns = :sys.get_state(view.pid).socket.assigns
+      refute Map.has_key?(assigns, :cost_filter)
+      assert Map.has_key?(assigns, :max_budget_index)
     end
   end
 end

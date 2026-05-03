@@ -185,19 +185,43 @@
         Le idee senza prezzo sono nascoste quando un filtro è attivo.
       </p>
       <div
-        id="filter-budgets-group"
+        id="filter-budget-group"
         role="group"
         aria-label="Filtra per budget"
-        data-roving-tabindex-group="filter-budgets"
-        phx-hook="RovingTabindex"
-        class="flex flex-wrap gap-2"
+        class="space-y-2"
       >
-        <BudgetChip.filter_chip
-          :for={{cost, idx} <- Enum.with_index(Ideajar.Ideas.Budget.values())}
-          cost={cost}
-          state={if @cost_filter == cost, do: :on, else: :off}
-          tabindex={if idx == 0, do: 0, else: -1}
-        />
+        <form
+          id="filter-budget-slider-form"
+          phx-change="update_max_budget"
+          class="contents"
+        >
+          <input
+            type="range"
+            id="filter-budget-slider"
+            min="0"
+            max="7"
+            step="1"
+            value={@max_budget_index}
+            phx-debounce="200"
+            name="filter[budget]"
+            aria-valuemin="0"
+            aria-valuemax="7"
+            aria-valuenow={@max_budget_index}
+            aria-valuetext={IdeajarWeb.Components.BudgetLabels.filter(@max_budget_index)}
+            class="range range-sm w-full"
+          />
+        </form>
+        <p class="text-sm">
+          Budget: {IdeajarWeb.Components.BudgetLabels.filter(@max_budget_index)}
+        </p>
+        <button
+          :if={@max_budget_index > 0}
+          type="button"
+          phx-click="remove_budget_filter"
+          class="btn btn-ghost btn-sm min-h-11 min-w-11"
+        >
+          Rimuovi filtro budget
+        </button>
       </div>
       <p class="text-xs">Distanza</p>
       <p class="text-xs text-base-content/70">
@@ -399,7 +423,7 @@
           </li>
         </ul>
         <.duration_badge :if={idea.duration} duration={idea.duration} />
-        <BudgetChip.budget_badge
+        <BudgetBadge.badge
           :if={not is_nil(idea.estimated_cost)}
           cost={idea.estimated_cost}
         />

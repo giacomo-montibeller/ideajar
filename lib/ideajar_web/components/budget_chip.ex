@@ -105,34 +105,4 @@ defmodule IdeajarWeb.Components.BudgetChip do
 
   defp filter_chip_state_class(:on),
     do: "bg-success text-success-content border-success"
-
-  attr :cost, :integer, required: true, values: Budget.values()
-
-  @doc """
-  Read-only badge rendered inside the idea card to advertise the persisted
-  budget bucket. Conditional rendering (only when `idea.estimated_cost`
-  is not `nil`) is the caller's responsibility — the badge always renders
-  when invoked.
-
-  Use `:if={not is_nil(idea.estimated_cost)}` at the call site rather than
-  the truthy `:if={idea.estimated_cost}`. In Elixir `0` is truthy (so the
-  truthy form would still render the gratis badge), but the explicit
-  nil-check is more robust against future template helper changes that
-  might apply Boolean coercion, and it is semantically clearer.
-
-  Visually mirrors `DurationChip.duration_badge/1` (`bg-base-200`) so the
-  two badges stack consistently inside the card. The label flows through
-  HEEx auto-escape via `{Budget.label(@cost)}`; never wrap with `raw/1`
-  (AA14 — XSS regression structural pin in `BudgetChipTest`).
-  """
-  def budget_badge(assigns) do
-    ~H"""
-    <span
-      data-testid="idea-budget-badge"
-      class="inline-flex items-center px-2 py-1 rounded-full border border-base-300 text-xs text-base-content/80 bg-base-200"
-    >
-      {Budget.label(@cost)}
-    </span>
-    """
-  end
 end
