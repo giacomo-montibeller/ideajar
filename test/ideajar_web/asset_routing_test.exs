@@ -37,4 +37,61 @@ defmodule IdeajarWeb.AssetRoutingTest do
       end
     end
   end
+
+  describe "manifest content (slice 10)" do
+    test "priv/static/manifest.json exists and parses as valid JSON" do
+      path = Path.join(Application.app_dir(:ideajar, "priv"), "static/manifest.json")
+      assert File.exists?(path)
+
+      body = File.read!(path)
+      assert {:ok, _decoded} = Jason.decode(body)
+    end
+
+    test "GET /manifest.json returns 200 + application/json + canonical fields",
+         %{conn: conn} do
+      conn = get(conn, "/manifest.json")
+
+      assert conn.status == 200
+
+      [content_type | _] = Plug.Conn.get_resp_header(conn, "content-type")
+      assert content_type =~ "application/json"
+
+      body = Jason.decode!(conn.resp_body)
+
+      # M1
+      assert body["name"] == "Ideajar"
+      assert body["short_name"] == "Ideajar"
+      # M2
+      assert body["description"] == "Idee da fare insieme"
+      # M5
+      assert body["lang"] == "it"
+      assert body["dir"] == "ltr"
+      # M3
+      assert body["start_url"] == "/"
+      assert body["scope"] == "/"
+      assert body["display"] == "standalone"
+      # M4
+      assert body["theme_color"] == "#29d"
+      assert body["background_color"] == "#2299dd"
+    end
+
+    test "manifest icons array has 192 + 512 maskable PNGs", %{conn: conn} do
+      conn = get(conn, "/manifest.json")
+      body = Jason.decode!(conn.resp_body)
+
+      # M6
+      assert is_list(body["icons"])
+      assert length(body["icons"]) == 2
+
+      icon_192 = Enum.find(body["icons"], &(&1["sizes"] == "192x192"))
+      assert icon_192["src"] == "/icons/icon-192.png"
+      assert icon_192["type"] == "image/png"
+      assert icon_192["purpose"] == "any maskable"
+
+      icon_512 = Enum.find(body["icons"], &(&1["sizes"] == "512x512"))
+      assert icon_512["src"] == "/icons/icon-512.png"
+      assert icon_512["type"] == "image/png"
+      assert icon_512["purpose"] == "any maskable"
+    end
+  end
 end
