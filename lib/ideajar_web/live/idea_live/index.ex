@@ -37,10 +37,6 @@ defmodule IdeajarWeb.IdeaLive.Index do
   alias Ideajar.Ideas.Budget
   alias Ideajar.Ideas.Duration
   alias Ideajar.Ideas.Idea
-  # BudgetChip.form_chip/1 collides on name with DurationChip.form_chip/1
-  # (both are imported above), so we leave it module-qualified in the
-  # template via `<BudgetChip.form_chip … />` (BB12 — same pattern as
-  # DurationChip.filter_chip).
   alias IdeajarWeb.Components.BudgetBadge
   alias IdeajarWeb.Components.DurationChip
   alias IdeajarWeb.Components.LocationBadge

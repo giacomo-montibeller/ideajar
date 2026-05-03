@@ -5753,4 +5753,56 @@ defmodule IdeajarWeb.IdeaLive.IndexTest do
       assert Map.has_key?(assigns, :form_budget_index)
     end
   end
+
+  describe "BudgetChip lifecycle (slice 9 step 4)" do
+    test "C1: lib/ideajar_web/components/budget_chip.ex does NOT exist" do
+      refute File.exists?(Path.join(File.cwd!(), "lib/ideajar_web/components/budget_chip.ex"))
+    end
+
+    test "C2: test/ideajar_web/components/budget_chip_test.exs does NOT exist" do
+      refute File.exists?(
+               Path.join(File.cwd!(), "test/ideajar_web/components/budget_chip_test.exs")
+             )
+    end
+
+    test "C3: no production source under lib/ contains executable BudgetChip references" do
+      sources = Path.wildcard("lib/**/*.{ex,heex}")
+
+      callsites =
+        Enum.flat_map(sources, fn path ->
+          src = File.read!(path)
+
+          if src =~ ~r/(import|alias)\s+IdeajarWeb\.Components\.BudgetChip/ or
+               src =~ ~r/<\s*BudgetChip\./ or
+               src =~ ~r/\bBudgetChip\.(form_chip|filter_chip|budget_badge)\(/ do
+            [path]
+          else
+            []
+          end
+        end)
+
+      assert callsites == [],
+             "BudgetChip executable references found in: #{inspect(callsites)}"
+    end
+
+    test "C4: BudgetBadge module exists post-extraction (rendering invariato)" do
+      assert File.exists?(Path.join(File.cwd!(), "lib/ideajar_web/components/budget_badge.ex"))
+
+      assert function_exported?(IdeajarWeb.Components.BudgetBadge, :badge, 1)
+    end
+
+    test "C5: BudgetLabels module exists with filter/1 + form/1" do
+      assert function_exported?(IdeajarWeb.Components.BudgetLabels, :filter, 1)
+      assert function_exported?(IdeajarWeb.Components.BudgetLabels, :form, 1)
+    end
+
+    test "A7: CSS thumb touch target rules for the 2 budget sliders" do
+      app_css = File.read!(Path.join(File.cwd!(), "assets/css/app.css"))
+
+      assert app_css =~ "#filter-budget-slider::-webkit-slider-thumb"
+      assert app_css =~ "#filter-budget-slider::-moz-range-thumb"
+      assert app_css =~ "#form-budget-slider::-webkit-slider-thumb"
+      assert app_css =~ "#form-budget-slider::-moz-range-thumb"
+    end
+  end
 end

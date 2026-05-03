@@ -125,3 +125,25 @@ input[type="range"]#filter-distance-slider::-moz-range-thumb {
 input[type="range"]#filter-distance-slider {
   height: 12px;
 }
+
+/* Slice 9 — same touch-target / track-height contract for the budget
+   sliders (filter side + form side). Pattern parallel to slice 7b. */
+input[type="range"]#filter-budget-slider::-webkit-slider-thumb,
+input[type="range"]#form-budget-slider::-webkit-slider-thumb {
+  width: 44px;
+  height: 44px;
+  border-radius: 50%;
+}
+
+input[type="range"]#filter-budget-slider::-moz-range-thumb,
+input[type="range"]#form-budget-slider::-moz-range-thumb {
+  width: 44px;
+  height: 44px;
+  border-radius: 50%;
+  border: none;
+}
+
+input[type="range"]#filter-budget-slider,
+input[type="range"]#form-budget-slider {
+  height: 12px;
+}
