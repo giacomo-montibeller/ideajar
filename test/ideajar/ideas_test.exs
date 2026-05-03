@@ -1,10 +1,9 @@
 defmodule Ideajar.IdeasTest do
-  # async: false: this module does many concurrent writes through the
-  # `Ideas.create_idea/1` boundary, and the migrations test toggles the
-  # SQLite Sandbox into `:auto` mode globally — that combination triggers
-  # SQLite "Database busy" when the migrator's connection and an async
-  # test both attempt to write. Serializing this module avoids the race.
-  use Ideajar.DataCase, async: false
+  # Slice 11a: re-enabled async after the SQLite → Postgres migration.
+  # Postgres' MVCC handles the concurrent writes that previously raced
+  # against the SQLite "Database busy" semantics, and the migration
+  # test's sandbox-mode toggle no longer affects sibling test pools.
+  use Ideajar.DataCase, async: true
 
   alias Ideajar.Categories.Category
   alias Ideajar.Ideas

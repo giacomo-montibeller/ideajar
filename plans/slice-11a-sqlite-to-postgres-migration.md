@@ -2,7 +2,7 @@
 
 **Created**: 2026-05-03
 **Branch**: main (trunk-based)
-**Status**: approved
+**Status**: implemented
 **Spec**: `docs/specs/sqlite-to-postgres-migration.md`
 
 ## Build conventions (carried from slice 1-10)

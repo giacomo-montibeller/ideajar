@@ -1,9 +1,8 @@
 defmodule Ideajar.Ideas.IdeaCategoriesConstraintTest do
-  # async: false because the migration test toggles the SQLite sandbox into
-  # `:auto` mode globally, and SQLite cannot handle concurrent writes from
-  # the test connection and the migrator's connection — running this test
-  # in parallel with the migration test produced "Database busy" errors.
-  use Ideajar.DataCase, async: false
+  # Slice 11a: re-enabled async after the SQLite → Postgres migration.
+  # The "Database busy" race that motivated async: false on SQLite is
+  # gone (Postgres MVCC + sandbox isolation).
+  use Ideajar.DataCase, async: true
 
   alias Ecto.Adapters.SQL
   alias Ideajar.Categories.Category

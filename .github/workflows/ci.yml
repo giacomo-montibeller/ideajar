@@ -14,8 +14,27 @@ jobs:
     name: Test & quality gates
     runs-on: ubuntu-latest
 
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: ideajar
+          POSTGRES_PASSWORD: ideajar
+          POSTGRES_DB: ideajar_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U ideajar"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
     env:
       MIX_ENV: test
+      POSTGRES_USER: ideajar
+      POSTGRES_PASSWORD: ideajar
+      POSTGRES_HOST: localhost
+      POSTGRES_DB: ideajar_test
 
     steps:
       - name: Checkout
@@ -51,6 +70,11 @@ jobs:
 
       - name: Audit dependencies for known vulnerabilities
         run: mix deps.audit
+
+      - name: Setup test database (Postgres)
+        run: |
+          mix ecto.create
+          mix ecto.migrate
 
       - name: Test
         run: mix test

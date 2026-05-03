@@ -1,9 +1,8 @@
 defmodule Ideajar.Ideas.FilterTest do
-  # async: false matching `Ideajar.IdeasTest` for the same migration-toggle
-  # rationale: the migrations test flips the SQLite Sandbox to :auto and any
-  # async test that writes through the same Repo races against it. Test 5
-  # below seeds and queries the DB through `Filter.apply/2`, so we serialize.
-  use Ideajar.DataCase, async: false
+  # Slice 11a: re-enabled async after the SQLite → Postgres migration.
+  # The previous migration-toggle race was a SQLite-specific concern;
+  # Postgres' MVCC + sandbox isolation handle concurrent test writes.
+  use Ideajar.DataCase, async: true
 
   alias Ideajar.Categories.Category
   alias Ideajar.Ideas.Filter
