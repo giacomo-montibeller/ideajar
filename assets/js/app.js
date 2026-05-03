@@ -94,3 +94,12 @@ if (process.env.NODE_ENV === "development") {
   })
 }
 
+// Slice 10 — register the service worker for PWA installability + static
+// asset caching. Gated behind window.load to avoid competing with the
+// critical render path and the LiveSocket WebSocket handshake (DD-S10-5).
+if ("serviceWorker" in navigator) {
+  window.addEventListener("load", () => {
+    navigator.serviceWorker.register("/sw.js")
+  })
+}
+
