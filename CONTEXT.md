@@ -107,8 +107,9 @@ Per il filtro distanza la regola si applica così: index slider 0 = filtro inatt
 ## Prossimi passi
 Slice 1-8 implementati e shippati su `main` (auth, schema, list, filter chip categoria, durata, budget, location, distance filter, text search). Slice 9 inserito post slice 8: budget chip → slider conversion (UX uniformity con slice 7b distance slider, no semantic change).
 
-Roadmap residuo (post slice 9):
-1. **Slice 10 — PWA manifest + service worker**: installable on home screen, minimal SW per offline cache shell.
-2. **Slice 11 — Deploy su Gigalixir**: production deploy, real-user feedback unblock.
+Roadmap residuo (post slice 10):
+1. **Slice 11 — Deploy su Gigalixir**: production deploy, real-user feedback unblock. È anche il prerequisito per validare i gate manuali V1/V2 di slice 10 (Lighthouse PWA audit + install prompt manuali richiedono HTTPS).
+
+Slice 10 (PWA installability) implementato: manifest.json + sw.js (D2 strategy: cache static-only) + 2 PNG maskable + 3 root layout tags + SW registration in app.js.
 
 I primi 8 step della roadmap originale sono stati completati. Slice 9 è un refactor UX inserito tra slice 8 (text search) e PWA per mantenere coerenza pattern slider tra distance (slice 7b) e budget. Slice 9 NON aggiunge feature: chip budget eliminati, slider HTML5 introdotto in filter + form, semantica `max_cost <= X` invariata.

@@ -470,6 +470,32 @@ defmodule Ideajar.DocsTest do
     end
   end
 
+  describe "docs/conventions.md — slice 10 manifest copy" do
+    setup do
+      {:ok, content: File.read!(Path.join(File.cwd!(), "docs/conventions.md"))}
+    end
+
+    test "all slice-10 manifest UI strings appear verbatim", %{content: content} do
+      assert content =~ "Manifest `name`"
+      assert content =~ "Ideajar"
+      assert content =~ "Idee da fare insieme"
+    end
+  end
+
+  describe "CONTEXT.md — slice 10 PWA implemented + slice 11 next" do
+    setup do
+      {:ok, content: File.read!(Path.join(File.cwd!(), "CONTEXT.md"))}
+    end
+
+    test "marks slice 10 implemented and slice 11 (deploy) as next",
+         %{content: content} do
+      assert content =~ "Slice 10"
+      assert content =~ "implementato"
+      assert content =~ "Slice 11"
+      assert content =~ "Gigalixir"
+    end
+  end
+
   describe "docs/conventions.md — slice 9 UI copy" do
     setup do
       {:ok, content: File.read!(Path.join(File.cwd!(), "docs/conventions.md"))}

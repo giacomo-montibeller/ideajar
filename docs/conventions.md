@@ -211,6 +211,14 @@ Stringhe aggiunte in slice 9 (budget chip → slider conversion):
 | Bottone toggle filter row collapse (0 attivi)  | `Filtri`                                                                     |
 | Bottone toggle filter row collapse (N attivi)  | `Filtri (N)`                                                                 |
 
+Stringhe aggiunte in slice 10 (PWA installability — manifest content):
+
+| Elemento                                       | Testo IT                                                                     |
+|------------------------------------------------|------------------------------------------------------------------------------|
+| Manifest `name`                                | `Ideajar`                                                                    |
+| Manifest `short_name`                          | `Ideajar`                                                                    |
+| Manifest `description`                         | `Idee da fare insieme`                                                       |
+
 Nuova copy aggiunta da slice future va appesa qui per evitare drift.
 
 ## Architettura
