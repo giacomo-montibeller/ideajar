@@ -208,6 +208,8 @@ Stringhe aggiunte in slice 9 (budget chip → slider conversion):
 | Form aria-valuetext idx 7                      | `1000+€`                                                                     |
 | Form caption sotto slider                      | `Budget: <valuetext>`                                                        |
 | Bottone form rimuovi prezzo                    | `Rimuovi prezzo`                                                             |
+| Bottone toggle filter row collapse (0 attivi)  | `Filtri`                                                                     |
+| Bottone toggle filter row collapse (N attivi)  | `Filtri (N)`                                                                 |
 
 Nuova copy aggiunta da slice future va appesa qui per evitare drift.
 

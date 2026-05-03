@@ -159,224 +159,238 @@
       aria-label="Filtra per:"
       class="border-t border-base-300 pt-4 space-y-2"
     >
-      <p class="text-sm font-semibold">Filtra per:</p>
-      <p id="filter-helper" class="text-sm text-base-content/70">
-        Tocca per filtrare: 1× opzionale · 2× obbligatoria · 3× rimuovi
-      </p>
-      <p class="text-xs">Categorie</p>
-      <div
-        id="filter-categories-group"
-        role="group"
-        aria-label="Filtra per categoria"
-        data-roving-tabindex-group="filter-categories"
-        phx-hook="RovingTabindex"
-        class="flex flex-wrap gap-2"
+      <button
+        type="button"
+        phx-click="toggle_filters"
+        aria-expanded={if @filters_expanded?, do: "true", else: "false"}
+        aria-controls="filter-row-body"
+        class="btn btn-ghost btn-sm w-full justify-between min-h-11"
       >
-        <.filter_chip
-          :for={{category, idx} <- Enum.with_index(@categories)}
-          id={category.id}
-          name={category.name}
-          state={Map.get(@filter_state, category.id, :off)}
-          aria_describedby="filter-helper"
-          tabindex={if idx == 0, do: 0, else: -1}
-        />
-      </div>
-      <p class="text-xs">Durata</p>
-      <p class="text-xs text-base-content/70">
-        Le idee senza durata sono nascoste quando un filtro è attivo.
-      </p>
-      <div
-        id="filter-durations-group"
-        role="group"
-        aria-label="Filtra per durata"
-        data-roving-tabindex-group="filter-durations"
-        phx-hook="RovingTabindex"
-        class="flex flex-wrap gap-2"
-      >
-        <DurationChip.filter_chip
-          :for={{duration, idx} <- Enum.with_index(Ideajar.Ideas.Duration.values())}
-          duration={duration}
-          state={if MapSet.member?(@duration_filter, duration), do: :on, else: :off}
-          tabindex={if idx == 0, do: 0, else: -1}
-        />
-      </div>
-      <p class="text-xs">Budget</p>
-      <p class="text-xs text-base-content/70">
-        Le idee senza prezzo sono nascoste quando un filtro è attivo.
-      </p>
-      <div
-        id="filter-budget-group"
-        role="group"
-        aria-label="Filtra per budget"
-        class="space-y-2"
-      >
-        <form
-          id="filter-budget-slider-form"
-          phx-change="update_max_budget"
-          class="contents"
-        >
-          <input
-            type="range"
-            id="filter-budget-slider"
-            min="0"
-            max="7"
-            step="1"
-            value={@max_budget_index}
-            phx-debounce="200"
-            name="filter[budget]"
-            aria-valuemin="0"
-            aria-valuemax="7"
-            aria-valuenow={@max_budget_index}
-            aria-valuetext={IdeajarWeb.Components.BudgetLabels.filter(@max_budget_index)}
-            class="range range-sm w-full"
-          />
-        </form>
-        <p class="text-sm">
-          Budget: {IdeajarWeb.Components.BudgetLabels.filter(@max_budget_index)}
+        <span class="text-sm font-semibold">
+          Filtri{if (n = active_filter_axes_count(assigns)) > 0, do: " (#{n})", else: ""}
+        </span>
+        <span aria-hidden="true">{if @filters_expanded?, do: "▾", else: "▸"}</span>
+      </button>
+
+      <div :if={@filters_expanded?} id="filter-row-body" class="space-y-2">
+        <p id="filter-helper" class="text-sm text-base-content/70">
+          Tocca per filtrare: 1× opzionale · 2× obbligatoria · 3× rimuovi
         </p>
-        <button
-          :if={@max_budget_index > 0}
-          type="button"
-          phx-click="remove_budget_filter"
-          class="btn btn-ghost btn-sm min-h-11 min-w-11"
+        <p class="text-xs">Categorie</p>
+        <div
+          id="filter-categories-group"
+          role="group"
+          aria-label="Filtra per categoria"
+          data-roving-tabindex-group="filter-categories"
+          phx-hook="RovingTabindex"
+          class="flex flex-wrap gap-2"
         >
-          Rimuovi filtro budget
-        </button>
-      </div>
-      <p class="text-xs">Distanza</p>
-      <p class="text-xs text-base-content/70">
-        Le idee senza posizione sono nascoste quando un filtro è attivo.
-      </p>
-      <div
-        id="filter-distance-group"
-        role="group"
-        aria-label="Filtra per distanza"
-        class="space-y-2"
-      >
-        <div class="flex flex-col gap-2 sm:flex-row sm:items-center">
-          <button
-            id="user-location-button"
-            type="button"
-            phx-hook="Geolocation"
-            class="btn btn-sm min-h-11 min-w-11"
-          >
-            <span aria-hidden="true">📍</span> Usa la mia posizione
-          </button>
+          <.filter_chip
+            :for={{category, idx} <- Enum.with_index(@categories)}
+            id={category.id}
+            name={category.name}
+            state={Map.get(@filter_state, category.id, :off)}
+            aria_describedby="filter-helper"
+            tabindex={if idx == 0, do: 0, else: -1}
+          />
+        </div>
+        <p class="text-xs">Durata</p>
+        <p class="text-xs text-base-content/70">
+          Le idee senza durata sono nascoste quando un filtro è attivo.
+        </p>
+        <div
+          id="filter-durations-group"
+          role="group"
+          aria-label="Filtra per durata"
+          data-roving-tabindex-group="filter-durations"
+          phx-hook="RovingTabindex"
+          class="flex flex-wrap gap-2"
+        >
+          <DurationChip.filter_chip
+            :for={{duration, idx} <- Enum.with_index(Ideajar.Ideas.Duration.values())}
+            duration={duration}
+            state={if MapSet.member?(@duration_filter, duration), do: :on, else: :off}
+            tabindex={if idx == 0, do: 0, else: -1}
+          />
+        </div>
+        <p class="text-xs">Budget</p>
+        <p class="text-xs text-base-content/70">
+          Le idee senza prezzo sono nascoste quando un filtro è attivo.
+        </p>
+        <div
+          id="filter-budget-group"
+          role="group"
+          aria-label="Filtra per budget"
+          class="space-y-2"
+        >
           <form
-            id="filter-distance-search-form"
-            phx-change="update_user_location_name"
-            class="flex-1"
+            id="filter-budget-slider-form"
+            phx-change="update_max_budget"
+            class="contents"
           >
-            <.location_search_input
-              id="filter-location-search"
-              name="filter[user_location_name]"
-              name_value={@user_location_search_query}
-              placeholder="Cerca punto di partenza"
-              search_results={@user_location_search_results}
-              search_state={@user_location_search_state}
-              on_change_event="update_user_location_name"
-              on_select_event="select_user_location"
-              on_dismiss_event="dismiss_user_location_search"
+            <input
+              type="range"
+              id="filter-budget-slider"
+              min="0"
+              max="7"
+              step="1"
+              value={@max_budget_index}
+              phx-debounce="200"
+              name="filter[budget]"
+              aria-valuemin="0"
+              aria-valuemax="7"
+              aria-valuenow={@max_budget_index}
+              aria-valuetext={IdeajarWeb.Components.BudgetLabels.filter(@max_budget_index)}
+              class="range range-sm w-full"
             />
           </form>
+          <p class="text-sm">
+            Budget: {IdeajarWeb.Components.BudgetLabels.filter(@max_budget_index)}
+          </p>
+          <button
+            :if={@max_budget_index > 0}
+            type="button"
+            phx-click="remove_budget_filter"
+            class="btn btn-ghost btn-sm min-h-11 min-w-11"
+          >
+            Rimuovi filtro budget
+          </button>
         </div>
-
-        <p :if={is_nil(@user_lat)} class="text-xs text-base-content/70">
-          Imposta un punto di riferimento per usare il filtro distanza
+        <p class="text-xs">Distanza</p>
+        <p class="text-xs text-base-content/70">
+          Le idee senza posizione sono nascoste quando un filtro è attivo.
         </p>
+        <div
+          id="filter-distance-group"
+          role="group"
+          aria-label="Filtra per distanza"
+          class="space-y-2"
+        >
+          <div class="flex flex-col gap-2 sm:flex-row sm:items-center">
+            <button
+              id="user-location-button"
+              type="button"
+              phx-hook="Geolocation"
+              class="btn btn-sm min-h-11 min-w-11"
+            >
+              <span aria-hidden="true">📍</span> Usa la mia posizione
+            </button>
+            <form
+              id="filter-distance-search-form"
+              phx-change="update_user_location_name"
+              class="flex-1"
+            >
+              <.location_search_input
+                id="filter-location-search"
+                name="filter[user_location_name]"
+                name_value={@user_location_search_query}
+                placeholder="Cerca punto di partenza"
+                search_results={@user_location_search_results}
+                search_state={@user_location_search_state}
+                on_change_event="update_user_location_name"
+                on_select_event="select_user_location"
+                on_dismiss_event="dismiss_user_location_search"
+              />
+            </form>
+          </div>
 
-        <p :if={not is_nil(@user_lat)} class="text-sm">
-          Punto di riferimento: {@user_location_name}
+          <p :if={is_nil(@user_lat)} class="text-xs text-base-content/70">
+            Imposta un punto di riferimento per usare il filtro distanza
+          </p>
+
+          <p :if={not is_nil(@user_lat)} class="text-sm">
+            Punto di riferimento: {@user_location_name}
+          </p>
+
+          <form
+            id="filter-distance-slider-form"
+            phx-change="update_max_distance"
+            class="contents"
+          >
+            <input
+              type="range"
+              id="filter-distance-slider"
+              min="0"
+              max="6"
+              step="1"
+              value={@max_distance_index}
+              phx-debounce="200"
+              name="value"
+              disabled={is_nil(@user_lat)}
+              aria-disabled={if is_nil(@user_lat), do: "true", else: "false"}
+              aria-valuemin="0"
+              aria-valuemax="6"
+              aria-valuenow={@max_distance_index}
+              aria-valuetext={distance_label(@max_distance_index)}
+              class={[
+                "range range-sm w-full",
+                is_nil(@user_lat) && "opacity-50 cursor-not-allowed"
+              ]}
+            />
+          </form>
+
+          <p class="text-sm">Distanza: {distance_label(@max_distance_index)}</p>
+
+          <button
+            :if={not is_nil(@user_lat)}
+            type="button"
+            phx-click="remove_user_location"
+            class="btn btn-ghost btn-sm min-h-11 min-w-11"
+          >
+            Rimuovi punto di riferimento
+          </button>
+
+          <button
+            :if={@max_distance_index > 0}
+            type="button"
+            phx-click="remove_distance_filter"
+            class="btn btn-ghost btn-sm min-h-11 min-w-11"
+          >
+            Rimuovi filtro distanza
+          </button>
+        </div>
+        <p class="text-xs">Testo</p>
+        <p class="text-xs text-base-content/70">
+          La ricerca trova le idee con la parola in titolo o descrizione.
         </p>
-
-        <form
-          id="filter-distance-slider-form"
-          phx-change="update_max_distance"
-          class="contents"
+        <div
+          id="filter-text-group"
+          role="group"
+          aria-label="Filtra per testo"
+          class="space-y-2"
         >
-          <input
-            type="range"
-            id="filter-distance-slider"
-            min="0"
-            max="6"
-            step="1"
-            value={@max_distance_index}
-            phx-debounce="200"
-            name="value"
-            disabled={is_nil(@user_lat)}
-            aria-disabled={if is_nil(@user_lat), do: "true", else: "false"}
-            aria-valuemin="0"
-            aria-valuemax="6"
-            aria-valuenow={@max_distance_index}
-            aria-valuetext={distance_label(@max_distance_index)}
-            class={[
-              "range range-sm w-full",
-              is_nil(@user_lat) && "opacity-50 cursor-not-allowed"
-            ]}
-          />
-        </form>
-
-        <p class="text-sm">Distanza: {distance_label(@max_distance_index)}</p>
-
+          <form id="filter-text-search-form" phx-change="update_text_search">
+            <input
+              type="text"
+              id="filter-text-search-input"
+              name="filter[text_search]"
+              value={@text_search_query}
+              placeholder="Cerca idee"
+              phx-debounce="300"
+              maxlength="200"
+              autocomplete="off"
+              class="input w-full"
+            />
+          </form>
+          <button
+            :if={@text_search_query != ""}
+            type="button"
+            phx-click="remove_text_search"
+            class="btn btn-ghost btn-sm min-h-11 min-w-11"
+          >
+            Rimuovi filtro testo
+          </button>
+        </div>
         <button
-          :if={not is_nil(@user_lat)}
+          :if={filter_active?(assigns) and @ideas != []}
+          id="mostra-tutte"
           type="button"
-          phx-click="remove_user_location"
-          class="btn btn-ghost btn-sm min-h-11 min-w-11"
+          phx-click="clear_filters"
+          class="btn btn-ghost btn-sm"
         >
-          Rimuovi punto di riferimento
-        </button>
-
-        <button
-          :if={@max_distance_index > 0}
-          type="button"
-          phx-click="remove_distance_filter"
-          class="btn btn-ghost btn-sm min-h-11 min-w-11"
-        >
-          Rimuovi filtro distanza
+          Mostra tutte
         </button>
       </div>
-      <p class="text-xs">Testo</p>
-      <p class="text-xs text-base-content/70">
-        La ricerca trova le idee con la parola in titolo o descrizione.
-      </p>
-      <div
-        id="filter-text-group"
-        role="group"
-        aria-label="Filtra per testo"
-        class="space-y-2"
-      >
-        <form id="filter-text-search-form" phx-change="update_text_search">
-          <input
-            type="text"
-            id="filter-text-search-input"
-            name="filter[text_search]"
-            value={@text_search_query}
-            placeholder="Cerca idee"
-            phx-debounce="300"
-            maxlength="200"
-            autocomplete="off"
-            class="input w-full"
-          />
-        </form>
-        <button
-          :if={@text_search_query != ""}
-          type="button"
-          phx-click="remove_text_search"
-          class="btn btn-ghost btn-sm min-h-11 min-w-11"
-        >
-          Rimuovi filtro testo
-        </button>
-      </div>
-      <button
-        :if={filter_active?(assigns) and @ideas != []}
-        id="mostra-tutte"
-        type="button"
-        phx-click="clear_filters"
-        class="btn btn-ghost btn-sm"
-      >
-        Mostra tutte
-      </button>
     </section>
 
     <p

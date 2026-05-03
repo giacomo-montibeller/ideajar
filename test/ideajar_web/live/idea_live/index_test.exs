@@ -14,6 +14,16 @@ defmodule IdeajarWeb.IdeaLive.IndexTest do
 
   defp mount_authenticated(conn) do
     {:ok, view, _html} = live_isolated(conn, Index, session: @authenticated_session)
+    # Slice 9 follow-up — the filter row collapses to a compact header
+    # by default. Existing tests assert sub-block content at mount, so
+    # this helper auto-expands. Use `mount_authenticated_collapsed/1`
+    # for tests that exercise the collapse behaviour itself.
+    render_click(view, "toggle_filters")
+    view
+  end
+
+  defp mount_authenticated_collapsed(conn) do
+    {:ok, view, _html} = live_isolated(conn, Index, session: @authenticated_session)
     view
   end
 
@@ -128,7 +138,8 @@ defmodule IdeajarWeb.IdeaLive.IndexTest do
     # `@form_visible?`. The assertion below targets the add-idea form
     # specifically (id="idea-form" + the "Salva" submit button).
     test "does not render the form on first mount", %{conn: conn} do
-      assert {:ok, _view, html} = live_isolated(conn, Index, session: @authenticated_session)
+      assert view = mount_authenticated(conn)
+      html = render(view)
 
       refute html =~ ~s(id="idea-form")
       refute html =~ "Salva"
@@ -539,7 +550,8 @@ defmodule IdeajarWeb.IdeaLive.IndexTest do
       _old = insert_idea_with_categories!("Vecchia", ["mare"], ~U[2026-04-26 10:00:00Z])
       _new = insert_idea_with_categories!("Recente", ["mare"], ~U[2026-04-27 10:00:00Z])
 
-      {:ok, _view, html} = live_isolated(conn, Index, session: @authenticated_session)
+      view = mount_authenticated(conn)
+      html = render(view)
 
       [recente_at, vecchia_at] =
         for needle <- ["Recente", "Vecchia"] do
@@ -556,7 +568,8 @@ defmodule IdeajarWeb.IdeaLive.IndexTest do
       second_id = insert_idea_with_categories!("Second", ["mare"], same).id
       assert second_id > first_id
 
-      {:ok, _view, html} = live_isolated(conn, Index, session: @authenticated_session)
+      view = mount_authenticated(conn)
+      html = render(view)
 
       [second_at, first_at] =
         for needle <- ["Second", "First"] do
@@ -575,7 +588,8 @@ defmodule IdeajarWeb.IdeaLive.IndexTest do
         ~U[2026-04-27 10:00:00Z]
       )
 
-      {:ok, _view, html} = live_isolated(conn, Index, session: @authenticated_session)
+      view = mount_authenticated(conn)
+      html = render(view)
 
       card = idea_card_badges_html(html)
       cultura_at = :binary.match(card, "cultura") |> elem(0)
@@ -599,7 +613,8 @@ defmodule IdeajarWeb.IdeaLive.IndexTest do
 
       insert_idea_with_categories!("Tutto", all_names, ~U[2026-04-27 10:00:00Z])
 
-      {:ok, _view, html} = live_isolated(conn, Index, session: @authenticated_session)
+      view = mount_authenticated(conn)
+      html = render(view)
       card = idea_card_badges_html(html)
 
       # Each name appears in the card. Take their first occurrence inside the
@@ -995,7 +1010,8 @@ defmodule IdeajarWeb.IdeaLive.IndexTest do
     # Scenario: Visiting / with no filter shows every idea
     test "renders every idea when filter is inactive", %{conn: conn} do
       _ = seed_5_lv_ideas()
-      {:ok, _view, html} = live_isolated(conn, Index, session: @authenticated_session)
+      view = mount_authenticated(conn)
+      html = render(view)
 
       for title <- ["Sirolo", "Uffizi", "Stadio", "Bagno", "Cinema"] do
         assert html =~ title
@@ -1005,7 +1021,8 @@ defmodule IdeajarWeb.IdeaLive.IndexTest do
     # Scenario: Filter chip wiring
     test "renders 8 filter chips with correct phx-click and phx-value-id wiring",
          %{conn: conn} do
-      {:ok, _view, html} = live_isolated(conn, Index, session: @authenticated_session)
+      view = mount_authenticated(conn)
+      html = render(view)
 
       # 8 filter chips with stable id pattern
       filter_chip_ids =
@@ -1041,13 +1058,15 @@ defmodule IdeajarWeb.IdeaLive.IndexTest do
 
     # A7 — Discoverability helper text
     test "filter row contains the discoverability helper text", %{conn: conn} do
-      {:ok, _view, html} = live_isolated(conn, Index, session: @authenticated_session)
+      view = mount_authenticated(conn)
+      html = render(view)
       assert html =~ "Tocca per filtrare: 1× opzionale · 2× obbligatoria · 3× rimuovi"
     end
 
     # A17 — Visual row labels
     test "filter row has visible 'Filtra per:' label", %{conn: conn} do
-      {:ok, _view, html} = live_isolated(conn, Index, session: @authenticated_session)
+      view = mount_authenticated(conn)
+      html = render(view)
       assert html =~ "Filtra per:"
     end
 
@@ -1133,7 +1152,8 @@ defmodule IdeajarWeb.IdeaLive.IndexTest do
 
   describe "Mostra tutte single-instance placement (A10/F10)" do
     test "filter inactive: zero Mostra tutte buttons", %{conn: conn} do
-      {:ok, _view, html} = live_isolated(conn, Index, session: @authenticated_session)
+      view = mount_authenticated(conn)
+      html = render(view)
       count = Regex.scan(~r/Mostra tutte/, html) |> length()
       assert count == 0
     end
@@ -1141,7 +1161,7 @@ defmodule IdeajarWeb.IdeaLive.IndexTest do
     test "filter active + non-empty list: exactly one Mostra tutte under filter row",
          %{conn: conn} do
       _ = seed_5_lv_ideas()
-      {:ok, view, _html} = live_isolated(conn, Index, session: @authenticated_session)
+      view = mount_authenticated(conn)
 
       html = view |> cycle_filter("sport") |> render()
 
@@ -1178,7 +1198,8 @@ defmodule IdeajarWeb.IdeaLive.IndexTest do
 
     test "workspace-empty state is distinct from empty-filter state (A9)", %{conn: conn} do
       # No ideas seeded, no filter
-      {:ok, _view, html} = live_isolated(conn, Index, session: @authenticated_session)
+      view = mount_authenticated(conn)
+      html = render(view)
 
       assert html =~ "Nessuna idea ancora. Aggiungine una qui sopra."
       refute html =~ ~s(data-testid="empty-filter-state")
@@ -1257,7 +1278,8 @@ defmodule IdeajarWeb.IdeaLive.IndexTest do
   describe "out-of-scope guard (slice 4 A13 / 5 AA13 / 6 BB18 / 7b D5 / 8 D5)" do
     test "scoped 'Cerca punto di partenza' + 'Cerca idee' are the only Cerca-* strings",
          %{conn: conn} do
-      {:ok, _view, html} = live_isolated(conn, Index, session: @authenticated_session)
+      view = mount_authenticated(conn)
+      html = render(view)
 
       # Two legitimate `Cerca…` strings: slice-7b reference search
       # placeholder and slice-8 text search placeholder.
@@ -1277,19 +1299,22 @@ defmodule IdeajarWeb.IdeaLive.IndexTest do
 
     test "Durata appears as a visible sub-block label in the filter row",
          %{conn: conn} do
-      {:ok, _view, html} = live_isolated(conn, Index, session: @authenticated_session)
+      view = mount_authenticated(conn)
+      html = render(view)
       assert html =~ ~r{<p[^>]*class="[^"]*text-xs[^"]*"[^>]*>\s*Durata\s*</p>}
     end
 
     test "Budget appears as a visible sub-block label in the filter row (BB18)",
          %{conn: conn} do
-      {:ok, _view, html} = live_isolated(conn, Index, session: @authenticated_session)
+      view = mount_authenticated(conn)
+      html = render(view)
       assert html =~ ~r{<p[^>]*class="[^"]*text-xs[^"]*"[^>]*>\s*Budget\s*</p>}
     end
 
     test "Distanza appears as a visible sub-block label in the filter row (slice 7b D5)",
          %{conn: conn} do
-      {:ok, _view, html} = live_isolated(conn, Index, session: @authenticated_session)
+      view = mount_authenticated(conn)
+      html = render(view)
       assert html =~ ~r{<p[^>]*class="[^"]*text-xs[^"]*"[^>]*>\s*Distanza\s*</p>}
     end
   end
@@ -1302,7 +1327,8 @@ defmodule IdeajarWeb.IdeaLive.IndexTest do
         display_order: 999
       })
 
-      {:ok, _view, html} = live_isolated(conn, Index, session: @authenticated_session)
+      view = mount_authenticated(conn)
+      html = render(view)
 
       assert html =~ "&lt;script&gt;alert(1)&lt;/script&gt;"
       refute html =~ "<script>alert(1)</script>"
@@ -1343,7 +1369,8 @@ defmodule IdeajarWeb.IdeaLive.IndexTest do
     # avoid a future SR-collision with the form fieldset's <legend>Durata</legend>.
     test "renders <div role=\"group\"> wrapper around filter chips, nested in filter <section>",
          %{conn: conn} do
-      {:ok, _view, html} = live_isolated(conn, Index, session: @authenticated_session)
+      view = mount_authenticated(conn)
+      html = render(view)
 
       # Locate the role=group wrapper opening tag (attribute order is not
       # part of the contract; we assert each attribute is present on the
@@ -1383,7 +1410,8 @@ defmodule IdeajarWeb.IdeaLive.IndexTest do
     # 8 filter-chip-N buttons.
     test "filter chip buttons: only the first has tabindex=0, the other 7 have tabindex=-1",
          %{conn: conn} do
-      {:ok, _view, html} = live_isolated(conn, Index, session: @authenticated_session)
+      view = mount_authenticated(conn)
+      html = render(view)
 
       filter_chip_buttons =
         Regex.scan(~r{<button id="filter-chip-\d+"[^>]*>}, html) |> Enum.map(&hd/1)
@@ -1429,7 +1457,8 @@ defmodule IdeajarWeb.IdeaLive.IndexTest do
     # asserted in the step-6 describe block.
     test "renders the visible 'Categorie' sub-label above the filter chips (step 6)",
          %{conn: conn} do
-      {:ok, _view, html} = live_isolated(conn, Index, session: @authenticated_session)
+      view = mount_authenticated(conn)
+      html = render(view)
 
       assert html =~ ~r{<p[^>]*class="[^"]*text-xs[^"]*"[^>]*>\s*Categorie\s*</p>}
     end
@@ -2299,7 +2328,8 @@ defmodule IdeajarWeb.IdeaLive.IndexTest do
     # 1. Sub-block durata reso (AA11/AA21)
     test "renders <div role=group aria-label='Filtra per durata'> with hook + 5 chip buttons",
          %{conn: conn} do
-      {:ok, _view, html} = live_isolated(conn, Index, session: @authenticated_session)
+      view = mount_authenticated(conn)
+      html = render(view)
 
       [group_open] =
         Regex.run(~r{<div[^>]*id="filter-durations-group"[^>]*>}, html) ||
@@ -2323,7 +2353,8 @@ defmodule IdeajarWeb.IdeaLive.IndexTest do
     # 2. Visible sub-labels on BOTH groups (AA1/AA11)
     test "renders visible 'Categorie' AND 'Durata' sub-labels in the filter section",
          %{conn: conn} do
-      {:ok, _view, html} = live_isolated(conn, Index, session: @authenticated_session)
+      view = mount_authenticated(conn)
+      html = render(view)
 
       assert html =~ ~r{<p[^>]*class="[^"]*text-xs[^"]*"[^>]*>\s*Categorie\s*</p>}
       assert html =~ ~r{<p[^>]*class="[^"]*text-xs[^"]*"[^>]*>\s*Durata\s*</p>}
@@ -2332,7 +2363,8 @@ defmodule IdeajarWeb.IdeaLive.IndexTest do
     # 3. Helper text NULL-exclusion (AA19/A12)
     test "renders the NULL-exclusion helper text exactly once, between sub-label and chip group",
          %{conn: conn} do
-      {:ok, _view, html} = live_isolated(conn, Index, session: @authenticated_session)
+      view = mount_authenticated(conn)
+      html = render(view)
 
       helper_text = "Le idee senza durata sono nascoste quando un filtro è attivo."
 
@@ -2377,14 +2409,16 @@ defmodule IdeajarWeb.IdeaLive.IndexTest do
 
     # 4. Step 1 sub-block aria-label invariate.
     test "categorie sub-block keeps aria-label='Filtra per categoria'", %{conn: conn} do
-      {:ok, _view, html} = live_isolated(conn, Index, session: @authenticated_session)
+      view = mount_authenticated(conn)
+      html = render(view)
       assert html =~ ~s(aria-label="Filtra per categoria")
     end
 
     # 5. Secondo rover: only 1 tabindex=0 on filter-duration-chip-*.
     test "secondo rover: only first duration chip (poche_ore) has tabindex=0",
          %{conn: conn} do
-      {:ok, _view, html} = live_isolated(conn, Index, session: @authenticated_session)
+      view = mount_authenticated(conn)
+      html = render(view)
 
       duration_chip_buttons =
         Regex.scan(~r{<button[^>]*id="filter-duration-chip-\w+"[^>]*>}, html)
@@ -2714,7 +2748,8 @@ defmodule IdeajarWeb.IdeaLive.IndexTest do
     # against the helper signature change).
     test "no filter active: zero Mostra tutte buttons", %{conn: conn} do
       _ = seed_6_lv_ideas_with_durations()
-      {:ok, _view, html} = live_isolated(conn, Index, session: @authenticated_session)
+      view = mount_authenticated(conn)
+      html = render(view)
 
       count = Regex.scan(~r/Mostra tutte/, html) |> length()
       assert count == 0
@@ -2955,7 +2990,8 @@ defmodule IdeajarWeb.IdeaLive.IndexTest do
     test "mount: no element with id=\"filter-status\" exists in the DOM",
          %{conn: conn} do
       _ = seed_5_lv_ideas()
-      {:ok, _view, html} = live_isolated(conn, Index, session: @authenticated_session)
+      view = mount_authenticated(conn)
+      html = render(view)
 
       refute html =~ ~r/id="filter-status"/
     end
@@ -2963,7 +2999,8 @@ defmodule IdeajarWeb.IdeaLive.IndexTest do
     test "mount: no role=\"status\" element appears inside the filter-row section",
          %{conn: conn} do
       _ = seed_5_lv_ideas()
-      {:ok, _view, html} = live_isolated(conn, Index, session: @authenticated_session)
+      view = mount_authenticated(conn)
+      html = render(view)
 
       [filter_row] =
         Regex.run(
@@ -5832,6 +5869,114 @@ defmodule IdeajarWeb.IdeaLive.IndexTest do
       assert app_css =~ "#filter-budget-slider::-moz-range-thumb"
       assert app_css =~ "#form-budget-slider::-webkit-slider-thumb"
       assert app_css =~ "#form-budget-slider::-moz-range-thumb"
+    end
+  end
+
+  describe "filter row collapse (slice 9 follow-up)" do
+    test "mount: filter row is collapsed by default", %{conn: conn} do
+      view = mount_authenticated_collapsed(conn)
+      assigns = :sys.get_state(view.pid).socket.assigns
+      assert assigns.filters_expanded? == false
+
+      html = render(view)
+      # Toggle button is always visible
+      assert html =~ "Filtri"
+      assert html =~ ~s(phx-click="toggle_filters")
+      # Sub-blocks are NOT rendered when collapsed
+      refute html =~ ~s(aria-label="Filtra per categoria")
+      refute html =~ ~s(aria-label="Filtra per durata")
+      refute html =~ ~s(aria-label="Filtra per budget")
+      refute html =~ ~s(aria-label="Filtra per distanza")
+      refute html =~ ~s(aria-label="Filtra per testo")
+    end
+
+    test "click 'Filtri' button expands the row and renders all sub-blocks",
+         %{conn: conn} do
+      view = mount_authenticated_collapsed(conn)
+      render_click(view, "toggle_filters")
+
+      assigns = :sys.get_state(view.pid).socket.assigns
+      assert assigns.filters_expanded? == true
+
+      html = render(view)
+      assert html =~ ~s(aria-label="Filtra per categoria")
+      assert html =~ ~s(aria-label="Filtra per durata")
+      assert html =~ ~s(aria-label="Filtra per budget")
+      assert html =~ ~s(aria-label="Filtra per distanza")
+      assert html =~ ~s(aria-label="Filtra per testo")
+    end
+
+    test "toggle_filters is idempotent — collapsed → expanded → collapsed",
+         %{conn: conn} do
+      view = mount_authenticated_collapsed(conn)
+      render_click(view, "toggle_filters")
+      assert :sys.get_state(view.pid).socket.assigns.filters_expanded? == true
+
+      render_click(view, "toggle_filters")
+      assert :sys.get_state(view.pid).socket.assigns.filters_expanded? == false
+    end
+
+    test "aria-expanded mirrors the @filters_expanded? assign", %{conn: conn} do
+      view = mount_authenticated_collapsed(conn)
+
+      [button] =
+        Regex.run(~r/<button[^>]*phx-click="toggle_filters"[^>]*>/, render(view))
+
+      assert button =~ ~s(aria-expanded="false")
+
+      render_click(view, "toggle_filters")
+
+      [button] =
+        Regex.run(~r/<button[^>]*phx-click="toggle_filters"[^>]*>/, render(view))
+
+      assert button =~ ~s(aria-expanded="true")
+    end
+
+    test "active filter counter: 0 active → label 'Filtri' (no parens)",
+         %{conn: conn} do
+      view = mount_authenticated_collapsed(conn)
+      html = render(view)
+      assert html =~ "Filtri"
+      refute html =~ ~r/Filtri\s*\(\d+\)/
+    end
+
+    test "active filter counter: 1 active → label 'Filtri (1)'", %{conn: conn} do
+      view = mount_authenticated_collapsed(conn)
+      render_click(view, "toggle_filters")
+      render_hook(view, "update_text_search", %{"q" => "mar"})
+      render_click(view, "toggle_filters")
+
+      html = render(view)
+      assert html =~ ~r/Filtri\s*\(1\)/
+    end
+
+    test "active filter counter: counts the 5 axes (categoria, durata, budget, distanza, testo)",
+         %{conn: conn} do
+      view = mount_authenticated_collapsed(conn)
+      mare = Ideajar.Repo.get_by!(Ideajar.Categories.Category, name: "mare")
+
+      render_click(view, "toggle_filters")
+      render_click(view, "cycle_filter", %{"id" => Integer.to_string(mare.id)})
+      render_click(view, "toggle_duration_filter", %{"duration" => "weekend"})
+      render_hook(view, "update_max_budget", %{"value" => "4"})
+      render_hook(view, "set_user_location", %{"lat" => 43.5, "lng" => 13.6})
+      render_hook(view, "update_max_distance", %{"value" => "3"})
+      render_hook(view, "update_text_search", %{"q" => "mar"})
+      render_click(view, "toggle_filters")
+
+      html = render(view)
+      # 5 logical axes: distanza counts once even with both ref + slider set.
+      assert html =~ ~r/Filtri\s*\(5\)/
+    end
+
+    test "F refresh: filter expansion state resets on remount (LV-session only)",
+         %{conn: conn} do
+      view1 = mount_authenticated_collapsed(conn)
+      render_click(view1, "toggle_filters")
+      assert :sys.get_state(view1.pid).socket.assigns.filters_expanded? == true
+
+      view2 = mount_authenticated_collapsed(conn)
+      assert :sys.get_state(view2.pid).socket.assigns.filters_expanded? == false
     end
   end
 end

@@ -83,6 +83,7 @@ defmodule IdeajarWeb.IdeaLive.Index do
      |> reset_user_location()
      |> assign(:max_distance_index, 0)
      |> assign(:text_search_query, "")
+     |> assign(:filters_expanded?, false)
      |> assign_form()
      |> reload_ideas()}
   end
@@ -330,6 +331,14 @@ defmodule IdeajarWeb.IdeaLive.Index do
   # Slice 9 step 2 — scoped reset of the budget filter slider.
   def handle_event("remove_budget_filter", _params, socket) do
     {:noreply, socket |> assign(:max_budget_index, 0) |> reload_ideas()}
+  end
+
+  # Slice 9 follow-up — collapse the entire filter row container
+  # (single toggle, not per-axis). Default state is collapsed; the
+  # button at the row header expands/collapses everything together.
+  # LV-session only: refresh resets to collapsed.
+  def handle_event("toggle_filters", _params, socket) do
+    {:noreply, assign(socket, :filters_expanded?, not socket.assigns.filters_expanded?)}
   end
 
   def handle_event("clear_filters", _params, socket) do
@@ -946,6 +955,33 @@ defmodule IdeajarWeb.IdeaLive.Index do
     filter_state != %{} or MapSet.size(duration_filter) > 0 or max_budget_index > 0 or
       max_distance_index > 0 or not is_nil(user_lat) or text_search_query != ""
   end
+
+  @doc """
+  Slice 9 follow-up — counts how many of the 5 logical filter axes are
+  active (categoria, durata, budget, distanza, testo). The "distanza"
+  axis is treated as a single unit even though it has two assigns
+  (`@user_lat` reference point + `@max_distance_index` slider): the
+  filter row sub-block displays them together, so the counter reflects
+  the user's mental model. Used by the collapse header
+  (`Filtri (N)`) to surface active filters when the row is collapsed.
+  """
+  def active_filter_axes_count(%{
+        filter_state: filter_state,
+        duration_filter: duration_filter,
+        max_budget_index: max_budget_index,
+        max_distance_index: max_distance_index,
+        user_lat: user_lat,
+        text_search_query: text_search_query
+      }) do
+    bool_to_int(filter_state != %{}) +
+      bool_to_int(MapSet.size(duration_filter) > 0) +
+      bool_to_int(max_budget_index > 0) +
+      bool_to_int(max_distance_index > 0 or not is_nil(user_lat)) +
+      bool_to_int(text_search_query != "")
+  end
+
+  defp bool_to_int(true), do: 1
+  defp bool_to_int(false), do: 0
 
   @doc """
   Slice 7b step 8 — slider helpers. `distance_max_km/1` resolves the
