@@ -188,6 +188,27 @@ Stringhe aggiunte in slice 8 (text search on ideas):
 | Placeholder text input                         | `Cerca idee`                                                                 |
 | Bottone rimuovi filtro testo                   | `Rimuovi filtro testo`                                                       |
 
+Stringhe aggiunte in slice 9 (budget chip → slider conversion):
+
+| Elemento                                       | Testo IT                                                                     |
+|------------------------------------------------|------------------------------------------------------------------------------|
+| Filter aria-valuetext idx 0                    | `Disattivo`                                                                  |
+| Filter aria-valuetext idx 1                    | `Gratis`                                                                     |
+| Filter aria-valuetext idx 2                    | `fino a 20€`                                                                 |
+| Filter aria-valuetext idx 3                    | `fino a 50€`                                                                 |
+| Filter aria-valuetext idx 4                    | `fino a 100€`                                                                |
+| Filter aria-valuetext idx 5                    | `fino a 200€`                                                                |
+| Filter aria-valuetext idx 6                    | `fino a 500€`                                                                |
+| Filter aria-valuetext idx 7                    | `oltre 1000€`                                                                |
+| Filter caption sotto slider                    | `Budget: <valuetext>`                                                        |
+| Bottone rimuovi filtro budget                  | `Rimuovi filtro budget`                                                      |
+| Form aria-valuetext idx 0                      | `Non specificato`                                                            |
+| Form aria-valuetext idx 1                      | `Gratis`                                                                     |
+| Form aria-valuetext idx 2..6                   | `20€` / `50€` / `100€` / `200€` / `500€`                                      |
+| Form aria-valuetext idx 7                      | `1000+€`                                                                     |
+| Form caption sotto slider                      | `Budget: <valuetext>`                                                        |
+| Bottone form rimuovi prezzo                    | `Rimuovi prezzo`                                                             |
+
 Nuova copy aggiunta da slice future va appesa qui per evitare drift.
 
 ## Architettura

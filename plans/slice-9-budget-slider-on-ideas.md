@@ -2,7 +2,7 @@
 
 **Created**: 2026-05-02
 **Branch**: main (trunk-based)
-**Status**: approved
+**Status**: implemented
 **Spec**: `docs/specs/budget-slider-on-ideas.md`
 
 ## Build conventions (carried from slice 1-8)

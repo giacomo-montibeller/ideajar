@@ -469,4 +469,32 @@ defmodule Ideajar.DocsTest do
       assert content =~ "slice 8"
     end
   end
+
+  describe "docs/conventions.md — slice 9 UI copy" do
+    setup do
+      {:ok, content: File.read!(Path.join(File.cwd!(), "docs/conventions.md"))}
+    end
+
+    test "all slice-9 budget slider UI strings appear verbatim", %{content: content} do
+      needles = [
+        "Filtra per budget",
+        "Disattivo",
+        "Gratis",
+        "fino a 20€",
+        "fino a 50€",
+        "fino a 100€",
+        "fino a 200€",
+        "fino a 500€",
+        "oltre 1000€",
+        "Rimuovi filtro budget",
+        "Non specificato",
+        "1000+€",
+        "Rimuovi prezzo"
+      ]
+
+      for needle <- needles do
+        assert content =~ needle, "missing slice-9 UI copy in conventions.md: #{needle}"
+      end
+    end
+  end
 end
