@@ -94,4 +94,69 @@ defmodule IdeajarWeb.AssetRoutingTest do
       assert icon_512["purpose"] == "any maskable"
     end
   end
+
+  describe "icons binary (slice 10)" do
+    # PNG chunk-scan parser (DD-S10-2). Robust vs PNG variants that
+    # may interleave ancillary chunks (tEXt/iTXt/pHYs) before IHDR.
+    # Spec: 8-byte magic, then a sequence of chunks {len::32, type::4-bytes,
+    # data::size(len)-bytes, crc::32}. IHDR is always 13 bytes wide:
+    # width::32 + height::32 + 5 bytes of bit-depth/color-type/etc.
+    defp png_dimensions(<<137, 80, 78, 71, 13, 10, 26, 10, rest::binary>>),
+      do: find_ihdr(rest)
+
+    defp find_ihdr(<<13::32, "IHDR", w::32, h::32, _crc::32, _::binary>>),
+      do: {w, h}
+
+    defp find_ihdr(<<len::32, _type::4-bytes, _data::size(len)-bytes, _crc::32, rest::binary>>),
+      do: find_ihdr(rest)
+
+    defp icon_path(name) do
+      Path.join(Application.app_dir(:ideajar, "priv"), "static/icons/#{name}")
+    end
+
+    test "icon-192.png exists with PNG magic + 192×192 dimensions" do
+      path = icon_path("icon-192.png")
+      assert File.exists?(path)
+
+      data = File.read!(path)
+      assert byte_size(data) > 0
+      # A8 magic
+      assert <<137, 80, 78, 71, 13, 10, 26, 10, _rest::binary>> = data
+      # A8 dimensions via chunk scan
+      assert {192, 192} = png_dimensions(data)
+    end
+
+    test "icon-512.png exists with PNG magic + 512×512 dimensions" do
+      path = icon_path("icon-512.png")
+      assert File.exists?(path)
+
+      data = File.read!(path)
+      assert byte_size(data) > 0
+      assert <<137, 80, 78, 71, 13, 10, 26, 10, _rest::binary>> = data
+      assert {512, 512} = png_dimensions(data)
+    end
+
+    test "GET /icons/icon-192.png returns 200 + image/png", %{conn: conn} do
+      conn = get(conn, "/icons/icon-192.png")
+      assert conn.status == 200
+      [content_type | _] = Plug.Conn.get_resp_header(conn, "content-type")
+      assert content_type =~ "image/png"
+    end
+
+    test "GET /icons/icon-512.png returns 200 + image/png", %{conn: conn} do
+      conn = get(conn, "/icons/icon-512.png")
+      assert conn.status == 200
+      [content_type | _] = Plug.Conn.get_resp_header(conn, "content-type")
+      assert content_type =~ "image/png"
+    end
+
+    test "priv/scripts/generate_icons.sh exists and is executable" do
+      path = Path.join(File.cwd!(), "priv/scripts/generate_icons.sh")
+      assert File.exists?(path)
+
+      stat = File.stat!(path)
+      # Owner-execute bit (mode & 0o100 != 0).
+      assert Bitwise.band(stat.mode, 0o100) != 0
+    end
+  end
 end
