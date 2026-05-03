@@ -1,990 +1,214 @@
 defmodule Ideajar.MigrationsTest do
   @moduledoc """
-  All migration round-trip and idempotency tests live here.
+  Slice 11a — rewritten from scratch for the consolidated initial
+  schema migration. Pre-slice-11a tested 8 slice-by-slice migrations
+  with their own up/down round-trips; post-consolidation there are
+  exactly 2 migrations (initial_schema + seed_categories) and the
+  test surface shrinks accordingly.
 
-  Migrations bypass the Ecto sandbox because they apply DDL outside any
-  transaction. Each non-trivial migration test toggles the sandbox into
-  `:auto` mode globally, which means having multiple `async: false`
-  migration test modules race on the global pool state — drops become
-  invisible to the migrator's connection, sandbox-aware non-migration
-  tests stop seeing transactional isolation, and the suite becomes
-  flaky.
-
-  Consolidating every migration test into this single module keeps the
-  ordering and the `:auto`/`:manual` mode toggle deterministic. On exit
-  we restore both the schema and the `:manual` mode so subsequent
-  sandbox-aware tests recover cleanly.
+  Migrations bypass the Ecto sandbox because they apply DDL outside
+  any transaction. The :auto/:manual sandbox toggle is global; we
+  serialize this module (`async: false`) so it cannot race other
+  tests through the global pool state. On exit we restore both the
+  schema and the :manual mode so subsequent sandbox-aware tests
+  recover cleanly.
   """
 
   use ExUnit.Case, async: false
 
   @moduletag :migration
 
+  import Ecto.Query, only: [from: 2]
+
   alias Ecto.Adapters.SQL
   alias Ideajar.Repo
 
-  # ── Migration version metadata ──────────────────────────────────────
+  @initial_schema_module Ideajar.Repo.Migrations.InitialSchema
+  @initial_schema_version 20_260_503_000_001
 
-  @ideas_migration Ideajar.Repo.Migrations.CreateIdeas
-  @ideas_version 20_260_427_000_001
-  @ideas_path Path.expand(
-                "../../priv/repo/migrations/20260427000001_create_ideas.exs",
-                __DIR__
-              )
+  @seed_categories_module Ideajar.Repo.Migrations.SeedCategories
+  @seed_categories_version 20_260_503_000_002
 
-  @categories_migration Ideajar.Repo.Migrations.CreateCategories
-  @categories_version 20_260_428_000_001
-  @categories_path Path.expand(
-                     "../../priv/repo/migrations/20260428000001_create_categories.exs",
-                     __DIR__
-                   )
-
-  @seed_categories_migration Ideajar.Repo.Migrations.SeedCategories
-  @seed_categories_version 20_260_428_000_002
-  @seed_categories_path Path.expand(
-                          "../../priv/repo/migrations/20260428000002_seed_categories.exs",
-                          __DIR__
-                        )
-
-  @wipe_ideas_migration Ideajar.Repo.Migrations.WipeSlice2DevIdeas
-  @wipe_ideas_version 20_260_428_000_003
-  @wipe_ideas_path Path.expand(
-                     "../../priv/repo/migrations/20260428000003_wipe_slice2_dev_ideas.exs",
-                     __DIR__
-                   )
-
-  @idea_categories_migration Ideajar.Repo.Migrations.CreateIdeaCategories
-  @idea_categories_version 20_260_428_000_004
-  @idea_categories_path Path.expand(
-                          "../../priv/repo/migrations/20260428000004_create_idea_categories.exs",
-                          __DIR__
-                        )
-
-  @add_duration_migration Ideajar.Repo.Migrations.AddDurationToIdeas
-  @add_duration_version 20_260_428_000_005
-  @add_duration_path Path.expand(
-                       "../../priv/repo/migrations/20260428000005_add_duration_to_ideas.exs",
-                       __DIR__
-                     )
-
-  @add_estimated_cost_migration Ideajar.Repo.Migrations.AddEstimatedCostToIdeas
-  @add_estimated_cost_version 20_260_429_000_001
-  @add_estimated_cost_path Path.expand(
-                             "../../priv/repo/migrations/20260429000001_add_estimated_cost_to_ideas.exs",
-                             __DIR__
-                           )
-
-  @add_location_migration Ideajar.Repo.Migrations.AddLocationToIdeas
-  @add_location_version 20_260_430_000_001
-  @add_location_path Path.expand(
-                       "../../priv/repo/migrations/20260430000001_add_location_to_ideas.exs",
-                       __DIR__
-                     )
-
-  unless Code.ensure_loaded?(@ideas_migration), do: Code.require_file(@ideas_path)
-  unless Code.ensure_loaded?(@categories_migration), do: Code.require_file(@categories_path)
-
-  unless Code.ensure_loaded?(@seed_categories_migration),
-    do: Code.require_file(@seed_categories_path)
-
-  unless Code.ensure_loaded?(@wipe_ideas_migration), do: Code.require_file(@wipe_ideas_path)
-
-  unless Code.ensure_loaded?(@idea_categories_migration),
-    do: Code.require_file(@idea_categories_path)
-
-  unless Code.ensure_loaded?(@add_duration_migration),
-    do: Code.require_file(@add_duration_path)
-
-  unless Code.ensure_loaded?(@add_estimated_cost_migration),
-    do: Code.require_file(@add_estimated_cost_path)
-
-  unless Code.ensure_loaded?(@add_location_migration),
-    do: Code.require_file(@add_location_path)
-
-  @canonical_categories [
-    {1, "passeggiata"},
-    {2, "mare"},
-    {3, "museo"},
-    {4, "ristorante"},
-    {5, "sport"},
-    {6, "cultura"},
-    {7, "cinema"},
-    {8, "viaggio"}
-  ]
+  @migrations_dir Path.expand("../../priv/repo/migrations", __DIR__)
 
   setup do
-    Ecto.Adapters.SQL.Sandbox.checkout(Repo)
-    Ecto.Adapters.SQL.Sandbox.mode(Repo, :auto)
-
-    drop_table("idea_categories")
-    drop_table("ideas")
-    drop_table("categories")
-    delete_versions()
+    SQL.Sandbox.mode(Repo, :auto)
+    # Pre-load migration modules; they aren't on the autoload path because
+    # they live under `priv/`. Without this, `Ecto.Migrator.down/up` with
+    # a module reference would raise `UndefinedFunctionError`.
+    ensure_migrations_loaded!()
 
     on_exit(fn ->
-      drop_table("idea_categories")
-      drop_table("ideas")
-      drop_table("categories")
-      delete_versions()
-
-      # Restore the production schema for subsequent sandbox-aware tests:
-      # ideas + categories tables, the 8 seed rows, the wipe migration
-      # recorded as run, and the idea_categories join table.
-      Ecto.Migrator.up(Repo, @ideas_version, @ideas_migration, log: false)
-      Ecto.Migrator.up(Repo, @categories_version, @categories_migration, log: false)
-
-      Ecto.Migrator.up(
-        Repo,
-        @seed_categories_version,
-        @seed_categories_migration,
-        log: false
-      )
-
-      Ecto.Migrator.up(Repo, @wipe_ideas_version, @wipe_ideas_migration, log: false)
-
-      Ecto.Migrator.up(
-        Repo,
-        @idea_categories_version,
-        @idea_categories_migration,
-        log: false
-      )
-
-      # Restore the slice-5 add_duration column directly (raw SQL)
-      # rather than `Ecto.Migrator.up`. The migrator forks a Task whose
-      # pool connection has a stale schema cache after the test's column
-      # changes (see `run_add_duration/1` rationale above). Running on
-      # the test connection avoids the cache miss; the schema_migrations
-      # row is upserted manually for fidelity with `mix ecto.migrate`.
-      unless duration_column_present?() do
-        SQL.query!(Repo, ~s|ALTER TABLE "ideas" ADD COLUMN "duration" TEXT|, [])
-      end
-
-      SQL.query!(
-        Repo,
-        "INSERT OR IGNORE INTO schema_migrations (version, inserted_at) VALUES (?, datetime('now'))",
-        [@add_duration_version]
-      )
-
-      # Slice 6: same connection-scoped raw-SQL strategy for the
-      # `estimated_cost` column. Restored LAST (after add_duration) to
-      # mirror the production migration order.
-      unless estimated_cost_column_present?() do
-        SQL.query!(Repo, ~s|ALTER TABLE "ideas" ADD COLUMN "estimated_cost" INTEGER|, [])
-      end
-
-      SQL.query!(
-        Repo,
-        "INSERT OR IGNORE INTO schema_migrations (version, inserted_at) VALUES (?, datetime('now'))",
-        [@add_estimated_cost_version]
-      )
-
-      # Slice 7a: same connection-scoped raw-SQL strategy for the 3
-      # location columns. Restored LAST (after add_estimated_cost) to
-      # mirror the production migration order.
-      unless location_name_column_present?() do
-        SQL.query!(Repo, ~s|ALTER TABLE "ideas" ADD COLUMN "location_name" TEXT|, [])
-      end
-
-      unless lat_column_present?() do
-        SQL.query!(Repo, ~s|ALTER TABLE "ideas" ADD COLUMN "lat" REAL|, [])
-      end
-
-      unless lng_column_present?() do
-        SQL.query!(Repo, ~s|ALTER TABLE "ideas" ADD COLUMN "lng" REAL|, [])
-      end
-
-      SQL.query!(
-        Repo,
-        "INSERT OR IGNORE INTO schema_migrations (version, inserted_at) VALUES (?, datetime('now'))",
-        [@add_location_version]
-      )
-
-      Ecto.Adapters.SQL.Sandbox.mode(Repo, :manual)
+      restore_baseline()
+      SQL.Sandbox.mode(Repo, :manual)
     end)
 
     :ok
   end
 
-  # ── Schema migrations: round-trip up/down/up ───────────────────────
+  describe "priv/repo/migrations directory" do
+    test "contains exactly the 2 consolidated slice-11a files" do
+      files =
+        @migrations_dir
+        |> File.ls!()
+        |> Enum.filter(&String.match?(&1, ~r/^\d+_.*\.exs$/))
+        |> Enum.sort()
 
-  test "create_ideas migration is reversible and creates the inserted_at index" do
-    refute table_exists?("ideas")
-
-    Ecto.Migrator.up(Repo, @ideas_version, @ideas_migration, log: false)
-
-    assert table_exists?("ideas")
-    assert index_exists?("ideas_inserted_at_desc_idx")
-
-    Ecto.Migrator.down(Repo, @ideas_version, @ideas_migration, log: false)
-
-    refute table_exists?("ideas")
-
-    Ecto.Migrator.up(Repo, @ideas_version, @ideas_migration, log: false)
-
-    assert table_exists?("ideas")
-    assert index_exists?("ideas_inserted_at_desc_idx")
+      assert files == [
+               "20260503000001_initial_schema.exs",
+               "20260503000002_seed_categories.exs"
+             ]
+    end
   end
 
-  test "create_categories migration is reversible and creates the unique indexes" do
-    refute table_exists?("categories")
+  describe "InitialSchema migration round-trip (slice 11a)" do
+    test "down + up restores the 3 tables" do
+      # Roll back both seed + schema.
+      Ecto.Migrator.down(Repo, @seed_categories_version, @seed_categories_module)
+      Ecto.Migrator.down(Repo, @initial_schema_version, @initial_schema_module)
 
-    Ecto.Migrator.up(Repo, @categories_version, @categories_migration, log: false)
+      refute table_exists?("ideas")
+      refute table_exists?("categories")
+      refute table_exists?("idea_categories")
 
-    assert table_exists?("categories")
-    assert index_exists?("categories_name_index")
-    assert index_exists?("categories_display_order_index")
+      # And bring them back.
+      Ecto.Migrator.up(Repo, @initial_schema_version, @initial_schema_module)
+      Ecto.Migrator.up(Repo, @seed_categories_version, @seed_categories_module)
 
-    Ecto.Migrator.down(Repo, @categories_version, @categories_migration, log: false)
+      assert table_exists?("ideas")
+      assert table_exists?("categories")
+      assert table_exists?("idea_categories")
+    end
 
-    refute table_exists?("categories")
+    test "ideas table carries every final-state column" do
+      cols = column_names("ideas")
 
-    Ecto.Migrator.up(Repo, @categories_version, @categories_migration, log: false)
+      for needed <- ~w(id title description url duration estimated_cost
+                       location_name lat lng inserted_at updated_at) do
+        assert needed in cols, "ideas table missing column: #{needed}"
+      end
+    end
 
-    assert table_exists?("categories")
-    assert index_exists?("categories_name_index")
-    assert index_exists?("categories_display_order_index")
-  end
+    test "categories table enforces unique name" do
+      cols = column_names("categories")
+      assert "name" in cols
+      assert "display_order" in cols
 
-  # ── Seed migration: contents + idempotency ─────────────────────────
+      now = DateTime.utc_now() |> DateTime.truncate(:second)
 
-  test "seed_categories migration inserts the canonical 8 in display_order 1..8" do
-    Ecto.Migrator.up(Repo, @categories_version, @categories_migration, log: false)
+      Repo.insert_all("categories", [
+        %{name: "dup-test", display_order: 99, inserted_at: now, updated_at: now}
+      ])
 
-    Ecto.Migrator.up(
-      Repo,
-      @seed_categories_version,
-      @seed_categories_migration,
-      log: false
-    )
-
-    rows =
-      Repo
-      |> SQL.query!("SELECT name, display_order FROM categories ORDER BY display_order", [])
-      |> Map.fetch!(:rows)
-
-    assert rows == Enum.map(@canonical_categories, fn {ord, name} -> [name, ord] end)
-  end
-
-  test "seed_categories down then up restores the canonical 8 rows (round-trip)" do
-    Ecto.Migrator.up(Repo, @categories_version, @categories_migration, log: false)
-
-    Ecto.Migrator.up(
-      Repo,
-      @seed_categories_version,
-      @seed_categories_migration,
-      log: false
-    )
-
-    %{rows: [[count_after_up]]} = SQL.query!(Repo, "SELECT COUNT(*) FROM categories", [])
-    assert count_after_up == 8
-
-    Ecto.Migrator.down(
-      Repo,
-      @seed_categories_version,
-      @seed_categories_migration,
-      log: false
-    )
-
-    %{rows: [[count_after_down]]} = SQL.query!(Repo, "SELECT COUNT(*) FROM categories", [])
-    assert count_after_down == 0
-
-    Ecto.Migrator.up(
-      Repo,
-      @seed_categories_version,
-      @seed_categories_migration,
-      log: false
-    )
-
-    rows =
-      Repo
-      |> SQL.query!("SELECT name, display_order FROM categories ORDER BY display_order", [])
-      |> Map.fetch!(:rows)
-
-    assert rows == Enum.map(@canonical_categories, fn {ord, name} -> [name, ord] end)
-  end
-
-  test "running seed_categories up/0 a second time on an already-seeded DB is a no-op" do
-    Ecto.Migrator.up(Repo, @categories_version, @categories_migration, log: false)
-
-    Ecto.Migrator.up(
-      Repo,
-      @seed_categories_version,
-      @seed_categories_migration,
-      log: false
-    )
-
-    SQL.query!(Repo, "DELETE FROM schema_migrations WHERE version = ?", [
-      @seed_categories_version
-    ])
-
-    Ecto.Migrator.up(
-      Repo,
-      @seed_categories_version,
-      @seed_categories_migration,
-      log: false
-    )
-
-    %{rows: [[count]]} = SQL.query!(Repo, "SELECT COUNT(*) FROM categories", [])
-    assert count == 8
-  end
-
-  # ── Wipe migration ─────────────────────────────────────────────────
-
-  test "wipe_slice2_dev_ideas migration empties the ideas table and leaves categories untouched" do
-    Ecto.Migrator.up(Repo, @ideas_version, @ideas_migration, log: false)
-    Ecto.Migrator.up(Repo, @categories_version, @categories_migration, log: false)
-
-    Ecto.Migrator.up(
-      Repo,
-      @seed_categories_version,
-      @seed_categories_migration,
-      log: false
-    )
-
-    SQL.query!(
-      Repo,
-      "INSERT INTO ideas (title, inserted_at, updated_at) VALUES (?, ?, ?)",
-      ["left over", "2026-04-27 00:00:00", "2026-04-27 00:00:00"]
-    )
-
-    %{rows: [[ideas_before]]} = SQL.query!(Repo, "SELECT COUNT(*) FROM ideas", [])
-    %{rows: [[cats_before]]} = SQL.query!(Repo, "SELECT COUNT(*) FROM categories", [])
-    assert ideas_before == 1
-    assert cats_before == 8
-
-    Ecto.Migrator.up(Repo, @wipe_ideas_version, @wipe_ideas_migration, log: false)
-
-    %{rows: [[ideas_after]]} = SQL.query!(Repo, "SELECT COUNT(*) FROM ideas", [])
-    %{rows: [[cats_after]]} = SQL.query!(Repo, "SELECT COUNT(*) FROM categories", [])
-    assert ideas_after == 0
-    assert cats_after == 8
-  end
-
-  # ── Join migration: round-trip ─────────────────────────────────────
-
-  test "create_idea_categories migration is reversible" do
-    Ecto.Migrator.up(Repo, @ideas_version, @ideas_migration, log: false)
-    Ecto.Migrator.up(Repo, @categories_version, @categories_migration, log: false)
-
-    refute table_exists?("idea_categories")
-
-    Ecto.Migrator.up(
-      Repo,
-      @idea_categories_version,
-      @idea_categories_migration,
-      log: false
-    )
-
-    assert table_exists?("idea_categories")
-
-    Ecto.Migrator.down(
-      Repo,
-      @idea_categories_version,
-      @idea_categories_migration,
-      log: false
-    )
-
-    refute table_exists?("idea_categories")
-
-    Ecto.Migrator.up(
-      Repo,
-      @idea_categories_version,
-      @idea_categories_migration,
-      log: false
-    )
-
-    assert table_exists?("idea_categories")
-  end
-
-  test "running wipe_slice2_dev_ideas up/0 a second time is a no-op" do
-    Ecto.Migrator.up(Repo, @ideas_version, @ideas_migration, log: false)
-    Ecto.Migrator.up(Repo, @wipe_ideas_version, @wipe_ideas_migration, log: false)
-
-    SQL.query!(Repo, "DELETE FROM schema_migrations WHERE version = ?", [@wipe_ideas_version])
-
-    Ecto.Migrator.up(Repo, @wipe_ideas_version, @wipe_ideas_migration, log: false)
-
-    %{rows: [[ideas]]} = SQL.query!(Repo, "SELECT COUNT(*) FROM ideas", [])
-    assert ideas == 0
-  end
-
-  # ── add_duration_to_ideas migration (slice 5) ──────────────────────
-  #
-  # The Ecto.Migrator path forks a `Task.async`, which gets a fresh pool
-  # connection from `:auto`-mode sandbox. SQLite caches the table schema
-  # per-connection; an `ALTER TABLE ADD COLUMN` committed on connection A
-  # is invisible to connection B's parser until B re-opens — and the
-  # very next `Migrator.down` task pulls B and crashes with
-  # `no such column: duration`. The pre-slice-5 migrations don't trip
-  # this because they only `CREATE TABLE` / `DROP TABLE`, which SQLite
-  # always re-resolves from sqlite_master.
-  #
-  # We work around it for slice-5 only by driving the migration's
-  # `change/0` directly through `Ecto.Migration.Runner.run/8`, which
-  # executes synchronously on the caller's connection (the sandbox-owned
-  # one), keeping the schema cookie consistent throughout the test.
-
-  defp run_add_duration(direction) do
-    operation =
-      case direction do
-        :forward -> :up
-        :backward -> :down
+      assert_raise Postgrex.Error, ~r/unique|duplicate/i, fn ->
+        Repo.insert_all("categories", [
+          %{name: "dup-test", display_order: 100, inserted_at: now, updated_at: now}
+        ])
       end
 
-    Ecto.Migration.Runner.run(
-      Repo,
-      Repo.config(),
-      @add_duration_version,
-      @add_duration_migration,
-      direction,
-      :change,
-      operation,
-      log: false
-    )
+      Repo.delete_all(from c in "categories", where: c.name == "dup-test")
+    end
+
+    test "idea_categories cascades on idea delete" do
+      now = DateTime.utc_now() |> DateTime.truncate(:second)
+
+      mare_id =
+        Repo.one!(from c in "categories", where: c.name == "mare", select: c.id)
+
+      {1, [%{id: idea_id}]} =
+        Repo.insert_all(
+          "ideas",
+          [%{title: "Cascade test", inserted_at: now, updated_at: now}],
+          returning: [:id]
+        )
+
+      Repo.insert_all("idea_categories", [
+        %{idea_id: idea_id, category_id: mare_id}
+      ])
+
+      assert 1 ==
+               Repo.aggregate(
+                 from(ic in "idea_categories", where: ic.idea_id == ^idea_id),
+                 :count
+               )
+
+      Repo.delete_all(from i in "ideas", where: i.id == ^idea_id)
+
+      assert 0 ==
+               Repo.aggregate(
+                 from(ic in "idea_categories", where: ic.idea_id == ^idea_id),
+                 :count
+               )
+    end
   end
 
-  test "add_duration_to_ideas migration is reversible and adds a TEXT NULLABLE column" do
-    Ecto.Migrator.up(Repo, @ideas_version, @ideas_migration, log: false)
-    Ecto.Migrator.up(Repo, @categories_version, @categories_migration, log: false)
-    Ecto.Migrator.up(Repo, @seed_categories_version, @seed_categories_migration, log: false)
-    Ecto.Migrator.up(Repo, @wipe_ideas_version, @wipe_ideas_migration, log: false)
+  describe "SeedCategories migration (slice 11a)" do
+    test "re-running up is idempotent (on_conflict :nothing on :name)" do
+      Ecto.Migrator.down(Repo, @seed_categories_version, @seed_categories_module)
+      assert Repo.aggregate("categories", :count) == 0
 
-    Ecto.Migrator.up(
-      Repo,
-      @idea_categories_version,
-      @idea_categories_migration,
-      log: false
-    )
+      Ecto.Migrator.up(Repo, @seed_categories_version, @seed_categories_module)
+      assert Repo.aggregate("categories", :count) == 8
 
-    refute duration_column_present?()
+      Ecto.Migrator.up(Repo, @seed_categories_version, @seed_categories_module)
+      assert Repo.aggregate("categories", :count) == 8
+    end
 
-    run_add_duration(:forward)
+    test "all 8 canonical category names are present after up" do
+      names =
+        Repo.all(from c in "categories", select: c.name)
+        |> MapSet.new()
 
-    assert duration_column_text_nullable?()
-
-    run_add_duration(:backward)
-
-    refute duration_column_present?()
-
-    run_add_duration(:forward)
-
-    assert duration_column_text_nullable?()
-  end
-
-  test "add_duration_to_ideas migration accepts valid duration and NULL on insert" do
-    Ecto.Migrator.up(Repo, @ideas_version, @ideas_migration, log: false)
-    Ecto.Migrator.up(Repo, @categories_version, @categories_migration, log: false)
-    Ecto.Migrator.up(Repo, @seed_categories_version, @seed_categories_migration, log: false)
-    Ecto.Migrator.up(Repo, @wipe_ideas_version, @wipe_ideas_migration, log: false)
-
-    Ecto.Migrator.up(
-      Repo,
-      @idea_categories_version,
-      @idea_categories_migration,
-      log: false
-    )
-
-    run_add_duration(:forward)
-
-    SQL.query!(
-      Repo,
-      "INSERT INTO ideas (title, duration, inserted_at, updated_at) VALUES (?, ?, ?, ?)",
-      ["Weekend al mare", "weekend", "2026-04-27 10:00:00", "2026-04-27 10:00:00"]
-    )
-
-    SQL.query!(
-      Repo,
-      "INSERT INTO ideas (title, duration, inserted_at, updated_at) VALUES (?, ?, ?, ?)",
-      ["Senza durata", nil, "2026-04-27 10:01:00", "2026-04-27 10:01:00"]
-    )
-
-    %{rows: rows} =
-      SQL.query!(Repo, "SELECT title, duration FROM ideas ORDER BY title", [])
-
-    assert rows == [["Senza durata", nil], ["Weekend al mare", "weekend"]]
-  end
-
-  test "add_duration_to_ideas down preserves rows but resets duration column on next up" do
-    Ecto.Migrator.up(Repo, @ideas_version, @ideas_migration, log: false)
-    Ecto.Migrator.up(Repo, @categories_version, @categories_migration, log: false)
-    Ecto.Migrator.up(Repo, @seed_categories_version, @seed_categories_migration, log: false)
-    Ecto.Migrator.up(Repo, @wipe_ideas_version, @wipe_ideas_migration, log: false)
-
-    Ecto.Migrator.up(
-      Repo,
-      @idea_categories_version,
-      @idea_categories_migration,
-      log: false
-    )
-
-    run_add_duration(:forward)
-
-    SQL.query!(
-      Repo,
-      "INSERT INTO ideas (title, description, url, duration, inserted_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)",
-      [
-        "Sirolo",
-        "Bella spiaggia",
-        "https://example.com",
-        "weekend",
-        "2026-04-27 10:00:00",
-        "2026-04-27 10:00:00"
-      ]
-    )
-
-    SQL.query!(
-      Repo,
-      "INSERT INTO ideas (title, description, url, duration, inserted_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)",
-      ["Cinema", "", "", nil, "2026-04-27 10:01:00", "2026-04-27 10:01:00"]
-    )
-
-    run_add_duration(:backward)
-
-    %{rows: [[count_after_down]]} = SQL.query!(Repo, "SELECT COUNT(*) FROM ideas", [])
-    assert count_after_down == 2
-
-    %{rows: [[title, description, url]]} =
-      SQL.query!(
-        Repo,
-        "SELECT title, description, url FROM ideas WHERE title = ?",
-        ["Sirolo"]
-      )
-
-    assert title == "Sirolo"
-    assert description == "Bella spiaggia"
-    assert url == "https://example.com"
-
-    run_add_duration(:forward)
-
-    %{rows: rows} =
-      SQL.query!(Repo, "SELECT duration FROM ideas ORDER BY title", [])
-
-    # SQLite ALTER TABLE DROP COLUMN + add reset = column ripristinata vuota.
-    assert rows == [[nil], [nil]]
-  end
-
-  # ── add_estimated_cost_to_ideas migration (slice 6) ────────────────
-  #
-  # Same connection-cache hazard as slice 5 (see comment above
-  # `run_add_duration/1`): we drive `change/0` synchronously on the
-  # sandbox-owned connection rather than via `Ecto.Migrator.up/down`.
-
-  defp run_add_estimated_cost(direction) do
-    operation =
-      case direction do
-        :forward -> :up
-        :backward -> :down
+      for needed <- ~w(passeggiata mare museo ristorante sport cultura cinema viaggio) do
+        assert MapSet.member?(names, needed),
+               "missing canonical seed: #{needed}"
       end
-
-    Ecto.Migration.Runner.run(
-      Repo,
-      Repo.config(),
-      @add_estimated_cost_version,
-      @add_estimated_cost_migration,
-      direction,
-      :change,
-      operation,
-      log: false
-    )
-  end
-
-  defp run_all_pre_estimated_cost_migrations do
-    Ecto.Migrator.up(Repo, @ideas_version, @ideas_migration, log: false)
-    Ecto.Migrator.up(Repo, @categories_version, @categories_migration, log: false)
-    Ecto.Migrator.up(Repo, @seed_categories_version, @seed_categories_migration, log: false)
-    Ecto.Migrator.up(Repo, @wipe_ideas_version, @wipe_ideas_migration, log: false)
-
-    Ecto.Migrator.up(
-      Repo,
-      @idea_categories_version,
-      @idea_categories_migration,
-      log: false
-    )
-
-    run_add_duration(:forward)
-  end
-
-  test "add_estimated_cost_to_ideas migration is reversible and adds an INTEGER NULLABLE column" do
-    run_all_pre_estimated_cost_migrations()
-
-    refute estimated_cost_column_present?()
-
-    run_add_estimated_cost(:forward)
-
-    assert estimated_cost_column_integer_nullable?()
-
-    run_add_estimated_cost(:backward)
-
-    refute estimated_cost_column_present?()
-
-    run_add_estimated_cost(:forward)
-
-    assert estimated_cost_column_integer_nullable?()
-  end
-
-  test "add_estimated_cost_to_ideas migration accepts integer values and NULL on insert" do
-    run_all_pre_estimated_cost_migrations()
-    run_add_estimated_cost(:forward)
-
-    SQL.query!(
-      Repo,
-      "INSERT INTO ideas (title, estimated_cost, inserted_at, updated_at) VALUES (?, ?, ?, ?)",
-      ["Mostra", 100, "2026-04-29 10:00:00", "2026-04-29 10:00:00"]
-    )
-
-    SQL.query!(
-      Repo,
-      "INSERT INTO ideas (title, estimated_cost, inserted_at, updated_at) VALUES (?, ?, ?, ?)",
-      ["Senza prezzo", nil, "2026-04-29 10:01:00", "2026-04-29 10:01:00"]
-    )
-
-    %{rows: rows} =
-      SQL.query!(Repo, "SELECT title, estimated_cost FROM ideas ORDER BY title", [])
-
-    assert rows == [["Mostra", 100], ["Senza prezzo", nil]]
-  end
-
-  test "add_estimated_cost_to_ideas down preserves rows but resets estimated_cost column on next up" do
-    run_all_pre_estimated_cost_migrations()
-    run_add_estimated_cost(:forward)
-
-    SQL.query!(
-      Repo,
-      "INSERT INTO ideas (title, description, url, estimated_cost, inserted_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)",
-      [
-        "Sirolo",
-        "Bella spiaggia",
-        "https://example.com",
-        100,
-        "2026-04-29 10:00:00",
-        "2026-04-29 10:00:00"
-      ]
-    )
-
-    SQL.query!(
-      Repo,
-      "INSERT INTO ideas (title, description, url, estimated_cost, inserted_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)",
-      ["Cinema", "", "", nil, "2026-04-29 10:01:00", "2026-04-29 10:01:00"]
-    )
-
-    run_add_estimated_cost(:backward)
-
-    %{rows: [[count_after_down]]} = SQL.query!(Repo, "SELECT COUNT(*) FROM ideas", [])
-    assert count_after_down == 2
-
-    %{rows: [[title, description, url]]} =
-      SQL.query!(
-        Repo,
-        "SELECT title, description, url FROM ideas WHERE title = ?",
-        ["Sirolo"]
-      )
-
-    assert title == "Sirolo"
-    assert description == "Bella spiaggia"
-    assert url == "https://example.com"
-
-    run_add_estimated_cost(:forward)
-
-    %{rows: rows} =
-      SQL.query!(Repo, "SELECT estimated_cost FROM ideas ORDER BY title", [])
-
-    # SQLite ALTER TABLE DROP COLUMN + add reset = column ripristinata vuota.
-    assert rows == [[nil], [nil]]
+    end
   end
 
   # ── Helpers ────────────────────────────────────────────────────────
 
-  defp drop_table(name), do: SQL.query!(Repo, "DROP TABLE IF EXISTS #{name}", [])
+  defp table_exists?(table) do
+    {:ok, %Postgrex.Result{rows: [[exists]]}} =
+      SQL.query(
+        Repo,
+        "SELECT EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = $1)",
+        [table]
+      )
 
-  defp delete_versions do
-    versions = [
-      @ideas_version,
-      @categories_version,
-      @seed_categories_version,
-      @wipe_ideas_version,
-      @idea_categories_version,
-      @add_duration_version,
-      @add_estimated_cost_version,
-      @add_location_version
-    ]
-
-    Enum.each(versions, fn v ->
-      SQL.query!(Repo, "DELETE FROM schema_migrations WHERE version = ?", [v])
-    end)
+    exists
   end
 
-  defp table_exists?(name) do
-    %{rows: rows} =
-      SQL.query!(Repo, "SELECT name FROM sqlite_master WHERE type='table' AND name=?", [name])
+  defp column_names(table) do
+    {:ok, %Postgrex.Result{rows: rows}} =
+      SQL.query(
+        Repo,
+        "SELECT column_name FROM information_schema.columns WHERE table_name = $1",
+        [table]
+      )
 
-    rows != []
+    Enum.map(rows, fn [name] -> name end)
   end
 
-  defp index_exists?(name) do
-    %{rows: rows} =
-      SQL.query!(Repo, "SELECT name FROM sqlite_master WHERE type='index' AND name=?", [name])
-
-    rows != []
+  defp restore_baseline do
+    Ecto.Migrator.run(Repo, @migrations_dir, :up, all: true)
   end
 
-  defp duration_column_present? do
-    duration_column_row() != nil
-  end
+  defp ensure_migrations_loaded! do
+    @migrations_dir
+    |> File.ls!()
+    |> Enum.filter(&String.match?(&1, ~r/^\d+_.*\.exs$/))
+    |> Enum.each(fn name ->
+      path = Path.join(@migrations_dir, name)
 
-  defp duration_column_text_nullable? do
-    case duration_column_row() do
-      nil ->
-        false
-
-      row ->
-        # PRAGMA table_info columns: cid, name, type, notnull, dflt_value, pk
-        type = Enum.at(row, 2)
-        notnull = Enum.at(row, 3)
-        String.upcase(type) == "TEXT" and notnull == 0
-    end
-  end
-
-  defp duration_column_row do
-    %{rows: rows} = SQL.query!(Repo, "PRAGMA table_info(ideas)", [])
-    Enum.find(rows, fn row -> Enum.at(row, 1) == "duration" end)
-  end
-
-  defp estimated_cost_column_present? do
-    estimated_cost_column_row() != nil
-  end
-
-  defp estimated_cost_column_integer_nullable? do
-    case estimated_cost_column_row() do
-      nil ->
-        false
-
-      row ->
-        # PRAGMA table_info columns: cid, name, type, notnull, dflt_value, pk
-        type = Enum.at(row, 2)
-        notnull = Enum.at(row, 3)
-        String.upcase(type) == "INTEGER" and notnull == 0
-    end
-  end
-
-  defp estimated_cost_column_row do
-    %{rows: rows} = SQL.query!(Repo, "PRAGMA table_info(ideas)", [])
-    Enum.find(rows, fn row -> Enum.at(row, 1) == "estimated_cost" end)
-  end
-
-  # ── add_location_to_ideas migration (slice 7a) ─────────────────────
-  #
-  # Same connection-cache hazard as slice 5/6 (see comments above
-  # `run_add_duration/1` and `run_add_estimated_cost/1`): drive
-  # `change/0` synchronously on the sandbox-owned connection rather
-  # than via `Ecto.Migrator.up/down` to keep the schema cookie consistent.
-
-  defp run_add_location(direction) do
-    operation =
-      case direction do
-        :forward -> :up
-        :backward -> :down
+      try do
+        Code.compile_file(path)
+      rescue
+        # Already compiled (test run #2+) — module clash is fine, the
+        # already-loaded definition is current.
+        CompileError -> :ok
+        Code.LoadError -> :ok
       end
-
-    Ecto.Migration.Runner.run(
-      Repo,
-      Repo.config(),
-      @add_location_version,
-      @add_location_migration,
-      direction,
-      :change,
-      operation,
-      log: false
-    )
-  end
-
-  defp run_all_pre_location_migrations do
-    Ecto.Migrator.up(Repo, @ideas_version, @ideas_migration, log: false)
-    Ecto.Migrator.up(Repo, @categories_version, @categories_migration, log: false)
-    Ecto.Migrator.up(Repo, @seed_categories_version, @seed_categories_migration, log: false)
-    Ecto.Migrator.up(Repo, @wipe_ideas_version, @wipe_ideas_migration, log: false)
-
-    Ecto.Migrator.up(
-      Repo,
-      @idea_categories_version,
-      @idea_categories_migration,
-      log: false
-    )
-
-    run_add_duration(:forward)
-    run_add_estimated_cost(:forward)
-  end
-
-  test "add_location_to_ideas migration is reversible and adds 3 nullable columns" do
-    run_all_pre_location_migrations()
-
-    refute location_name_column_present?()
-    refute lat_column_present?()
-    refute lng_column_present?()
-
-    run_add_location(:forward)
-
-    assert location_name_column_text_nullable?()
-    assert lat_column_real_nullable?()
-    assert lng_column_real_nullable?()
-
-    run_add_location(:backward)
-
-    refute location_name_column_present?()
-    refute lat_column_present?()
-    refute lng_column_present?()
-
-    run_add_location(:forward)
-
-    assert location_name_column_text_nullable?()
-    assert lat_column_real_nullable?()
-    assert lng_column_real_nullable?()
-  end
-
-  test "add_location_to_ideas migration accepts all 3 set values and all NULL on insert" do
-    run_all_pre_location_migrations()
-    run_add_location(:forward)
-
-    SQL.query!(
-      Repo,
-      "INSERT INTO ideas (title, location_name, lat, lng, inserted_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)",
-      ["Sirolo", "Sirolo, AN", 43.5, 13.6, "2026-04-30 10:00:00", "2026-04-30 10:00:00"]
-    )
-
-    SQL.query!(
-      Repo,
-      "INSERT INTO ideas (title, location_name, lat, lng, inserted_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)",
-      ["Senza posizione", nil, nil, nil, "2026-04-30 10:01:00", "2026-04-30 10:01:00"]
-    )
-
-    %{rows: rows} =
-      SQL.query!(
-        Repo,
-        "SELECT title, location_name, lat, lng FROM ideas ORDER BY title",
-        []
-      )
-
-    assert rows == [
-             ["Senza posizione", nil, nil, nil],
-             ["Sirolo", "Sirolo, AN", 43.5, 13.6]
-           ]
-  end
-
-  test "add_location_to_ideas down preserves rows but resets the 3 location columns on next up" do
-    run_all_pre_location_migrations()
-    run_add_location(:forward)
-
-    SQL.query!(
-      Repo,
-      "INSERT INTO ideas (title, description, url, location_name, lat, lng, inserted_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
-      [
-        "Sirolo",
-        "Bella spiaggia",
-        "https://example.com",
-        "Sirolo, AN",
-        43.5,
-        13.6,
-        "2026-04-30 10:00:00",
-        "2026-04-30 10:00:00"
-      ]
-    )
-
-    SQL.query!(
-      Repo,
-      "INSERT INTO ideas (title, description, url, location_name, lat, lng, inserted_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
-      ["Cinema", "", "", nil, nil, nil, "2026-04-30 10:01:00", "2026-04-30 10:01:00"]
-    )
-
-    run_add_location(:backward)
-
-    %{rows: [[count_after_down]]} = SQL.query!(Repo, "SELECT COUNT(*) FROM ideas", [])
-    assert count_after_down == 2
-
-    %{rows: [[title, description, url]]} =
-      SQL.query!(
-        Repo,
-        "SELECT title, description, url FROM ideas WHERE title = ?",
-        ["Sirolo"]
-      )
-
-    assert title == "Sirolo"
-    assert description == "Bella spiaggia"
-    assert url == "https://example.com"
-
-    run_add_location(:forward)
-
-    %{rows: rows} =
-      SQL.query!(
-        Repo,
-        "SELECT location_name, lat, lng FROM ideas ORDER BY title",
-        []
-      )
-
-    # SQLite ALTER TABLE DROP COLUMN + add reset = columns ripristinate vuote.
-    assert rows == [[nil, nil, nil], [nil, nil, nil]]
-  end
-
-  defp location_name_column_present? do
-    location_name_column_row() != nil
-  end
-
-  defp location_name_column_text_nullable? do
-    case location_name_column_row() do
-      nil ->
-        false
-
-      row ->
-        # PRAGMA table_info columns: cid, name, type, notnull, dflt_value, pk
-        type = Enum.at(row, 2)
-        notnull = Enum.at(row, 3)
-        String.upcase(type) == "TEXT" and notnull == 0
-    end
-  end
-
-  defp location_name_column_row do
-    %{rows: rows} = SQL.query!(Repo, "PRAGMA table_info(ideas)", [])
-    Enum.find(rows, fn row -> Enum.at(row, 1) == "location_name" end)
-  end
-
-  defp lat_column_present?, do: lat_column_row() != nil
-
-  defp lat_column_real_nullable? do
-    case lat_column_row() do
-      nil ->
-        false
-
-      row ->
-        # ecto_sqlite3 emits `:float` columns as NUMERIC (SQLite type
-        # affinity stores REAL values fine — see `PRAGMA table_info`
-        # vs SQLite's CREATE TABLE rules). We accept either declared
-        # type to stay robust to adapter/version changes.
-        type = Enum.at(row, 2)
-        notnull = Enum.at(row, 3)
-        String.upcase(type) in ["REAL", "NUMERIC", "FLOAT"] and notnull == 0
-    end
-  end
-
-  defp lat_column_row do
-    %{rows: rows} = SQL.query!(Repo, "PRAGMA table_info(ideas)", [])
-    Enum.find(rows, fn row -> Enum.at(row, 1) == "lat" end)
-  end
-
-  defp lng_column_present?, do: lng_column_row() != nil
-
-  defp lng_column_real_nullable? do
-    case lng_column_row() do
-      nil ->
-        false
-
-      row ->
-        # See `lat_column_real_nullable?/0` for the declared-type rationale.
-        type = Enum.at(row, 2)
-        notnull = Enum.at(row, 3)
-        String.upcase(type) in ["REAL", "NUMERIC", "FLOAT"] and notnull == 0
-    end
-  end
-
-  defp lng_column_row do
-    %{rows: rows} = SQL.query!(Repo, "PRAGMA table_info(ideas)", [])
-    Enum.find(rows, fn row -> Enum.at(row, 1) == "lng" end)
+    end)
   end
 end

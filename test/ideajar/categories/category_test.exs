@@ -24,7 +24,7 @@ defmodule Ideajar.Categories.CategoryTest do
     end
 
     test "rejects a nil name with a NOT NULL constraint error" do
-      assert_raise Exqlite.Error, ~r/NOT NULL/, fn ->
+      assert_raise Postgrex.Error, ~r/not-null|NOT NULL/i, fn ->
         Repo.insert(%Category{name: nil, display_order: 101})
       end
     end

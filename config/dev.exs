@@ -1,9 +1,13 @@
 import Config
 
-# Configure your database
+# Configure your database (Postgres via docker-compose locally — slice 11a).
 config :ideajar, Ideajar.Repo,
-  database: Path.expand("../ideajar_dev.db", __DIR__),
-  pool_size: 5,
+  username: System.get_env("POSTGRES_USER", "ideajar"),
+  password: System.get_env("POSTGRES_PASSWORD", "ideajar"),
+  hostname: System.get_env("POSTGRES_HOST", "localhost"),
+  database: System.get_env("POSTGRES_DB", "ideajar_dev"),
+  port: String.to_integer(System.get_env("POSTGRES_PORT", "5432")),
+  pool_size: 10,
   stacktrace: true,
   show_sensitive_data_on_connection_error: true
 

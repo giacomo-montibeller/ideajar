@@ -1,14 +1,18 @@
 import Config
 
-# Configure your database
+# Configure your database (Postgres via docker-compose locally / service container in CI).
 #
 # The MIX_TEST_PARTITION environment variable can be used
 # to provide built-in test partitioning in CI environment.
 # Run `mix help test` for more information.
 config :ideajar, Ideajar.Repo,
-  database: Path.expand("../ideajar_test.db", __DIR__),
-  pool_size: 5,
-  pool: Ecto.Adapters.SQL.Sandbox
+  username: System.get_env("POSTGRES_USER", "ideajar"),
+  password: System.get_env("POSTGRES_PASSWORD", "ideajar"),
+  hostname: System.get_env("POSTGRES_HOST", "localhost"),
+  database: "ideajar_test#{System.get_env("MIX_TEST_PARTITION")}",
+  port: String.to_integer(System.get_env("POSTGRES_PORT", "5432")),
+  pool: Ecto.Adapters.SQL.Sandbox,
+  pool_size: System.schedulers_online() * 2
 
 # We don't run a server during test. If one is required,
 # you can enable the server option below.

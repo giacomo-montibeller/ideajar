@@ -43,14 +43,14 @@ defmodule Ideajar.Ideas.IdeaCategoriesConstraintTest do
       idea = insert_idea_with_categories!("temp", ["mare", "museo"])
 
       %{rows: [[joins_before]]} =
-        SQL.query!(Repo, "SELECT COUNT(*) FROM idea_categories WHERE idea_id = ?", [idea.id])
+        SQL.query!(Repo, "SELECT COUNT(*) FROM idea_categories WHERE idea_id = $1", [idea.id])
 
       assert joins_before == 2
 
       Repo.delete!(idea)
 
       %{rows: [[joins_after]]} =
-        SQL.query!(Repo, "SELECT COUNT(*) FROM idea_categories WHERE idea_id = ?", [idea.id])
+        SQL.query!(Repo, "SELECT COUNT(*) FROM idea_categories WHERE idea_id = $1", [idea.id])
 
       assert joins_after == 0
 
@@ -75,10 +75,10 @@ defmodule Ideajar.Ideas.IdeaCategoriesConstraintTest do
       idea = insert_idea_with_categories!("uniqcheck", ["mare"])
       mare = Repo.get_by!(Category, name: "mare")
 
-      assert_raise Exqlite.Error, ~r/UNIQUE|unique|PRIMARY KEY|primary key/i, fn ->
+      assert_raise Postgrex.Error, ~r/UNIQUE|unique|PRIMARY KEY|primary key/i, fn ->
         SQL.query!(
           Repo,
-          "INSERT INTO idea_categories (idea_id, category_id) VALUES (?, ?)",
+          "INSERT INTO idea_categories (idea_id, category_id) VALUES ($1, $2)",
           [idea.id, mare.id]
         )
       end

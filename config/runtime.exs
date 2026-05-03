@@ -48,16 +48,19 @@ config :ideajar, :workspace_password, workspace_password
 config :ideajar, IdeajarWeb.Endpoint, secret_key_base: secret_key_base
 
 if config_env() == :prod do
-  database_path =
-    System.get_env("DATABASE_PATH") ||
+  # Slice 11a — Postgres adapter. `DATABASE_URL` is the canonical Phoenix
+  # pattern (postgres://user:pass@host:port/db). Slice 11b deploy will
+  # wire SECRET_KEY_BASE, PHX_HOST, etc. to Gigalixir env vars.
+  database_url =
+    System.get_env("DATABASE_URL") ||
       raise """
-      environment variable DATABASE_PATH is missing.
-      For example: /etc/ideajar/ideajar.db
+      environment variable DATABASE_URL is missing.
+      For example: postgres://USER:PASS@HOST/DATABASE
       """
 
   config :ideajar, Ideajar.Repo,
-    database: database_path,
-    pool_size: String.to_integer(System.get_env("POOL_SIZE") || "5")
+    url: database_url,
+    pool_size: String.to_integer(System.get_env("POOL_SIZE") || "10")
 
   host = System.get_env("PHX_HOST") || "example.com"
 

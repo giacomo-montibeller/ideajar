@@ -1085,14 +1085,18 @@ defmodule Ideajar.IdeasTest do
       assert titles == ["Parigi 4 giorni", "Stadio", "Uffizi"]
     end
 
-    test "O3 SQL emission pin: durations clause emits IN, no IS NULL" do
+    test "O3 SQL emission pin: durations clause emits a membership predicate, no IS NULL" do
       # `build_query/1` is exposed as a `@doc false` test seam (see
       # `Ideajar.Ideas`) so we can introspect the Ecto query before
       # `Repo.all` runs. Parallel to other test seams in the codebase.
+      # Postgres emits `= ANY($1)` for `where: i.duration in ^list`
+      # while SQLite emits `IN (?)`. Slice 11a accepts either to make
+      # the regex adapter-tolerant; the actual semantic — only ideas
+      # whose duration is in the list — is the same.
       query = Ideas.build_query(durations: [:weekend])
       {sql, _params} = Repo.to_sql(:all, query)
 
-      assert sql =~ ~r/"duration"\s+IN/i
+      assert sql =~ ~r/"duration"\s+(IN|= ANY)/i
       refute sql =~ ~r/IS\s+NULL/i
     end
   end

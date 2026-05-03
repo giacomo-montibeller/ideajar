@@ -112,7 +112,7 @@ defmodule Ideajar.Ideas.IdeaTest do
     end
 
     test "rejects a nil title with a NOT NULL constraint error" do
-      assert_raise Exqlite.Error, ~r/NOT NULL/, fn ->
+      assert_raise Postgrex.Error, ~r/not-null|NOT NULL/i, fn ->
         Repo.insert(%Idea{title: nil})
       end
     end

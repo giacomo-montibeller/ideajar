@@ -1,4 +1,11 @@
 defmodule Ideajar.Repo.Migrations.SeedCategories do
+  @moduledoc """
+  Slice 11a — re-baselined data migration. Logically identical to the
+  pre-slice-11a `seed_categories` (insert_all with on_conflict :nothing
+  on `:name` for idempotent re-runs). Carried forward unchanged across
+  the SQLite → Postgres adapter swap because `Repo.insert_all/3` with
+  `on_conflict: :nothing, conflict_target: :name` is portable.
+  """
   use Ecto.Migration
 
   import Ecto.Query, only: [from: 2]
@@ -27,10 +34,6 @@ defmodule Ideajar.Repo.Migrations.SeedCategories do
         }
       end)
 
-    # `on_conflict: :nothing, conflict_target: :name` makes a re-run a no-op
-    # rather than a duplicate-name failure. Manual reinvocation of `up/0`
-    # (see migration round-trip tests) is the realistic path that this
-    # idempotency protects.
     repo().insert_all("categories", rows, on_conflict: :nothing, conflict_target: :name)
   end
 
