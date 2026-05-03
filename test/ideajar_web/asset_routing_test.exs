@@ -159,4 +159,75 @@ defmodule IdeajarWeb.AssetRoutingTest do
       assert Bitwise.band(stat.mode, 0o100) != 0
     end
   end
+
+  describe "service worker source (slice 10)" do
+    defp sw_path,
+      do: Path.join(Application.app_dir(:ideajar, "priv"), "static/sw.js")
+
+    test "priv/static/sw.js exists" do
+      assert File.exists?(sw_path())
+    end
+
+    test "GET /sw.js returns 200 + text/javascript or application/javascript",
+         %{conn: conn} do
+      conn = get(conn, "/sw.js")
+      assert conn.status == 200
+
+      [content_type | _] = Plug.Conn.get_resp_header(conn, "content-type")
+
+      assert content_type =~ "text/javascript" or
+               content_type =~ "application/javascript"
+    end
+
+    test "SW source contains the cache version literal" do
+      src = File.read!(sw_path())
+      assert src =~ "ideajar-static-v1"
+    end
+
+    test "install handler precaches the static asset list" do
+      src = File.read!(sw_path())
+
+      assert src =~ ~s(addEventListener("install")
+      assert src =~ "caches.open(CACHE_NAME)"
+      assert src =~ "cache.addAll(PRECACHE_URLS)"
+    end
+
+    test "PRECACHE_URLS contains the 3 stable PWA paths" do
+      src = File.read!(sw_path())
+
+      assert src =~ "/manifest.json"
+      assert src =~ "/icons/icon-192.png"
+      assert src =~ "/icons/icon-512.png"
+    end
+
+    test "activate handler iterates caches.keys() and deletes obsolete entries" do
+      src = File.read!(sw_path())
+
+      assert src =~ ~s(addEventListener("activate")
+      assert src =~ "caches.keys()"
+      assert src =~ "caches.delete("
+    end
+
+    test "fetch handler short-circuits non-GET" do
+      src = File.read!(sw_path())
+
+      assert src =~ ~s(addEventListener("fetch")
+      assert src =~ ~s(event.request.method !== "GET")
+    end
+
+    test "fetch handler is cache-first with network fallthrough" do
+      src = File.read!(sw_path())
+
+      assert src =~ "caches.match"
+      assert src =~ "fetch(event.request)"
+    end
+
+    test "source documents the manual cache version bump policy (DD-S10-7)" do
+      src = File.read!(sw_path())
+      # Comment must mention bumping the CACHE_NAME suffix when assets
+      # or logic change. Look for either Italian or English.
+      assert src =~ ~r/bump|incrementare/i
+      assert src =~ "CACHE_NAME"
+    end
+  end
 end
