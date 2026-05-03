@@ -7,7 +7,7 @@ Vedi `CONTEXT.md` per il quadro generale, `docs/specs/` per le specifiche per sl
 ## Stack
 
 - Phoenix 1.8+ con LiveView
-- SQLite via Ecto (singolo file, backup = copia file)
+- Postgres 16 via Ecto (slice 11a)
 - Tailwind CSS + daisyUI
 - PWA (manifest + service worker minimo solo per installabilità)
 - Deploy: Gigalixir free tier
@@ -17,15 +17,19 @@ Vedi `CONTEXT.md` per il quadro generale, `docs/specs/` per le specifiche per sl
 - Erlang/OTP 26.x e Elixir 1.16+ (consigliato via [asdf](https://asdf-vm.com/) — vedi `.tool-versions`)
 - `mix archive.install hex phx_new` per il generatore Phoenix (richiesto solo se vuoi rigenerare lo scaffold)
 - `git`
+- Docker + Docker Compose (per Postgres locale)
 
 ## Quick start (sviluppo locale)
 
 ```bash
 asdf install                   # installa le versioni in .tool-versions
+docker compose up -d           # avvia Postgres 16 su localhost:5432
 mix setup                      # deps.get + ecto.setup + assets.setup + assets.build
 mix ecto.migrate               # idempotente; necessario dopo un git pull che porta nuove migration
 mix phx.server                 # avvia su http://localhost:4000
 ```
+
+Se hai già un Postgres locale sulla porta 5432, fermalo o cambia la port mapping in `docker-compose.yml`. Il container espone le credenziali `ideajar / ideajar / ideajar_dev` matching `config/dev.exs`.
 
 In dev la password workspace di default è `dev-only-password-change-me` (vedi `config/dev.exs`). Sovrascrivibile via env var:
 
