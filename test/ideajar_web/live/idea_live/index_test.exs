@@ -2940,363 +2940,6 @@ defmodule IdeajarWeb.IdeaLive.IndexTest do
     end
   end
 
-  describe "form budget field (slice 6 step 4)" do
-    test "mount: @selected_cost is nil before the form is opened",
-         %{conn: conn} do
-      view = mount_authenticated(conn)
-
-      assigns = :sys.get_state(view.pid).socket.assigns
-      assert assigns.selected_cost == nil
-    end
-
-    test "opening the form renders <legend>Budget</legend> with NO asterisk and 7 chips",
-         %{conn: conn} do
-      view = mount_authenticated(conn)
-      html = render_click(view, "toggle_form")
-
-      [budget_legend] =
-        Regex.run(~r{<legend[^>]*>\s*Budget\s*</legend>}, html) || [nil] |> List.wrap()
-
-      assert budget_legend, "Expected <legend>Budget</legend> to be rendered"
-      refute budget_legend =~ "*"
-
-      # 7 form-budget-chip buttons in canonical Budget.values() order.
-      ids =
-        Regex.scan(~r{id="(form-budget-chip-\d+)"}, html) |> Enum.map(&Enum.at(&1, 1))
-
-      assert ids == [
-               "form-budget-chip-0",
-               "form-budget-chip-20",
-               "form-budget-chip-50",
-               "form-budget-chip-100",
-               "form-budget-chip-200",
-               "form-budget-chip-500",
-               "form-budget-chip-1000"
-             ]
-    end
-
-    test "after open, @selected_cost is nil and all chips are aria-pressed=false",
-         %{conn: conn} do
-      view = mount_authenticated(conn) |> open_form()
-
-      assigns = :sys.get_state(view.pid).socket.assigns
-      assert assigns.selected_cost == nil
-
-      html = render(view)
-
-      budget_chip_buttons =
-        Regex.scan(~r{<button[^>]*id="form-budget-chip-\d+"[^>]*>}, html)
-        |> Enum.map(&hd/1)
-
-      assert length(budget_chip_buttons) == 7
-
-      for btn <- budget_chip_buttons do
-        assert btn =~ ~s(aria-pressed="false")
-      end
-    end
-
-    test "click cost=100 sets @selected_cost=100 and chip aria-pressed=true",
-         %{conn: conn} do
-      view = mount_authenticated(conn) |> open_form()
-
-      html = render_click(view, "toggle_form_budget", %{"cost" => "100"})
-
-      assigns = :sys.get_state(view.pid).socket.assigns
-      assert assigns.selected_cost == 100
-
-      [hundred_btn] =
-        Regex.run(~r{<button[^>]*id="form-budget-chip-100"[^>]*>}, html) ||
-          [nil] |> List.wrap()
-
-      assert hundred_btn
-      assert hundred_btn =~ ~s(aria-pressed="true")
-
-      # Other 6 are still pressed=false.
-      others =
-        ~w(0 20 50 200 500 1000)
-        |> Enum.map(fn c ->
-          [m] =
-            Regex.run(~r{<button[^>]*id="form-budget-chip-#{c}"[^>]*>}, html) ||
-              [nil] |> List.wrap()
-
-          m
-        end)
-
-      for btn <- others, do: assert(btn =~ ~s(aria-pressed="false"))
-    end
-
-    test "click cost=100 twice toggles back to nil (deselect)", %{conn: conn} do
-      view = mount_authenticated(conn) |> open_form()
-
-      render_click(view, "toggle_form_budget", %{"cost" => "100"})
-      html = render_click(view, "toggle_form_budget", %{"cost" => "100"})
-
-      assigns = :sys.get_state(view.pid).socket.assigns
-      assert assigns.selected_cost == nil
-
-      budget_chip_buttons =
-        Regex.scan(~r{<button[^>]*id="form-budget-chip-\d+"[^>]*>}, html)
-        |> Enum.map(&hd/1)
-
-      assert length(budget_chip_buttons) == 7
-      for btn <- budget_chip_buttons, do: assert(btn =~ ~s(aria-pressed="false"))
-    end
-
-    test "click cost=200 when 100 is pressed swaps single selection",
-         %{conn: conn} do
-      view = mount_authenticated(conn) |> open_form()
-
-      render_click(view, "toggle_form_budget", %{"cost" => "100"})
-      html = render_click(view, "toggle_form_budget", %{"cost" => "200"})
-
-      assigns = :sys.get_state(view.pid).socket.assigns
-      assert assigns.selected_cost == 200
-
-      [hundred_btn] =
-        Regex.run(~r{<button[^>]*id="form-budget-chip-100"[^>]*>}, html) ||
-          [nil] |> List.wrap()
-
-      [twohundred_btn] =
-        Regex.run(~r{<button[^>]*id="form-budget-chip-200"[^>]*>}, html) ||
-          [nil] |> List.wrap()
-
-      assert hundred_btn =~ ~s(aria-pressed="false")
-      assert twohundred_btn =~ ~s(aria-pressed="true")
-    end
-
-    test "click cost=0 (gratis) sets @selected_cost=0 and chip aria-pressed=true",
-         %{conn: conn} do
-      view = mount_authenticated(conn) |> open_form()
-
-      html = render_click(view, "toggle_form_budget", %{"cost" => "0"})
-
-      assigns = :sys.get_state(view.pid).socket.assigns
-      # 0 is a valid bucket value (not nil): the chip must be in the
-      # pressed state, not deselected.
-      assert assigns.selected_cost == 0
-
-      [zero_btn] =
-        Regex.run(~r{<button[^>]*id="form-budget-chip-0"[^>]*>}, html) ||
-          [nil] |> List.wrap()
-
-      assert zero_btn =~ ~s(aria-pressed="true")
-    end
-
-    test "save success WITH budget=100 persists estimated_cost=100 and resets @selected_cost to nil",
-         %{conn: conn} do
-      view = mount_authenticated(conn) |> open_form()
-
-      render_click(view, "toggle_form_budget", %{"cost" => "100"})
-
-      html = submit(view, %{title: "Sirolo cento"})
-
-      assert html =~ "Idea aggiunta"
-
-      assigns = :sys.get_state(view.pid).socket.assigns
-      assert assigns.selected_cost == nil
-      assert assigns.form_visible? == false
-      assert length(assigns.ideas) == 1
-
-      idea = hd(assigns.ideas)
-      assert idea.estimated_cost == 100
-    end
-
-    test "save success WITHOUT budget persists estimated_cost: nil",
-         %{conn: conn} do
-      view = mount_authenticated(conn) |> open_form()
-
-      submit(view, %{title: "Cinema stasera"})
-
-      assigns = :sys.get_state(view.pid).socket.assigns
-      assert length(assigns.ideas) == 1
-      idea = hd(assigns.ideas)
-      assert idea.estimated_cost == nil
-    end
-
-    test "save success WITH budget=0 (gratis) persists estimated_cost=0",
-         %{conn: conn} do
-      view = mount_authenticated(conn) |> open_form()
-
-      render_click(view, "toggle_form_budget", %{"cost" => "0"})
-
-      submit(view, %{title: "Passeggiata"})
-
-      assigns = :sys.get_state(view.pid).socket.assigns
-      assert length(assigns.ideas) == 1
-      idea = hd(assigns.ideas)
-      assert idea.estimated_cost == 0
-    end
-
-    test "save success WITH budget=1000 (oltre) persists estimated_cost=1000",
-         %{conn: conn} do
-      view = mount_authenticated(conn) |> open_form()
-
-      render_click(view, "toggle_form_budget", %{"cost" => "1000"})
-
-      submit(view, %{title: "Crociera"})
-
-      assigns = :sys.get_state(view.pid).socket.assigns
-      assert length(assigns.ideas) == 1
-      idea = hd(assigns.ideas)
-      assert idea.estimated_cost == 1000
-    end
-
-    test "close_form resets @selected_cost to nil", %{conn: conn} do
-      view = mount_authenticated(conn) |> open_form()
-
-      render_click(view, "toggle_form_budget", %{"cost" => "100"})
-
-      pre = :sys.get_state(view.pid).socket.assigns
-      assert pre.selected_cost == 100
-
-      render_click(view, "close_form")
-
-      post = :sys.get_state(view.pid).socket.assigns
-      assert post.form_visible? == false
-      assert post.selected_cost == nil
-    end
-
-    test "open_form resets @selected_cost to nil even after close+reopen with prior pick",
-         %{conn: conn} do
-      view = mount_authenticated(conn) |> open_form()
-
-      render_click(view, "toggle_form_budget", %{"cost" => "100"})
-      render_click(view, "close_form")
-      render_click(view, "toggle_form")
-
-      assigns = :sys.get_state(view.pid).socket.assigns
-      assert assigns.form_visible? == true
-      assert assigns.selected_cost == nil
-    end
-
-    # S2 — hostile toggle_form_budget uniform list (5 strings + 3 non-strings).
-    for value <- ["175", "-50", "abc", "", "<script>"] do
-      test "toggle_form_budget with hostile string #{inspect(value)} is a no-op",
-           %{conn: conn} do
-        view = mount_authenticated(conn) |> open_form()
-
-        render_click(view, "toggle_form_budget", %{"cost" => unquote(value)})
-
-        assigns = :sys.get_state(view.pid).socket.assigns
-        assert assigns.selected_cost == nil
-        assert Process.alive?(view.pid)
-      end
-    end
-
-    for value <- [42, [], %{}] do
-      test "toggle_form_budget with hostile non-string #{inspect(value)} is a no-op",
-           %{conn: conn} do
-        view = mount_authenticated(conn) |> open_form()
-
-        render_click(view, "toggle_form_budget", %{
-          "cost" => unquote(Macro.escape(value))
-        })
-
-        assigns = :sys.get_state(view.pid).socket.assigns
-        assert assigns.selected_cost == nil
-        assert Process.alive?(view.pid)
-      end
-    end
-
-    # S3 — Save with hostile cost string surfaces "Budget non valido" + nothing persists.
-    test "save with hostile cost '175' surfaces 'Budget non valido' and does not persist",
-         %{conn: conn} do
-      view = mount_authenticated(conn) |> open_form()
-
-      mare = CategoriesFixtures.category_by_name!("mare")
-      render_click(view, "toggle_category", %{"id" => "#{mare.id}"})
-
-      pre_count = length(Ideajar.Ideas.list_ideas([]))
-
-      html =
-        render_submit(view, "save", %{
-          "idea" => %{
-            "title" => "X",
-            "description" => "",
-            "url" => "",
-            "estimated_cost" => "175"
-          }
-        })
-
-      assert html =~ "Budget non valido"
-      assert length(Ideajar.Ideas.list_ideas([])) == pre_count
-      assert Process.alive?(view.pid)
-    end
-
-    test "save with hostile cost 'abc' surfaces 'Budget non valido' (cast failure path)",
-         %{conn: conn} do
-      view = mount_authenticated(conn) |> open_form()
-
-      mare = CategoriesFixtures.category_by_name!("mare")
-      render_click(view, "toggle_category", %{"id" => "#{mare.id}"})
-
-      pre_count = length(Ideajar.Ideas.list_ideas([]))
-
-      html =
-        render_submit(view, "save", %{
-          "idea" => %{
-            "title" => "X",
-            "description" => "",
-            "url" => "",
-            "estimated_cost" => "abc"
-          }
-        })
-
-      assert html =~ "Budget non valido"
-      assert length(Ideajar.Ideas.list_ideas([])) == pre_count
-      assert Process.alive?(view.pid)
-    end
-
-    # BB17 / A10 — DOM id distinctness across the remaining chip families.
-    # Slice 9 eliminated `filter-budget-chip-*` (replaced by slider). The
-    # `form-budget-chip-*` family is removed by step 3. This pin keeps
-    # surveying the remaining chip-id collisions across the categoria,
-    # durata (filter + form), and budget (form, until step 3) families.
-    test "with form open, chip ids across remaining families are distinct",
-         %{conn: conn} do
-      view = mount_authenticated(conn) |> open_form()
-      html = render(view)
-
-      ids =
-        Regex.scan(
-          ~r{id="(form-budget-chip-\d+|form-duration-chip-\w+|category-chip-\d+|filter-chip-\d+|filter-duration-chip-\w+)"},
-          html
-        )
-        |> Enum.map(&Enum.at(&1, 1))
-
-      assert ids == Enum.uniq(ids)
-
-      assert length(Enum.filter(ids, &String.starts_with?(&1, "form-budget-chip-"))) == 7
-
-      assert length(Enum.filter(ids, &String.starts_with?(&1, "form-duration-chip-"))) ==
-               5
-
-      assert length(Enum.filter(ids, &String.starts_with?(&1, "filter-duration-chip-"))) ==
-               5
-    end
-
-    # A7 — form chip budget: no roving-tabindex hook, no explicit tabindex.
-    test "form budget fieldset has no RovingTabindex hook and chips have no explicit tabindex",
-         %{conn: conn} do
-      view = mount_authenticated(conn) |> open_form()
-      html = render(view)
-
-      [budget_block] =
-        Regex.run(~r{<legend[^>]*>\s*Budget\s*</legend>.*?</fieldset>}s, html) ||
-          [nil] |> List.wrap()
-
-      assert budget_block, "Expected the budget fieldset block to be present"
-      refute budget_block =~ "RovingTabindex"
-      refute budget_block =~ "data-roving-tabindex-group"
-
-      # No form-budget-chip-* button carries an explicit tabindex attribute.
-      offenders =
-        Regex.scan(~r{<button[^>]*id="form-budget-chip-\d+"[^>]*tabindex[^>]*>}, html)
-
-      assert offenders == []
-    end
-  end
-
   # ── Slice 6 Step 7: filter-status live-region removal cascade ──
   #
   # The slice-4/slice-5 `<div role="status" aria-live="polite" id="filter-status">`
@@ -3584,7 +3227,7 @@ defmodule IdeajarWeb.IdeaLive.IndexTest do
       assert pre.max_budget_index == 5
 
       view |> open_form()
-      render_click(view, "toggle_form_budget", %{"cost" => "100"})
+      render_hook(view, "update_form_budget", %{"value" => "4"})
       html = submit(view, %{title: "BudgetSurvivor"})
 
       assigns = :sys.get_state(view.pid).socket.assigns
@@ -3606,7 +3249,7 @@ defmodule IdeajarWeb.IdeaLive.IndexTest do
       view |> cycle_budget(50)
 
       view |> open_form()
-      render_click(view, "toggle_form_budget", %{"cost" => "200"})
+      render_hook(view, "update_form_budget", %{"value" => "5"})
       html = submit(view, %{title: "OltreFiltro"})
 
       assigns = :sys.get_state(view.pid).socket.assigns
@@ -3657,26 +3300,17 @@ defmodule IdeajarWeb.IdeaLive.IndexTest do
          %{conn: conn} do
       _ = seed_6_lv_ideas_full()
       view = mount_authenticated(conn) |> open_form()
-      render_click(view, "toggle_form_budget", %{"cost" => "100"})
+      render_hook(view, "update_form_budget", %{"value" => "4"})
 
       pre = :sys.get_state(view.pid).socket.assigns
-      assert pre.selected_cost == 100
+      assert pre.form_budget_index == 4
 
       view |> cycle_budget(200)
-      html = render_click(view, "clear_filters")
+      render_click(view, "clear_filters")
 
       assigns = :sys.get_state(view.pid).socket.assigns
-      assert assigns.selected_cost == 100
+      assert assigns.form_budget_index == 4
       assert assigns.max_budget_index == 0
-
-      [hundred_form_btn] =
-        Regex.run(
-          ~r{<button[^>]*id="form-budget-chip-100"[^>]*>},
-          html
-        ) || [nil] |> List.wrap()
-
-      assert hundred_form_btn
-      assert hundred_form_btn =~ ~s(aria-pressed="true")
     end
 
     # 10. Isolation — the filter slider does NOT touch the form's
@@ -3687,15 +3321,15 @@ defmodule IdeajarWeb.IdeaLive.IndexTest do
          %{conn: conn} do
       _ = seed_6_lv_ideas_full()
       view = mount_authenticated(conn) |> open_form()
-      render_click(view, "toggle_form_budget", %{"cost" => "100"})
+      render_hook(view, "update_form_budget", %{"value" => "4"})
 
       pre = :sys.get_state(view.pid).socket.assigns
-      assert pre.selected_cost == 100
+      assert pre.form_budget_index == 4
 
       view |> cycle_budget(200)
 
       assigns = :sys.get_state(view.pid).socket.assigns
-      assert assigns.selected_cost == 100
+      assert assigns.form_budget_index == 4
       assert assigns.max_budget_index == 5
     end
 
@@ -5933,6 +5567,190 @@ defmodule IdeajarWeb.IdeaLive.IndexTest do
       assigns = :sys.get_state(view.pid).socket.assigns
       refute Map.has_key?(assigns, :cost_filter)
       assert Map.has_key?(assigns, :max_budget_index)
+    end
+  end
+
+  describe "form budget slider (slice 9 step 3)" do
+    test "FF1/FF2 mount form: HTML5 slider 0..7, default value 0, NO chip group",
+         %{conn: conn} do
+      view = mount_authenticated(conn) |> open_form()
+      html = render(view)
+
+      assigns = :sys.get_state(view.pid).socket.assigns
+      assert assigns.form_budget_index == 0
+
+      assert html =~ ~s(id="form-budget-slider")
+      assert html =~ ~s(type="range")
+      assert html =~ ~s(name="idea[budget]")
+
+      [slider] = Regex.run(~r/<input[^>]*id="form-budget-slider"[^>]*>/, html)
+      assert slider =~ ~s(min="0")
+      assert slider =~ ~s(max="7")
+      assert slider =~ ~s(value="0")
+
+      refute html =~ "form-budget-chip-"
+    end
+
+    test "FF8/A2 form aria-valuetext usa BudgetLabels.form (NOT 'fino a')",
+         %{conn: conn} do
+      view = mount_authenticated(conn) |> open_form()
+      html = render(view)
+
+      [slider] = Regex.run(~r/<input[^>]*id="form-budget-slider"[^>]*>/, html)
+      assert slider =~ ~s(aria-valuetext="Non specificato")
+
+      render_hook(view, "update_form_budget", %{"value" => "4"})
+      html = render(view)
+      [slider] = Regex.run(~r/<input[^>]*id="form-budget-slider"[^>]*>/, html)
+      assert slider =~ ~s(aria-valuetext="100€")
+      refute slider =~ "fino a"
+    end
+
+    test "FF5 update_form_budget con index 0..7 → assign", %{conn: conn} do
+      view = mount_authenticated(conn) |> open_form()
+
+      render_hook(view, "update_form_budget", %{"value" => "3"})
+      assigns = :sys.get_state(view.pid).socket.assigns
+      assert assigns.form_budget_index == 3
+    end
+
+    test "form-shape extractor: %{idea: %{budget: '3'}} → assign", %{conn: conn} do
+      view = mount_authenticated(conn) |> open_form()
+
+      render_hook(view, "update_form_budget", %{"idea" => %{"budget" => "3"}})
+      assigns = :sys.get_state(view.pid).socket.assigns
+      assert assigns.form_budget_index == 3
+    end
+
+    test "FF6/S4 hostile uniform list → no-op", %{conn: conn} do
+      view = mount_authenticated(conn) |> open_form()
+
+      hostile = [
+        %{"value" => "-1"},
+        %{"value" => "8"},
+        %{"value" => "abc"},
+        %{"value" => "3.5"},
+        %{}
+      ]
+
+      Enum.each(hostile, fn p ->
+        render_hook(view, "update_form_budget", p)
+      end)
+
+      assigns = :sys.get_state(view.pid).socket.assigns
+      assert assigns.form_budget_index == 0
+      assert Process.alive?(view.pid)
+    end
+
+    test "FF3 slider index 0 + valid submit → idea con estimated_cost = nil",
+         %{conn: conn} do
+      mare = Ideajar.Repo.get_by!(Ideajar.Categories.Category, name: "mare")
+
+      view = mount_authenticated(conn) |> open_form()
+      render_click(view, "toggle_category", %{"id" => Integer.to_string(mare.id)})
+      # form_budget_index resta 0
+
+      render_change(view, "save", %{
+        "idea" => %{"title" => "Senza prezzo", "duration" => "weekend"}
+      })
+
+      idea = Ideajar.Repo.get_by!(Ideajar.Ideas.Idea, title: "Senza prezzo")
+      assert idea.estimated_cost == nil
+    end
+
+    test "FF4 slider index 4 + valid submit → idea con estimated_cost = 100",
+         %{conn: conn} do
+      mare = Ideajar.Repo.get_by!(Ideajar.Categories.Category, name: "mare")
+
+      view = mount_authenticated(conn) |> open_form()
+      render_click(view, "toggle_category", %{"id" => Integer.to_string(mare.id)})
+      render_hook(view, "update_form_budget", %{"value" => "4"})
+
+      render_change(view, "save", %{
+        "idea" => %{"title" => "Da 100€", "duration" => "weekend"}
+      })
+
+      idea = Ideajar.Repo.get_by!(Ideajar.Ideas.Idea, title: "Da 100€")
+      assert idea.estimated_cost == 100
+    end
+
+    test "FF7 save success cascade reset @form_budget_index = 0",
+         %{conn: conn} do
+      mare = Ideajar.Repo.get_by!(Ideajar.Categories.Category, name: "mare")
+
+      view = mount_authenticated(conn) |> open_form()
+      render_click(view, "toggle_category", %{"id" => Integer.to_string(mare.id)})
+      render_hook(view, "update_form_budget", %{"value" => "4"})
+
+      render_change(view, "save", %{
+        "idea" => %{"title" => "Salvata", "duration" => "weekend"}
+      })
+
+      assigns = :sys.get_state(view.pid).socket.assigns
+      assert assigns.form_budget_index == 0
+    end
+
+    test "FF10 'Rimuovi prezzo' button hidden when index 0, visible when > 0",
+         %{conn: conn} do
+      view = mount_authenticated(conn) |> open_form()
+      refute render(view) =~ "Rimuovi prezzo"
+
+      render_hook(view, "update_form_budget", %{"value" => "3"})
+      html = render(view)
+      assert html =~ "Rimuovi prezzo"
+      assert html =~ ~s(phx-click="remove_form_budget")
+    end
+
+    test "FF10 click 'Rimuovi prezzo' → @form_budget_index = 0",
+         %{conn: conn} do
+      view = mount_authenticated(conn) |> open_form()
+      render_hook(view, "update_form_budget", %{"value" => "5"})
+
+      render_click(view, "remove_form_budget")
+
+      assigns = :sys.get_state(view.pid).socket.assigns
+      assert assigns.form_budget_index == 0
+    end
+
+    test "FF10 'Rimuovi prezzo' button hit area ≥ 44×44", %{conn: conn} do
+      view = mount_authenticated(conn) |> open_form()
+      render_hook(view, "update_form_budget", %{"value" => "3"})
+      html = render(view)
+
+      [button] = Regex.run(~r/<button[^>]*phx-click="remove_form_budget"[^>]*>/, html)
+      assert button =~ "min-h-11"
+      assert button =~ "min-w-11"
+    end
+
+    test "S6 hostile form param idea[budget]=999 → estimated_cost = nil",
+         %{conn: conn} do
+      mare = Ideajar.Repo.get_by!(Ideajar.Categories.Category, name: "mare")
+
+      view = mount_authenticated(conn) |> open_form()
+      render_click(view, "toggle_category", %{"id" => Integer.to_string(mare.id)})
+
+      # Hostile update → no-op (assign rimane 0). DM3a clamp garantisce
+      # no Integer.to_string(:error) crash.
+      render_hook(view, "update_form_budget", %{"idea" => %{"budget" => "999"}})
+
+      assigns = :sys.get_state(view.pid).socket.assigns
+      assert assigns.form_budget_index == 0
+      assert Process.alive?(view.pid)
+
+      render_change(view, "save", %{
+        "idea" => %{"title" => "Hostile", "duration" => "weekend"}
+      })
+
+      idea = Ideajar.Repo.get_by!(Ideajar.Ideas.Idea, title: "Hostile")
+      assert idea.estimated_cost == nil
+    end
+
+    test "@selected_cost assign no longer exists post-rename (DD-S9-5)",
+         %{conn: conn} do
+      view = mount_authenticated(conn) |> open_form()
+      assigns = :sys.get_state(view.pid).socket.assigns
+      refute Map.has_key?(assigns, :selected_cost)
+      assert Map.has_key?(assigns, :form_budget_index)
     end
   end
 end

@@ -42,7 +42,6 @@ defmodule IdeajarWeb.IdeaLive.Index do
   # template via `<BudgetChip.form_chip … />` (BB12 — same pattern as
   # DurationChip.filter_chip).
   alias IdeajarWeb.Components.BudgetBadge
-  alias IdeajarWeb.Components.BudgetChip
   alias IdeajarWeb.Components.DurationChip
   alias IdeajarWeb.Components.LocationBadge
 
@@ -170,23 +169,22 @@ defmodule IdeajarWeb.IdeaLive.Index do
   # land in the catchall as no-ops (S2). A click on the currently-pressed
   # chip toggles back to nil; a click on a different chip swaps the
   # single selection.
-  def handle_event("toggle_form_budget", %{"cost" => raw}, socket)
-      when is_binary(raw) do
-    case Budget.parse(raw) do
-      {:ok, val} ->
-        new_value =
-          if socket.assigns.selected_cost == val, do: nil, else: val
-
-        {:noreply, assign(socket, :selected_cost, new_value)}
-
-      :error ->
-        {:noreply, socket}
+  # Slice 9 step 3 — budget form slider. Replaces `toggle_form_budget`
+  # chip handler. Multi-shape extractor (DD-S9-6): bare `%{"value" => v}`
+  # (synthetic test) + form-shape `%{"idea" => %{"budget" => v}}` (real
+  # browser inside the `<.form for={@form}>` wrapper). Defensive parse
+  # to integer 0..7; hostile shapes route to no-op.
+  def handle_event("update_form_budget", params, socket) do
+    case extract_form_budget_index(params) do
+      {:ok, n} -> {:noreply, assign(socket, :form_budget_index, n)}
+      :error -> {:noreply, socket}
     end
   end
 
-  # Catchall for hostile or malformed phx-value-cost payloads (non-string
-  # types or missing key). Pinned by S2 hostile uniform list.
-  def handle_event("toggle_form_budget", _params, socket), do: {:noreply, socket}
+  # Slice 9 step 3 — scoped reset of the form budget slider (FF10).
+  def handle_event("remove_form_budget", _params, socket) do
+    {:noreply, assign(socket, :form_budget_index, 0)}
+  end
 
   # Slice 7a iter2 — text input `phx-change` for the location name and
   # search trigger. Accepts any binary (including the empty string —
@@ -504,7 +502,7 @@ defmodule IdeajarWeb.IdeaLive.Index do
       maybe_inject_duration(attrs_with_categories, socket.assigns.selected_duration, attrs)
 
     attrs_with_budget =
-      maybe_inject_budget(attrs_with_duration, socket.assigns.selected_cost)
+      maybe_inject_budget(attrs_with_duration, socket.assigns.form_budget_index)
 
     attrs_with_location =
       attrs_with_budget
@@ -587,10 +585,19 @@ defmodule IdeajarWeb.IdeaLive.Index do
   #     hostile-cost error path (S3): a tampered payload (e.g.
   #     `"estimated_cost" => "175"` or `"abc"`) reaches the changeset
   #     and produces `"Budget non valido"`.
-  defp maybe_inject_budget(params, nil), do: params
+  # Slice 9 step 3 — accepts the slider index 0..7 instead of the
+  # legacy integer | nil. Index 0 → no inject (preserves the form
+  # param if the user typed something hostile, so the cross-field
+  # validator can still fire). Index 1..7 → translate via
+  # `Budget.index_to_value/1` and inject as a string. The clamp inside
+  # `index_to_value/1` (DD-S9-2) means we never see `:error` here, so
+  # `Integer.to_string/1` is always safe.
+  defp maybe_inject_budget(params, 0), do: params
 
-  defp maybe_inject_budget(params, value) when is_integer(value),
-    do: Map.put(params, "estimated_cost", Integer.to_string(value))
+  defp maybe_inject_budget(params, n) when is_integer(n) and n in 1..7,
+    do: Map.put(params, "estimated_cost", Integer.to_string(Budget.index_to_value(n)))
+
+  defp maybe_inject_budget(params, _), do: params
 
   # Slice 7a step 4 — symmetric to `maybe_inject_duration/3` and
   # `maybe_inject_budget/2`. The form's three location assigns are the
@@ -665,7 +672,7 @@ defmodule IdeajarWeb.IdeaLive.Index do
   # open, on close_form, and on save success — symmetrical with
   # `reset_categories/1` and `reset_duration/1`. `nil` means "no chip
   # selected"; `0` is a valid bucket (gratis) and is NOT the reset value.
-  defp reset_budget(socket), do: assign(socket, :selected_cost, nil)
+  defp reset_budget(socket), do: assign(socket, :form_budget_index, 0)
 
   # Slice 7a step 4 (CC11): the form's location triplet
   # `(@selected_location_name, @selected_lat, @selected_lng)` lives outside
@@ -741,6 +748,19 @@ defmodule IdeajarWeb.IdeaLive.Index do
     do: parse_budget_index(raw)
 
   defp extract_max_budget_index(_), do: :error
+
+  # Slice 9 step 3 (DD-S9-6) — multi-shape extractor for the form
+  # budget slider input. Browser ships params as
+  # `%{"idea" => %{"budget" => v}}` (form-bracketed name attr inside
+  # the `<.form for={@form}>` wrapper), `render_hook/3` synthetic
+  # calls use `%{"value" => v}`. Both must work.
+  defp extract_form_budget_index(%{"idea" => %{"budget" => raw}}) when is_binary(raw),
+    do: parse_budget_index(raw)
+
+  defp extract_form_budget_index(%{"value" => raw}) when is_binary(raw),
+    do: parse_budget_index(raw)
+
+  defp extract_form_budget_index(_), do: :error
 
   defp parse_budget_index(raw) do
     case Integer.parse(raw) do

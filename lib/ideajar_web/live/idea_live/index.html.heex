@@ -87,13 +87,33 @@
 
       <fieldset class="fieldset">
         <legend class="label mb-1">Budget</legend>
-        <div class="flex flex-wrap gap-2">
-          <BudgetChip.form_chip
-            :for={cost <- Ideajar.Ideas.Budget.values()}
-            cost={cost}
-            pressed?={@selected_cost == cost}
-          />
-        </div>
+        <input
+          type="range"
+          id="form-budget-slider"
+          name="idea[budget]"
+          min="0"
+          max="7"
+          step="1"
+          value={@form_budget_index}
+          phx-change="update_form_budget"
+          phx-debounce="200"
+          aria-valuemin="0"
+          aria-valuemax="7"
+          aria-valuenow={@form_budget_index}
+          aria-valuetext={IdeajarWeb.Components.BudgetLabels.form(@form_budget_index)}
+          class="range range-sm w-full"
+        />
+        <p class="text-sm">
+          Budget: {IdeajarWeb.Components.BudgetLabels.form(@form_budget_index)}
+        </p>
+        <button
+          :if={@form_budget_index > 0}
+          type="button"
+          phx-click="remove_form_budget"
+          class="btn btn-ghost btn-sm min-h-11 min-w-11"
+        >
+          Rimuovi prezzo
+        </button>
         <p
           :if={has_estimated_cost_error?(@form)}
           id="idea-estimated-cost-error"
