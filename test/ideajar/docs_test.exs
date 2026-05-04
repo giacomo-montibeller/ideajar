@@ -530,9 +530,16 @@ defmodule Ideajar.DocsTest do
     end
 
     test "lists every canonical UI copy string introduced in slice 12", %{content: content} do
-      # The list grows as steps add new strings; step 2 seeds "Elimina idea"
-      # only. Steps 3+ extend it with modal/flash/button copy.
-      needles = ["Elimina idea"]
+      # The list grows as steps add new strings; step 2 seeds "Elimina idea",
+      # step 3 adds modal title/body/buttons and the confirm phx-disable-with
+      # copy. Later steps will extend it with flash messages.
+      needles = [
+        "Elimina idea",
+        "Eliminare questa idea?",
+        "L'idea sarà rimossa definitivamente.",
+        "Annulla",
+        "Eliminazione…"
+      ]
 
       for needle <- needles do
         assert content =~ needle, "missing slice-12 UI copy in conventions.md: #{needle}"

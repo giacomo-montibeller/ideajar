@@ -224,6 +224,11 @@ Stringhe aggiunte in slice 12 (eliminare un'idea):
 | Elemento                                       | Testo IT                                                                     |
 |------------------------------------------------|------------------------------------------------------------------------------|
 | Aria-label bottone trash su card               | `Elimina idea`                                                               |
+| Modal title                                    | `Eliminare questa idea?`                                                     |
+| Modal body (template)                          | `Elimina l'idea "<title>". L'idea sarà rimossa definitivamente.`             |
+| Bottone modal annulla                          | `Annulla`                                                                    |
+| Bottone modal conferma (danger)                | `Elimina`                                                                    |
+| `phx-disable-with` su `Elimina`                | `Eliminazione…`                                                              |
 
 Nuova copy aggiunta da slice future va appesa qui per evitare drift.
 

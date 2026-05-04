@@ -75,6 +75,7 @@ defmodule IdeajarWeb.IdeaLive.Index do
      |> assign(:max_budget_index, 0)
      |> assign(:categories, Categories.list_categories())
      |> assign(:form_visible?, false)
+     |> assign(:deletion, nil)
      |> reset_categories()
      |> reset_duration()
      |> reset_budget()
@@ -93,10 +94,23 @@ defmodule IdeajarWeb.IdeaLive.Index do
   end
 
   @impl Phoenix.LiveView
-  # Slice 12 step 2: stub — opening the modal lands in step 3. Defining
-  # the clause here keeps the trash button click from crashing the LV
-  # while step 2 ships only the affordance.
-  def handle_event("request_delete", _params, socket), do: {:noreply, socket}
+  # Slice 12 step 3: opens the confirm modal for the idea matching `id`.
+  # Reads from `@ideas` only (no DB hit). If the id is not in the current
+  # list (race with another tab/device) the event is a silent no-op.
+  def handle_event("request_delete", %{"id" => raw}, socket) do
+    case parse_delete_id(raw, socket.assigns.ideas) do
+      {:ok, idea} ->
+        socket =
+          socket
+          |> assign(:deletion, %{id: idea.id, title: idea.title})
+          |> push_event("ideajar:focus", %{to: "#delete-cancel-btn"})
+
+        {:noreply, socket}
+
+      :error ->
+        {:noreply, socket}
+    end
+  end
 
   def handle_event("toggle_form", _params, %{assigns: %{form_visible?: false}} = socket) do
     {:noreply,
@@ -907,6 +921,25 @@ defmodule IdeajarWeb.IdeaLive.Index do
   defp reload_ideas(socket) do
     assign(socket, :ideas, Ideas.list_ideas(derive_filter_opts(socket)))
   end
+
+  # Slice 12 step 3: resolves a `phx-value-id` payload string against the
+  # current `@ideas` assign without hitting the DB. Returns the idea
+  # struct on hit, `:error` on miss (race with another tab/device or
+  # malformed payload).
+  defp parse_delete_id(raw, ideas) when is_binary(raw) do
+    case Integer.parse(raw) do
+      {id, ""} ->
+        case Enum.find(ideas, &(&1.id == id)) do
+          nil -> :error
+          idea -> {:ok, idea}
+        end
+
+      _ ->
+        :error
+    end
+  end
+
+  defp parse_delete_id(_, _), do: :error
 
   # Slice 7b step 8 (DD12 refactor) — collapsed `derive_filter_opts/3`
   # to `/1` taking the socket directly. Reading every assign at the

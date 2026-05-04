@@ -6014,4 +6014,115 @@ defmodule IdeajarWeb.IdeaLive.IndexTest do
       end)
     end
   end
+
+  describe "delete confirmation modal opens on trash click (slice 12 step 3)" do
+    test "no modal renders before any trash click", %{conn: conn} do
+      insert_idea_with_categories!("Sirolo", ["mare"], ~U[2026-04-27 10:00:00Z])
+      view = mount_authenticated(conn)
+      html = render(view)
+
+      refute html =~ ~s|role="dialog"|
+      refute html =~ "Eliminare questa idea?"
+    end
+
+    test "request_delete opens a dialog with the idea title and required ARIA wiring",
+         %{conn: conn} do
+      idea =
+        insert_idea_with_categories!(
+          "Mare a Sirolo",
+          ["mare"],
+          ~U[2026-04-27 10:00:00Z]
+        )
+
+      view = mount_authenticated(conn)
+      html = render_click(view, "request_delete", %{"id" => "#{idea.id}"})
+
+      # Dialog wiring (role + ARIA labelling + describing).
+      assert html =~ ~s|role="dialog"|
+      assert html =~ ~s|aria-modal="true"|
+      assert html =~ ~s|aria-labelledby="delete-modal-title"|
+      assert html =~ ~s|aria-describedby="delete-modal-body"|
+      assert html =~ ~s|id="delete-modal"|
+
+      # Title and body content (with idea title interpolated).
+      assert html =~ ~r{<h2 id="delete-modal-title"[^>]*>Eliminare questa idea\?</h2>}
+      assert html =~ ~s|id="delete-modal-body"|
+      assert html =~ ~s|Elimina l&#39;idea &quot;Mare a Sirolo&quot;|
+      assert html =~ "L&#39;idea sarà rimossa definitivamente."
+
+      # Buttons present with the required attributes.
+      assert html =~ ~s|id="delete-cancel-btn"|
+      assert html =~ ~r/<button[^>]*id="delete-cancel-btn"[^>]*type="button"[^>]*phx-click="cancel_delete"[^>]*>Annulla<\/button>/
+
+      # F13: confirm button carries phx-disable-with attribute.
+      assert html =~
+               ~r/<button[^>]*type="button"[^>]*phx-click="confirm_delete"[^>]*phx-disable-with="Eliminazione…"[^>]*>Elimina<\/button>/
+    end
+
+    test "F10: opening the modal pushes focus to the cancel button", %{conn: conn} do
+      idea = insert_idea_with_categories!("Sirolo", ["mare"], ~U[2026-04-27 10:00:00Z])
+
+      view = mount_authenticated(conn)
+      render_click(view, "request_delete", %{"id" => "#{idea.id}"})
+
+      assert_push_event(view, "ideajar:focus", %{to: "#delete-cancel-btn"})
+    end
+
+    test "F5 XSS: the idea title is HTML-escaped in the modal body", %{conn: conn} do
+      idea =
+        insert_idea_with_categories!(
+          "<script>alert(1)</script>",
+          ["mare"],
+          ~U[2026-04-27 10:00:00Z]
+        )
+
+      view = mount_authenticated(conn)
+      html = render_click(view, "request_delete", %{"id" => "#{idea.id}"})
+
+      assert html =~ "&lt;script&gt;alert(1)&lt;/script&gt;"
+      refute html =~ "<script>alert(1)</script>"
+    end
+
+    test "F11: request_delete with an id not in @ideas is a silent no-op", %{conn: conn} do
+      insert_idea_with_categories!("Sirolo", ["mare"], ~U[2026-04-27 10:00:00Z])
+
+      view = mount_authenticated(conn)
+      html = render_click(view, "request_delete", %{"id" => "99999999"})
+
+      refute html =~ ~s|role="dialog"|
+      assert Process.alive?(view.pid)
+    end
+
+    test "R2: backdrop fires cancel_delete and the dialog content does not",
+         %{conn: conn} do
+      idea = insert_idea_with_categories!("Sirolo", ["mare"], ~U[2026-04-27 10:00:00Z])
+
+      view = mount_authenticated(conn)
+      html = render_click(view, "request_delete", %{"id" => "#{idea.id}"})
+
+      # The backdrop is a sibling of the dialog content (not its parent),
+      # so an internal click can't bubble-cancel.
+      assert html =~ ~r{<div class="backdrop" phx-click="cancel_delete">\s*</div>}
+
+      # Inside the modal markup we expect exactly two `phx-click="cancel_delete"`
+      # occurrences: one on the backdrop, one on the Annulla button. If a third
+      # appears it has likely been added to the dialog content div, which would
+      # let an internal click bubble-cancel.
+      modal_chunk =
+        case Regex.run(
+               ~r{<div[^>]*id="delete-modal"[^>]*>(.*?)</div></div>}s,
+               html
+             ) do
+          [_, inner] -> inner
+          _ -> flunk("delete-modal wrapper not found in rendered HTML")
+        end
+
+      cancel_clicks =
+        Regex.scan(~r{phx-click="cancel_delete"}, modal_chunk)
+        |> length()
+
+      assert cancel_clicks == 2,
+             "expected exactly 2 phx-click=cancel_delete in modal (backdrop + Annulla), got #{cancel_clicks}"
+    end
+  end
 end
