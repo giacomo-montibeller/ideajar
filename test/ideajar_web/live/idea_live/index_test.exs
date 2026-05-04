@@ -6152,6 +6152,38 @@ defmodule IdeajarWeb.IdeaLive.IndexTest do
       refute html =~ ~s|role="dialog"|
       assert Process.alive?(view.pid)
     end
+
+    test "R2: backdrop fires cancel_delete and the dialog content does not",
+         %{conn: conn} do
+      idea = insert_idea_with_categories!("Sirolo", ["mare"], ~U[2026-04-27 10:00:00Z])
+
+      view = mount_authenticated(conn)
+      html = render_click(view, "request_delete", %{"id" => "#{idea.id}"})
+
+      # The backdrop is a sibling of the dialog content (not its parent),
+      # so an internal click can't bubble-cancel.
+      assert html =~ ~r{<div class="backdrop" phx-click="cancel_delete">\s*</div>}
+
+      # Inside the modal markup we expect exactly two `phx-click="cancel_delete"`
+      # occurrences: one on the backdrop, one on the Annulla button. If a third
+      # appears it has likely been added to the dialog content div, which would
+      # let an internal click bubble-cancel.
+      modal_chunk =
+        case Regex.run(
+               ~r{<div[^>]*id="delete-modal"[^>]*>(.*?)</div></div>}s,
+               html
+             ) do
+          [_, inner] -> inner
+          _ -> flunk("delete-modal wrapper not found in rendered HTML")
+        end
+
+      cancel_clicks =
+        Regex.scan(~r{phx-click="cancel_delete"}, modal_chunk)
+        |> length()
+
+      assert cancel_clicks == 2,
+             "expected exactly 2 phx-click=cancel_delete in modal (backdrop + Annulla), got #{cancel_clicks}"
+    end
   end
 
   describe "confirm_delete happy path with focus successor (slice 12 step 5)" do
@@ -6320,37 +6352,47 @@ defmodule IdeajarWeb.IdeaLive.IndexTest do
       assert :counters.get(counter, 1) == 2
       assert Repo.aggregate(Idea, :count) == 1
     end
+  end
 
-    test "R2: backdrop fires cancel_delete and the dialog content does not",
+  describe "active filters survive a delete (slice 12 step 7)" do
+    test "deleting a card while a category filter is required keeps the other filtered card and the filter state",
          %{conn: conn} do
-      idea = insert_idea_with_categories!("Sirolo", ["mare"], ~U[2026-04-27 10:00:00Z])
+      # Pin: confirm_delete must rebuild the list via reload_ideas/1
+      # (which reads filter_state from assigns), not via Ideas.list_ideas/0.
+      mare = CategoriesFixtures.category_by_name!("mare")
+
+      to_delete =
+        insert_idea_with_categories!("Mare-uno", ["mare"], ~U[2026-04-27 10:00:00Z])
+
+      _other_with_mare =
+        insert_idea_with_categories!("Mare-due", ["mare"], ~U[2026-04-26 10:00:00Z])
+
+      _museo_only =
+        insert_idea_with_categories!("Museo", ["museo"], ~U[2026-04-25 10:00:00Z])
 
       view = mount_authenticated(conn)
-      html = render_click(view, "request_delete", %{"id" => "#{idea.id}"})
 
-      # The backdrop is a sibling of the dialog content (not its parent),
-      # so an internal click can't bubble-cancel.
-      assert html =~ ~r{<div class="backdrop" phx-click="cancel_delete">\s*</div>}
+      # Two clicks → :required state on "mare" → only the two
+      # mare-tagged ideas remain visible.
+      render_click(view, "cycle_filter", %{"id" => "#{mare.id}"})
+      render_click(view, "cycle_filter", %{"id" => "#{mare.id}"})
 
-      # Inside the modal markup we expect exactly two `phx-click="cancel_delete"`
-      # occurrences: one on the backdrop, one on the Annulla button. If a third
-      # appears it has likely been added to the dialog content div, which would
-      # let an internal click bubble-cancel.
-      modal_chunk =
-        case Regex.run(
-               ~r{<div[^>]*id="delete-modal"[^>]*>(.*?)</div></div>}s,
-               html
-             ) do
-          [_, inner] -> inner
-          _ -> flunk("delete-modal wrapper not found in rendered HTML")
-        end
+      pre = render(view)
+      assert pre =~ "Mare-uno"
+      assert pre =~ "Mare-due"
+      refute pre =~ "Museo"
 
-      cancel_clicks =
-        Regex.scan(~r{phx-click="cancel_delete"}, modal_chunk)
-        |> length()
+      # Confirm delete on "Mare-uno". The filter must survive.
+      render_click(view, "request_delete", %{"id" => "#{to_delete.id}"})
+      html = render_click(view, "confirm_delete")
 
-      assert cancel_clicks == 2,
-             "expected exactly 2 phx-click=cancel_delete in modal (backdrop + Annulla), got #{cancel_clicks}"
+      refute html =~ "Mare-uno"
+      assert html =~ "Mare-due"
+      refute html =~ "Museo"
+
+      # Filter state assign is unchanged.
+      assigns = :sys.get_state(view.pid).socket.assigns
+      assert assigns.filter_state[mare.id] == :required
     end
   end
 end
