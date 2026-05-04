@@ -7,7 +7,7 @@
 ## Prerequisites
 
 - Local clone is on `main` with the slice 11b code committed.
-- `gigalixir` CLI installed: `pip install gigalixir` (or `brew install gigalixir`). Login: `gigalixir login`.
+- `gigalixir` CLI installed. On macOS: `brew install gigalixir`. On Debian/Ubuntu (PEP 668-managed Python): `pip install --user --break-system-packages gigalixir` or `pipx install gigalixir`. Verify: `gigalixir --help`.
 - Docker (optional, for a local image smoke test before pushing).
 - A working credit card on the Gigalixir account — required even for the free tier (no charge unless you exceed the threshold).
 
@@ -23,10 +23,17 @@ gigalixir login
 ### 2. Create the app
 
 ```bash
-gigalixir create -n ideajar
+gigalixir apps:create -n ideajar
 ```
 
-If `ideajar` is already taken, fall back to `ideajar-app` or `ideajar-prod`. The `gigalixir create` command also adds the `gigalixir` git remote; verify with `git remote -v`.
+If `ideajar` is already taken, fall back to `ideajar-app` or `ideajar-prod`.
+
+Add the `gigalixir` git remote (the `apps:create` command does **not** add it automatically):
+
+```bash
+gigalixir git:remote ideajar    # use the app name you just claimed
+git remote -v                   # verify "gigalixir" remote points to git.gigalixir.com
+```
 
 ### 3. Provision the Postgres free-tier addon
 
@@ -120,8 +127,10 @@ gigalixir releases
 Roll the running container back to a previous release version:
 
 ```bash
-gigalixir releases:rollback -n <version>
+gigalixir releases:rollback -r <version>
 ```
+
+Omit `-r <version>` to roll back one release (the second-most-recent).
 
 ### Database rollback
 
@@ -136,32 +145,27 @@ The `Ideajar.Release.rollback/2` function is defined in `lib/ideajar/release.ex`
 
 ## Logs
 
-Stream container logs (Ctrl-C to stop):
+Stream container logs (tail is the default; Ctrl-C to stop):
 
 ```bash
-gigalixir logs --tail
+gigalixir logs
 ```
 
-For Postgres logs:
+Pass `-t` / `--no_tail` for a one-shot dump instead of a live stream.
 
-```bash
-gigalixir pg:logs
-```
+Gigalixir does not expose Postgres-specific log streaming on the free tier. App-level Postgres errors surface in `gigalixir logs` (the application prints the `Postgrex.Error` stacktrace).
 
 ## Backups & restore
 
-Gigalixir's free tier ships one nightly snapshot. List + restore:
+Gigalixir's free tier ships one nightly snapshot. Find the database id first with `gigalixir pg`, then list and restore:
 
 ```bash
-gigalixir pg:backups
-gigalixir pg:backups:restore <backup-id>
+gigalixir pg                                              # → grab the database id
+gigalixir pg:backups -d <database-id>
+gigalixir pg:backups:restore -d <database-id> -b <backup-id>
 ```
 
-For a fresh manual snapshot before risky changes:
-
-```bash
-gigalixir pg:backups:capture
-```
+The free tier does not expose an on-demand snapshot command — only the nightly snapshot is available. Before risky changes, either rely on the most recent nightly or take a manual `pg_dump` via `gigalixir pg:psql` redirected to a local file.
 
 ## Slice 10 PWA manual gates (post-deploy)
 
@@ -193,4 +197,4 @@ Record the audit results in this file (or a follow-up note) so the gate is durab
 - 1 Postgres instance, 10 MB storage, no SSL configurability beyond defaults
 - Plenty for a couple-2-user app
 
-If usage grows past the free tier (rare for this audience), upgrade via `gigalixir ps:scale` and `gigalixir pg:plans`.
+If usage grows past the free tier (rare for this audience), upgrade the app via `gigalixir ps:scale` and the database via `gigalixir pg:scale -s <size>` (sizes: 0.6, 1.7, 4, 8, 16, 32, 48, 64, 96).
