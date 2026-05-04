@@ -539,7 +539,9 @@ defmodule Ideajar.DocsTest do
         "L'idea sarà rimossa definitivamente.",
         "Annulla",
         "Eliminazione…",
-        "Idea eliminata"
+        "Idea eliminata",
+        "Idea già eliminata",
+        "Eliminazione non riuscita, riprova"
       ]
 
       for needle <- needles do

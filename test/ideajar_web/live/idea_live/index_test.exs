@@ -6229,6 +6229,97 @@ defmodule IdeajarWeb.IdeaLive.IndexTest do
       assert html =~ "Nessuna idea ancora. Aggiungine una qui sopra."
       assert_push_event(view, "ideajar:focus", %{to: "#add-idea-button"})
     end
+  end
+
+  describe "confirm_delete error branches (slice 12 step 6)" do
+    defp inject_delete_fun!(view, fun) do
+      :sys.replace_state(view.pid, fn state ->
+        socket = Phoenix.Component.assign(state.socket, :delete_idea_fun, fun)
+        %{state | socket: socket}
+      end)
+
+      view
+    end
+
+    test "F8 race: confirming a deletion already done elsewhere flashes 'Idea già eliminata' and refreshes",
+         %{conn: conn} do
+      _vecchia =
+        insert_idea_with_categories!("Vecchia", ["mare"], ~U[2026-04-26 10:00:00Z])
+
+      target =
+        insert_idea_with_categories!("Bersaglio", ["mare"], ~U[2026-04-27 10:00:00Z])
+
+      _recente =
+        insert_idea_with_categories!("Recente", ["mare"], ~U[2026-04-28 10:00:00Z])
+
+      view = mount_authenticated(conn)
+      render_click(view, "request_delete", %{"id" => "#{target.id}"})
+
+      # Out-of-band: another device removes the same idea before we
+      # confirm. The LiveView still holds the stale modal state.
+      Repo.delete!(target)
+
+      html = render_click(view, "confirm_delete")
+
+      refute html =~ ~s|role="dialog"|
+      assert html =~ "Idea già eliminata"
+      assert html =~ ~s|role="status"|
+      refute html =~ "Bersaglio"
+      assert Repo.aggregate(Idea, :count) == 2
+      assert_push_event(view, "ideajar:focus", %{to: "#add-idea-button"})
+      assert Process.alive?(view.pid)
+    end
+
+    test "F9 DB error: an unexpected Repo failure flashes a retry hint and keeps the modal open",
+         %{conn: conn} do
+      idea = insert_idea_with_categories!("Sirolo", ["mare"], ~U[2026-04-27 10:00:00Z])
+
+      view = mount_authenticated(conn)
+      render_click(view, "request_delete", %{"id" => "#{idea.id}"})
+
+      inject_delete_fun!(view, fn _id ->
+        {:error,
+         %Ecto.Changeset{
+           data: %Idea{},
+           valid?: false,
+           errors: [base: {"db down", []}]
+         }}
+      end)
+
+      html = render_click(view, "confirm_delete")
+
+      assert html =~ "Eliminazione non riuscita, riprova"
+      assert html =~ ~s|role="alert"|
+      # Modal must remain visible so the user can retry or cancel.
+      assert html =~ ~s|role="dialog"|
+      assert html =~ "Eliminare questa idea?"
+      assert Repo.aggregate(Idea, :count) == 1
+      assert Process.alive?(view.pid)
+    end
+
+    test "F9 DB error: confirming again from the still-open modal still hits the stub once more",
+         %{conn: conn} do
+      # Anti-regression: the modal stays open exactly so the user can
+      # retry — make sure the second confirm goes through the same code
+      # path (no silent no-op).
+      idea = insert_idea_with_categories!("Sirolo", ["mare"], ~U[2026-04-27 10:00:00Z])
+
+      view = mount_authenticated(conn)
+      render_click(view, "request_delete", %{"id" => "#{idea.id}"})
+
+      counter = :counters.new(1, [])
+
+      inject_delete_fun!(view, fn _id ->
+        :counters.add(counter, 1, 1)
+        {:error, %Ecto.Changeset{data: %Idea{}, valid?: false, errors: []}}
+      end)
+
+      render_click(view, "confirm_delete")
+      render_click(view, "confirm_delete")
+
+      assert :counters.get(counter, 1) == 2
+      assert Repo.aggregate(Idea, :count) == 1
+    end
 
     test "R2: backdrop fires cancel_delete and the dialog content does not",
          %{conn: conn} do

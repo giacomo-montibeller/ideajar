@@ -155,6 +155,26 @@ defmodule IdeajarWeb.IdeaLive.Index do
           |> push_event("ideajar:focus", %{to: target})
 
         {:noreply, socket}
+
+      # Slice 12 step 6: race — another device removed the idea between
+      # our `request_delete` and `confirm_delete`. Refresh, close modal,
+      # send focus to a safe target (the source card no longer exists).
+      {:error, :not_found} ->
+        socket =
+          socket
+          |> reload_ideas()
+          |> assign(:deletion, nil)
+          |> put_flash(:info, "Idea già eliminata")
+          |> push_event("ideajar:focus", %{to: "#add-idea-button"})
+
+        {:noreply, socket}
+
+      # Slice 12 step 6: catch-all for unexpected Repo failures (e.g.
+      # constraint violation we don't model yet). The modal stays open
+      # so the user can retry or cancel. If a typed cause becomes
+      # recurring, promote it to its own clause.
+      {:error, _changeset} ->
+        {:noreply, put_flash(socket, :error, "Eliminazione non riuscita, riprova")}
     end
   end
 
