@@ -23,6 +23,15 @@ defmodule Ideajar.Ideas do
   estimated_cost IS NOT NULL` are returned (NULL-exclude uniforme con
   AA7 durations). `nil` (or omitting the opt) leaves NULL-cost ideas
   in the result.
+
+  Slice 12 adds `delete_idea/1` (hard delete by id) plus the `@doc false`
+  helper `delete_struct_safe/1`. The cascade on the `idea_categories`
+  join table is delegated to the FK `on_delete: :delete_all` declared in
+  the initial migration; this context does not touch the join. The
+  `try/rescue Ecto.StaleEntryError -> {:error, :not_found}` closes the
+  race window where two processes both pass `Repo.get/2` and only one
+  wins the delete — the loser is mapped to `:not_found` since the row
+  is no longer there from the caller's perspective.
   """
 
   import Ecto.Query
@@ -147,6 +156,41 @@ defmodule Ideajar.Ideas do
     with {:ok, idea} <- %Idea{} |> Idea.changeset(attrs) |> Repo.insert() do
       {:ok, Repo.preload(idea, categories: Categories.preload_query())}
     end
+  end
+
+  @doc """
+  Deletes the idea identified by `id`.
+
+  The cascade on `idea_categories` is delegated to the FK
+  `on_delete: :delete_all` declared in the initial migration; we do not
+  touch the join table here. Returns `{:error, :not_found}` for both
+  "the row never existed" and "another process already deleted it"
+  (the latter via `delete_struct_safe/1`'s rescue).
+  """
+  @spec delete_idea(integer()) ::
+          {:ok, Idea.t()}
+          | {:error, :not_found}
+          | {:error, Ecto.Changeset.t()}
+  def delete_idea(id) when is_integer(id) do
+    case Repo.get(Idea, id) do
+      nil -> {:error, :not_found}
+      idea -> delete_struct_safe(idea)
+    end
+  end
+
+  @doc false
+  # Test seam exposed for slice 12 F12: lets the test feed two stale
+  # `%Idea{}` references (simulating two processes that both passed
+  # `Repo.get/2`) so the rescue branch is genuinely exercised. Going
+  # through `delete_idea/1` would re-fetch via `Repo.get/2` and short-
+  # circuit into the nil-guard, never reaching `Repo.delete/1` on a
+  # stale struct.
+  @spec delete_struct_safe(Idea.t()) ::
+          {:ok, Idea.t()} | {:error, :not_found} | {:error, Ecto.Changeset.t()}
+  def delete_struct_safe(%Idea{} = idea) do
+    Repo.delete(idea)
+  rescue
+    Ecto.StaleEntryError -> {:error, :not_found}
   end
 
   # Builds a changeset that surfaces ONLY the controlled "Categoria non

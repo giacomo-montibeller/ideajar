@@ -1631,6 +1631,70 @@ defmodule Ideajar.IdeasTest do
     end
   end
 
+  describe "delete_idea/1 (slice 12)" do
+    test "F2: removes the idea and returns {:ok, idea}" do
+      mare = by_name("mare")
+      idea = insert_idea_with_categories!("Mare a Sirolo", [mare], ~U[2026-04-27 10:00:00Z])
+
+      assert {:ok, %Idea{id: deleted_id}} = Ideas.delete_idea(idea.id)
+      assert deleted_id == idea.id
+      assert Repo.get(Idea, idea.id) == nil
+    end
+
+    test "F3: returns {:error, :not_found} when the id does not exist" do
+      assert {:error, :not_found} = Ideas.delete_idea(99_999_999)
+    end
+
+    test "F4: cascades on idea_categories — join rows are removed, categories survive" do
+      mare = by_name("mare")
+      viaggio = by_name("viaggio")
+      idea = insert_idea_with_categories!("Sirolo", [mare, viaggio], ~U[2026-04-27 10:00:00Z])
+
+      # Pre-condition: 2 join rows exist for this idea.
+      pre =
+        from(ic in "idea_categories",
+          where: ic.idea_id == ^idea.id,
+          select: ic.category_id
+        )
+        |> Repo.all()
+
+      assert length(pre) == 2
+
+      {:ok, _} = Ideas.delete_idea(idea.id)
+
+      # Behavioral assertion (agnostic across SQLite/Postgres): join rows for
+      # this idea_id are gone after the cascade.
+      post =
+        from(ic in "idea_categories",
+          where: ic.idea_id == ^idea.id,
+          select: ic.category_id
+        )
+        |> Repo.all()
+
+      assert post == []
+
+      # Categories themselves still exist (cascade does NOT propagate to parent).
+      assert Repo.get(Category, mare.id) != nil
+      assert Repo.get(Category, viaggio.id) != nil
+    end
+
+    test "F12: delete_struct_safe/1 maps Ecto.StaleEntryError to {:error, :not_found}" do
+      mare = by_name("mare")
+      idea = insert_idea_with_categories!("Mare a Sirolo", [mare], ~U[2026-04-27 10:00:00Z])
+
+      # Two reads of the same row → two in-memory struct references. After
+      # the first `Repo.delete/1` succeeds, the second on the stale struct
+      # raises Ecto.StaleEntryError. delete_struct_safe/1 must rescue it
+      # and map to {:error, :not_found}, simulating the race window where
+      # two processes both pass `Repo.get/2` and only one wins the delete.
+      a = Repo.get!(Idea, idea.id)
+      b = Repo.get!(Idea, idea.id)
+
+      assert {:ok, _} = Ideas.delete_struct_safe(a)
+      assert {:error, :not_found} = Ideas.delete_struct_safe(b)
+    end
+  end
+
   defp insert_idea_full!(title, cats, duration, cost, lat, lng, %DateTime{} = at) do
     idea =
       %Idea{
