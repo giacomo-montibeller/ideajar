@@ -128,6 +128,36 @@ defmodule IdeajarWeb.IdeaLive.Index do
     {:noreply, socket}
   end
 
+  # Slice 12 step 5: confirms the deletion. Branches:
+  #   * `{:ok, _}`  — refresh list, close modal, success flash, focus the
+  #     successor (next card | previous card | add-idea button).
+  #   * other branches land in step 6.
+  # The id is read from `assigns.deletion`, parallel to cancel_delete.
+  def handle_event("confirm_delete", _params, %{assigns: %{deletion: nil}} = socket),
+    do: {:noreply, socket}
+
+  def handle_event(
+        "confirm_delete",
+        _params,
+        %{assigns: %{deletion: %{id: id}, ideas: prev_ideas}} = socket
+      ) do
+    delete_fun = socket.assigns[:delete_idea_fun] || (&Ideas.delete_idea/1)
+
+    case delete_fun.(id) do
+      {:ok, _idea} ->
+        target = focus_target_after_delete(prev_ideas, id)
+
+        socket =
+          socket
+          |> reload_ideas()
+          |> assign(:deletion, nil)
+          |> put_flash(:info, "Idea eliminata")
+          |> push_event("ideajar:focus", %{to: target})
+
+        {:noreply, socket}
+    end
+  end
+
   def handle_event("toggle_form", _params, %{assigns: %{form_visible?: false}} = socket) do
     {:noreply,
      socket
@@ -956,6 +986,26 @@ defmodule IdeajarWeb.IdeaLive.Index do
   end
 
   defp parse_delete_id(_, _), do: :error
+
+  # Slice 12 step 5: returns the DOM id of the focus successor after a
+  # successful delete. Strategy:
+  #   * if the deleted idea was the only one — `#add-idea-button`
+  #   * otherwise, prefer the next idea in the rendered (DESC) order
+  #   * fall back to the previous idea when the deleted one was last
+  #   * if the id is somehow not in the list (defensive) — add button
+  defp focus_target_after_delete(ideas, deleted_id) do
+    case Enum.find_index(ideas, &(&1.id == deleted_id)) do
+      nil ->
+        "#add-idea-button"
+
+      i ->
+        cond do
+          length(ideas) == 1 -> "#add-idea-button"
+          i < length(ideas) - 1 -> "#delete-btn-#{Enum.at(ideas, i + 1).id}"
+          true -> "#delete-btn-#{Enum.at(ideas, i - 1).id}"
+        end
+    end
+  end
 
   # Slice 7b step 8 (DD12 refactor) — collapsed `derive_filter_opts/3`
   # to `/1` taking the socket directly. Reading every assign at the

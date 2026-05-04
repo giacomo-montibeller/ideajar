@@ -229,6 +229,7 @@ Stringhe aggiunte in slice 12 (eliminare un'idea):
 | Bottone modal annulla                          | `Annulla`                                                                    |
 | Bottone modal conferma (danger)                | `Elimina`                                                                    |
 | `phx-disable-with` su `Elimina`                | `Eliminazione…`                                                              |
+| Flash success (role="status")                  | `Idea eliminata`                                                             |
 
 Nuova copy aggiunta da slice future va appesa qui per evitare drift.
 

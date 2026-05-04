@@ -6152,6 +6152,83 @@ defmodule IdeajarWeb.IdeaLive.IndexTest do
       refute html =~ ~s|role="dialog"|
       assert Process.alive?(view.pid)
     end
+  end
+
+  describe "confirm_delete happy path with focus successor (slice 12 step 5)" do
+    defp open_and_confirm_delete(view, idea_id) do
+      render_click(view, "request_delete", %{"id" => "#{idea_id}"})
+      render_click(view, "confirm_delete")
+    end
+
+    test "deleting a middle card removes the idea, flashes success, focuses the next card",
+         %{conn: conn} do
+      # Render order is inserted_at DESC, so the rendered list is:
+      # [recente, middle, vecchia]. Deleting "recente" (top) leaves
+      # [middle, vecchia] and the focus successor is the next card,
+      # which in render order is "middle".
+      _vecchia =
+        insert_idea_with_categories!("Vecchia", ["mare"], ~U[2026-04-26 10:00:00Z])
+
+      middle =
+        insert_idea_with_categories!("Middle", ["mare"], ~U[2026-04-27 10:00:00Z])
+
+      recente =
+        insert_idea_with_categories!("Recente", ["mare"], ~U[2026-04-28 10:00:00Z])
+
+      target = "#delete-btn-#{middle.id}"
+
+      view = mount_authenticated(conn)
+      html = open_and_confirm_delete(view, recente.id)
+
+      refute html =~ ~s|role="dialog"|
+      refute html =~ "Recente"
+      assert html =~ "Middle"
+      assert html =~ "Vecchia"
+      assert html =~ "Idea eliminata"
+      # Phoenix flash uses role="status" for info-level messages; assert
+      # both are present without pinning their exact DOM proximity.
+      assert html =~ ~s|role="status"|
+
+      assert Repo.get(Idea, recente.id) == nil
+      assert Repo.aggregate(Idea, :count) == 2
+      assert_push_event(view, "ideajar:focus", %{to: ^target})
+    end
+
+    test "deleting the last card in render order focuses the previous card",
+         %{conn: conn} do
+      # Deleting "Vecchia" (last in render order) leaves [Recente, Middle]
+      # and the focus successor falls back to the previous card "Middle".
+      vecchia =
+        insert_idea_with_categories!("Vecchia", ["mare"], ~U[2026-04-26 10:00:00Z])
+
+      middle =
+        insert_idea_with_categories!("Middle", ["mare"], ~U[2026-04-27 10:00:00Z])
+
+      _recente =
+        insert_idea_with_categories!("Recente", ["mare"], ~U[2026-04-28 10:00:00Z])
+
+      target = "#delete-btn-#{middle.id}"
+
+      view = mount_authenticated(conn)
+      html = open_and_confirm_delete(view, vecchia.id)
+
+      refute html =~ "Vecchia"
+      assert Repo.aggregate(Idea, :count) == 2
+      assert_push_event(view, "ideajar:focus", %{to: ^target})
+    end
+
+    test "deleting the only card focuses the add-idea button and shows the empty state",
+         %{conn: conn} do
+      idea = insert_idea_with_categories!("Solo", ["mare"], ~U[2026-04-27 10:00:00Z])
+
+      view = mount_authenticated(conn)
+      html = open_and_confirm_delete(view, idea.id)
+
+      refute html =~ ~s|role="dialog"|
+      assert Repo.aggregate(Idea, :count) == 0
+      assert html =~ "Nessuna idea ancora. Aggiungine una qui sopra."
+      assert_push_event(view, "ideajar:focus", %{to: "#add-idea-button"})
+    end
 
     test "R2: backdrop fires cancel_delete and the dialog content does not",
          %{conn: conn} do
