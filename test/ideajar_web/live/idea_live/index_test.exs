@@ -6093,6 +6093,66 @@ defmodule IdeajarWeb.IdeaLive.IndexTest do
       assert Process.alive?(view.pid)
     end
 
+    defp open_delete_modal(view, idea_id) do
+      render_click(view, "request_delete", %{"id" => "#{idea_id}"})
+      view
+    end
+
+    test "click on Annulla closes the modal and pushes focus back to the trash button",
+         %{conn: conn} do
+      idea = insert_idea_with_categories!("Sirolo", ["mare"], ~U[2026-04-27 10:00:00Z])
+      target = "#delete-btn-#{idea.id}"
+
+      view = mount_authenticated(conn) |> open_delete_modal(idea.id)
+      html = render_click(view, "cancel_delete")
+
+      refute html =~ ~s|role="dialog"|
+      assert Repo.aggregate(Idea, :count) == 1
+      assert_push_event(view, "ideajar:focus", %{to: ^target})
+    end
+
+    test "Escape key closes the modal and pushes focus back to the trash button",
+         %{conn: conn} do
+      idea = insert_idea_with_categories!("Sirolo", ["mare"], ~U[2026-04-27 10:00:00Z])
+      target = "#delete-btn-#{idea.id}"
+
+      view = mount_authenticated(conn) |> open_delete_modal(idea.id)
+
+      html =
+        view
+        |> element("#delete-modal")
+        |> render_keydown(%{"key" => "Escape"})
+
+      refute html =~ ~s|role="dialog"|
+      assert Repo.aggregate(Idea, :count) == 1
+      assert_push_event(view, "ideajar:focus", %{to: ^target})
+    end
+
+    test "click on the backdrop closes the modal and pushes focus back to the trash button",
+         %{conn: conn} do
+      idea = insert_idea_with_categories!("Sirolo", ["mare"], ~U[2026-04-27 10:00:00Z])
+      target = "#delete-btn-#{idea.id}"
+
+      view = mount_authenticated(conn) |> open_delete_modal(idea.id)
+
+      html =
+        view
+        |> element("#delete-modal .backdrop")
+        |> render_click()
+
+      refute html =~ ~s|role="dialog"|
+      assert Repo.aggregate(Idea, :count) == 1
+      assert_push_event(view, "ideajar:focus", %{to: ^target})
+    end
+
+    test "cancel_delete with no open modal is a silent no-op", %{conn: conn} do
+      view = mount_authenticated(conn)
+      html = render_click(view, "cancel_delete")
+
+      refute html =~ ~s|role="dialog"|
+      assert Process.alive?(view.pid)
+    end
+
     test "R2: backdrop fires cancel_delete and the dialog content does not",
          %{conn: conn} do
       idea = insert_idea_with_categories!("Sirolo", ["mare"], ~U[2026-04-27 10:00:00Z])

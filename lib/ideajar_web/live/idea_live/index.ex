@@ -112,6 +112,22 @@ defmodule IdeajarWeb.IdeaLive.Index do
     end
   end
 
+  # Slice 12 step 4: closes the confirm modal without deleting. Triggered
+  # by Annulla, Escape, and the backdrop. The id is read from
+  # `assigns.deletion` (not params) because phx-window-keydown does not
+  # propagate phx-value-* attributes; the assign is the source of truth.
+  def handle_event("cancel_delete", _params, %{assigns: %{deletion: nil}} = socket),
+    do: {:noreply, socket}
+
+  def handle_event("cancel_delete", _params, %{assigns: %{deletion: %{id: id}}} = socket) do
+    socket =
+      socket
+      |> assign(:deletion, nil)
+      |> push_event("ideajar:focus", %{to: "#delete-btn-#{id}"})
+
+    {:noreply, socket}
+  end
+
   def handle_event("toggle_form", _params, %{assigns: %{form_visible?: false}} = socket) do
     {:noreply,
      socket
