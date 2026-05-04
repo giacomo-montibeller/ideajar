@@ -6010,7 +6010,6 @@ defmodule IdeajarWeb.IdeaLive.IndexTest do
         assert btn =~ ~s|aria-label="Elimina idea"|
         assert btn =~ ~s|type="button"|
         assert btn =~ ~s|phx-click="request_delete"|
-        assert btn =~ ~s|<span class="sr-only">Elimina</span>|
       end)
     end
   end

@@ -2,7 +2,7 @@
 
 **Created**: 2026-05-04
 **Branch**: main (trunk-based)
-**Status**: approved (post review iter-3, 2026-05-04)
+**Status**: implemented (2026-05-04)
 **Spec**: `docs/specs/delete-idea.md`
 
 ## Build conventions (carried from prior slices)
@@ -38,14 +38,12 @@ Queste decisioni sono fissate qui e gli step le applicano meccanicamente. Niente
   # against a stale struct without going back through `Repo.get/2` (which
   # would short-circuit into the nil-guard branch).
   def delete_struct_safe(%Idea{} = idea) do
-    try do
-      Repo.delete(idea)
-    rescue
-      Ecto.StaleEntryError -> {:error, :not_found}
-    end
+    Repo.delete(idea)
+  rescue
+    Ecto.StaleEntryError -> {:error, :not_found}
   end
   ```
-  Il `try/rescue` chiude la finestra di race in cui due processi superano `Repo.get/2` e il secondo `Repo.delete/1` solleva `Ecto.StaleEntryError`. Mappato a `{:error, :not_found}` perché lato chiamante è semanticamente identico. L'helper `delete_struct_safe/1` è marcato `@doc false` (test-only API): F12 lo invoca direttamente per esercitare la branch rescue su una struct stale, scenario non riproducibile via `delete_idea/1` (che ri-fa `Repo.get` e cadrebbe nel nil-guard).
+  Il bare `rescue` chiude la finestra di race in cui due processi superano `Repo.get/2` e il secondo `Repo.delete/1` solleva `Ecto.StaleEntryError`. Mappato a `{:error, :not_found}` perché lato chiamante è semanticamente identico. L'helper `delete_struct_safe/1` è marcato `@doc false` (test-only API): F12 lo invoca direttamente per esercitare la branch rescue su una struct stale, scenario non riproducibile via `delete_idea/1` (che ri-fa `Repo.get` e cadrebbe nel nil-guard).
 - **A4 — Stato modal in LV**: nuovo assign `@deletion :: nil | %{id: integer(), title: String.t()}`. Quando non-nil la modal è renderizzata (HEEx conditional, no CSS-hidden). Il titolo viene letto **dall'assign `@ideas`** già caricato (no DB hit a `request_delete`).
 - **A5 — Markup modal**: HEEx **inline** in `index.html.heex` (no LiveComponent/function-component dedicato — KISS, una sola modal in tutto il LV). Contiene `role="dialog"`, `aria-modal="true"`, `aria-labelledby="delete-modal-title"`, `aria-describedby="delete-modal-body"`, `id="delete-modal"`.
 - **A6 — Chiusura modal: tre paths**:

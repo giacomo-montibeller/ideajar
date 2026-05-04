@@ -27,11 +27,11 @@ defmodule Ideajar.Ideas do
   Slice 12 adds `delete_idea/1` (hard delete by id) plus the `@doc false`
   helper `delete_struct_safe/1`. The cascade on the `idea_categories`
   join table is delegated to the FK `on_delete: :delete_all` declared in
-  the initial migration; this context does not touch the join. The
-  `try/rescue Ecto.StaleEntryError -> {:error, :not_found}` closes the
-  race window where two processes both pass `Repo.get/2` and only one
-  wins the delete — the loser is mapped to `:not_found` since the row
-  is no longer there from the caller's perspective.
+  the initial migration; this context does not touch the join. A bare
+  `rescue Ecto.StaleEntryError -> {:error, :not_found}` closes the race
+  window where two processes both pass `Repo.get/2` and only one wins
+  the delete — the loser is mapped to `:not_found` since the row is no
+  longer there from the caller's perspective.
   """
 
   import Ecto.Query
