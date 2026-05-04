@@ -219,6 +219,12 @@ Stringhe aggiunte in slice 10 (PWA installability — manifest content):
 | Manifest `short_name`                          | `Ideajar`                                                                    |
 | Manifest `description`                         | `Idee da fare insieme`                                                       |
 
+Stringhe aggiunte in slice 12 (eliminare un'idea):
+
+| Elemento                                       | Testo IT                                                                     |
+|------------------------------------------------|------------------------------------------------------------------------------|
+| Aria-label bottone trash su card               | `Elimina idea`                                                               |
+
 Nuova copy aggiunta da slice future va appesa qui per evitare drift.
 
 ## Architettura

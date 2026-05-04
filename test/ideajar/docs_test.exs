@@ -523,4 +523,20 @@ defmodule Ideajar.DocsTest do
       end
     end
   end
+
+  describe "docs/conventions.md — slice 12 UI copy (delete idea)" do
+    setup do
+      {:ok, content: File.read!(Path.join(File.cwd!(), "docs/conventions.md"))}
+    end
+
+    test "lists every canonical UI copy string introduced in slice 12", %{content: content} do
+      # The list grows as steps add new strings; step 2 seeds "Elimina idea"
+      # only. Steps 3+ extend it with modal/flash/button copy.
+      needles = ["Elimina idea"]
+
+      for needle <- needles do
+        assert content =~ needle, "missing slice-12 UI copy in conventions.md: #{needle}"
+      end
+    end
+  end
 end

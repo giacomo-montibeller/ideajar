@@ -5979,4 +5979,39 @@ defmodule IdeajarWeb.IdeaLive.IndexTest do
       assert :sys.get_state(view2.pid).socket.assigns.filters_expanded? == false
     end
   end
+
+  describe "delete trash button on idea cards (slice 12 step 2)" do
+    test "each rendered card carries a delete button with required attributes",
+         %{conn: conn} do
+      insert_idea_with_categories!("Sirolo", ["mare"], ~U[2026-04-27 10:00:00Z])
+      insert_idea_with_categories!("Uffizi", ["museo"], ~U[2026-04-27 10:01:00Z])
+      insert_idea_with_categories!("Stadio", ["sport"], ~U[2026-04-27 10:02:00Z])
+
+      view = mount_authenticated(conn)
+      html = render(view)
+
+      [%{id: id1}, %{id: id2}, %{id: id3}] =
+        Idea
+        |> Repo.all()
+        |> Enum.sort_by(& &1.inserted_at, {:desc, DateTime})
+
+      # Each card must expose its own delete button keyed by id.
+      for id <- [id1, id2, id3] do
+        assert html =~ ~s|id="delete-btn-#{id}"|
+        assert html =~ ~s|phx-value-id="#{id}"|
+      end
+
+      # Attribute set required by the spec/plan: aria-label, type=button,
+      # phx-click=request_delete, sr-only fallback span.
+      delete_buttons = Regex.scan(~r{<button[^>]*id="delete-btn-\d+"[^>]*>.*?</button>}s, html)
+      assert length(delete_buttons) == 3
+
+      Enum.each(delete_buttons, fn [btn] ->
+        assert btn =~ ~s|aria-label="Elimina idea"|
+        assert btn =~ ~s|type="button"|
+        assert btn =~ ~s|phx-click="request_delete"|
+        assert btn =~ ~s|<span class="sr-only">Elimina</span>|
+      end)
+    end
+  end
 end

@@ -93,6 +93,11 @@ defmodule IdeajarWeb.IdeaLive.Index do
   end
 
   @impl Phoenix.LiveView
+  # Slice 12 step 2: stub — opening the modal lands in step 3. Defining
+  # the clause here keeps the trash button click from crashing the LV
+  # while step 2 ships only the affordance.
+  def handle_event("request_delete", _params, socket), do: {:noreply, socket}
+
   def handle_event("toggle_form", _params, %{assigns: %{form_visible?: false}} = socket) do
     {:noreply,
      socket
