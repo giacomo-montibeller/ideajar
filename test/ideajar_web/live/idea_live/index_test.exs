@@ -7140,7 +7140,7 @@ defmodule IdeajarWeb.IdeaLive.IndexTest do
     test "F2 — edit that drops the idea from the active filter removes it from the list",
          %{conn: conn} do
       mare = CategoriesFixtures.category_by_name!("mare")
-      montagna = CategoriesFixtures.category_by_name!("passeggiata")
+      passeggiata = CategoriesFixtures.category_by_name!("passeggiata")
 
       idea = insert_idea_with_categories!("Sirolo", ["mare"], ~U[2026-04-27 10:00:00Z])
 
@@ -7153,7 +7153,7 @@ defmodule IdeajarWeb.IdeaLive.IndexTest do
       # Edit Sirolo, swap category mare → passeggiata
       render_click(view, "request_edit", %{"id" => Integer.to_string(idea.id)})
       render_click(view, "toggle_category", %{"id" => Integer.to_string(mare.id)})
-      render_click(view, "toggle_category", %{"id" => Integer.to_string(montagna.id)})
+      render_click(view, "toggle_category", %{"id" => Integer.to_string(passeggiata.id)})
       render_submit(view, "submit_edit", %{"idea" => %{"title" => "Sirolo"}})
 
       html = render(view)

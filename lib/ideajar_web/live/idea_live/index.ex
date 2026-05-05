@@ -663,7 +663,7 @@ defmodule IdeajarWeb.IdeaLive.Index do
         handle_update_result({:error, :not_found}, socket)
 
       %Idea{} = idea ->
-        if no_meaningful_changes?(idea, attrs, params) do
+        if no_meaningful_changes?(idea, attrs) do
           close_edit_form(socket)
         else
           id
@@ -673,25 +673,17 @@ defmodule IdeajarWeb.IdeaLive.Index do
     end
   end
 
-  def handle_event("save", %{"idea" => attrs}, socket) do
-    attrs_with_categories =
-      Map.put(attrs, "category_ids", MapSet.to_list(socket.assigns.selected_category_ids))
+  # Defensive catch-all: a `submit_edit` event arriving while form_mode is
+  # not {:edit, _} (e.g. a stale phx-binding race or DOM tampering) must
+  # not crash the LV — silently no-op instead.
+  def handle_event("submit_edit", _params, socket), do: {:noreply, socket}
 
-    attrs_with_duration =
-      maybe_inject_duration(attrs_with_categories, socket.assigns.selected_duration, attrs)
-
-    attrs_with_budget =
-      maybe_inject_budget(attrs_with_duration, socket.assigns.form_budget_index)
-
-    attrs_with_location =
-      attrs_with_budget
-      |> maybe_inject_location_name(socket.assigns.selected_location_name)
-      |> maybe_inject_lat(socket.assigns.selected_lat)
-      |> maybe_inject_lng(socket.assigns.selected_lng)
+  def handle_event("save", %{"idea" => attrs} = params, socket) do
+    composed = compose_form_attrs(params, socket)
 
     socket
     |> create_idea_fun()
-    |> apply([attrs_with_location])
+    |> apply([composed])
     |> handle_save_result(socket, attrs)
   end
 
@@ -716,9 +708,11 @@ defmodule IdeajarWeb.IdeaLive.Index do
     do: MapSet.to_list(socket.assigns.selected_category_ids)
 
   # No-op detection: scalar fields equal AND sorted category_ids equal.
-  # `params["category_ids"]` is the user-submitted list (string ids); we
-  # compare against the loaded idea's categories' integer ids, both sorted.
-  defp no_meaningful_changes?(%Idea{} = idea, attrs, _params) do
+  # The `attrs` map already has its `category_ids` resolved by
+  # `compose_form_attrs/2` (either from the top-level params list or from
+  # the `selected_category_ids` MapSet), so this helper does not need the
+  # raw params and is `arity-2`.
+  defp no_meaningful_changes?(%Idea{} = idea, attrs) do
     same_scalar?(idea, attrs) and same_categories?(idea, attrs)
   end
 
@@ -741,17 +735,31 @@ defmodule IdeajarWeb.IdeaLive.Index do
   defp same_categories?(%Idea{categories: cats}, attrs) do
     persisted = cats |> Enum.map(& &1.id) |> Enum.sort()
 
-    submitted =
-      attrs
-      |> Map.get("category_ids", [])
-      |> Enum.map(fn
-        id when is_integer(id) -> id
-        id when is_binary(id) -> String.to_integer(id)
-      end)
-      |> Enum.sort()
-
-    persisted == submitted
+    case safe_parse_id_list(Map.get(attrs, "category_ids", [])) do
+      {:ok, submitted} -> persisted == Enum.sort(submitted)
+      # Malformed ids — treat as "different" so the update path runs and
+      # surfaces the controlled "Categoria non valida" via the context.
+      :error -> false
+    end
   end
+
+  defp safe_parse_id_list(ids) when is_list(ids) do
+    Enum.reduce_while(ids, {:ok, []}, fn
+      id, {:ok, acc} when is_integer(id) ->
+        {:cont, {:ok, [id | acc]}}
+
+      id, {:ok, acc} when is_binary(id) ->
+        case Integer.parse(id) do
+          {n, ""} -> {:cont, {:ok, [n | acc]}}
+          _ -> {:halt, :error}
+        end
+
+      _, _ ->
+        {:halt, :error}
+    end)
+  end
+
+  defp safe_parse_id_list(_), do: :error
 
   defp duration_to_string(nil), do: nil
   defp duration_to_string(atom) when is_atom(atom), do: Atom.to_string(atom)

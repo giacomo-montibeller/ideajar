@@ -1862,9 +1862,7 @@ defmodule Ideajar.IdeasTest do
                  "category_ids" => [Integer.to_string(hd(idea.categories).id)]
                })
 
-      # The schema surfaces "Posizione incompleta" or similar — match either
-      # consistency error message used elsewhere for this rule.
-      assert cs.errors[:lng] != nil or cs.errors[:lat] != nil or cs.errors[:location_name] != nil
+      assert first_error(cs, :location_name) == "Posizione incompleta"
     end
 
     test "rolls back atomically: failure on categories does NOT empty categories on disk",

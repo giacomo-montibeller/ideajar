@@ -20,7 +20,7 @@ Slice 14 chiude l'ultimo gap CRUD del workspace aggiungendo la modifica di un'id
 
 ## Decisioni architetturali pre-build
 
-- **DD-S14-1 — Riuso del form add via `form_mode` assign, INLINE in entrambe le modalità.** Niente template separato, niente modal, niente backdrop. Un nuovo assign `form_mode :: :add | {:edit, idea_id} | nil` controlla heading e submit-label. Add e edit sono visivamente identici eccetto per i due testi e il valore dei campi.
+- **DD-S14-1 — Riuso del form add via `form_mode` assign, INLINE in entrambe le modalità.** Niente template separato, niente modal, niente backdrop. Un nuovo assign `form_mode :: {:edit, idea_id} | nil` controlla heading e submit-label. La modalità add è rappresentata da `form_mode = nil` (no atom `:add`); `nil` copre sia "nessun form aperto" sia "form add aperto", la distinzione viene dal flag `form_visible?` slice 2.
 
 - **DD-S14-2 — `Idea.changeset/2` riusato, no `update_changeset/2`.** Validation parity garantita strutturalmente: stessa funzione, stessi messaggi (V2/V3 nello spec). DRY non-negoziabile.
 
@@ -30,7 +30,7 @@ Slice 14 chiude l'ultimo gap CRUD del workspace aggiungendo la modifica di un'id
 
 - **DD-S14-5 — Helper privato `change_idea_with_categories/2` condiviso, con invalid-id guard preservato.** Il `create_idea/1` esistente ha 4 fasi: `fetch_raw_category_ids/1` → `Categories.list_by_ids/1` (returns `{:error, :not_found}` se un id non esiste in DB) → `inject_resolved_categories/2` → `insert_idea/1`, con un fallback `build_invalid_categories_changeset/1` se la lookup fallisce. Il refactor estrae il "core" come `change_idea_with_categories(idea_or_changeset, attrs) :: {:ok, Changeset.t()} | {:error, :invalid_categories}` (signature esplicita, NON `{:ok, idea}`/`{:error, ...}`). Sia `create_idea` che `update_idea` chiamano l'helper, fanno match sul tuple, e poi `Repo.insert` o `Repo.update`. **L'invalid-id guard è preservato**: se l'utente sottomette un `category_id` non esistente (DOM tampering, race su delete categoria), entrambi i path producono lo stesso changeset error invece di crashare. Test pin esplicito in Step 1.
 
-- **DD-S14-6 — No-op detection nella LiveView via helper esplicito.** `Idea.changeset/2` con `put_assoc(:categories, ...)` registra un change `:replace` anche quando i category struct sono gli stessi (semantica Ecto del put_assoc). Quindi `changeset.changes == %{}` non è sufficiente. La LV usa un helper privato `no_meaningful_changes?(idea, params)` che confronta:
+- **DD-S14-6 — No-op detection nella LiveView via helper esplicito.** `Idea.changeset/2` con `put_assoc(:categories, ...)` registra un change `:replace` anche quando i category struct sono gli stessi (semantica Ecto del put_assoc). Quindi `changeset.changes == %{}` non è sufficiente. La LV usa un helper privato `no_meaningful_changes?(idea, attrs)` (arity 2 — `attrs` è la mappa già composta da `compose_form_attrs/2` con `category_ids` risolto) che confronta:
   1. ogni scalar field (`title`, `description`, `url`, `duration`, `estimated_cost`, `location_name`, `lat`, `lng`) tra `idea` e i `params` cast-ati
   2. il **set sorted di category_ids** tra `idea.categories |> Enum.map(& &1.id) |> Enum.sort` e `params["category_ids"] |> Enum.map(&String.to_integer/1) |> Enum.sort`
 
@@ -82,11 +82,11 @@ Slice 14 chiude l'ultimo gap CRUD del workspace aggiungendo la modifica di un'id
 - [x] **U3** — Heading commuta tra `"Aggiungi idea"` e `"Modifica idea"` in base a `form_mode`.
 - [x] **U4** — Submit button label commuta tra `"Salva"` (slice 2 esistente, `:add` mode) e `"Salva modifiche"` (`:edit` mode).
 - [x] **U5** — Negative pin: NESSUN hidden input `expected_updated_at` nel form (in qualsiasi modalità).
-- [ ] **U6** — Focus management:
-  - apri → push_event `:focus` to `#idea-title` (Step 3 ✅)
-  - chiudi (cancel/Esc → Step 4 ✅; success/no-op/not_found → Step 5/6)
+- [x] **U6** — Focus management:
+  - apri → push_event `:focus` to `#idea-title`
+  - chiudi (cancel / Esc / success / no-op / not_found) → push_event `:focus` to `#edit-btn-<id>`
 - [x] **U7** — Esc key chiude il form (`phx-window-keydown` con `phx-key="Escape"` → `cancel_edit`).
-- [ ] **U8** — `assert_push_event(view, "ideajar:focus", ...)` pinned per **ogni** path di chiusura: open, cancel, submit-success, no-op, not_found, validation-error.
+- [x] **U8** — `assert_push_event(view, "ideajar:focus", ...)` pinned per **ogni** path di chiusura: open, cancel, submit-success, no-op, not_found, validation-error.
 - [x] **U9** — Aria-label HTML-escape: test pin con title `"Caffè & relax"` rendered in card e nella validazione editor (Phoenix HEEx escaping in attribute context).
 
 ### Filter interaction

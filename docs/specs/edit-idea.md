@@ -230,7 +230,7 @@ Feature: Edit an idea
 |---|---|---|
 | `Ideajar.Ideas.update_idea/2` | Context function (new) | Riceve `(idea_id, attrs)`. `Repo.get` → se nil `{:error, :not_found}`. Altrimenti applica `Idea.changeset/2` + `put_assoc(:categories, _)` (riuso del helper privato già usato da `create_idea`) + `Repo.update`. Tutto in `Repo.transaction` per coerenza con `delete_idea` (slice 12). |
 | `Ideajar.Ideas.Idea.changeset/2` | Existing — reused as-is | Stessa funzione di add-idea. Validation parity strutturale. |
-| `IdeajarWeb.IdeaLive.Index` | LiveView (modified) | 3 nuovi event: `request_edit`, `cancel_edit`, `submit_edit`. Nuovo assign `form_mode :: :add \| {:edit, idea_id} \| nil`. La LV detect le no-changes prima di chiamare `update_idea/2` per il silent close. |
+| `IdeajarWeb.IdeaLive.Index` | LiveView (modified) | 3 nuovi event: `request_edit`, `cancel_edit`, `submit_edit`. Nuovo assign `form_mode :: {:edit, idea_id} \| nil` (in modalità add il form è semplicemente aperto con `form_mode = nil`; non esiste un atom `:add`). La LV detect le no-changes prima di chiamare `update_idea/2` per il silent close. |
 | `lib/ideajar_web/live/idea_live/index.html.heex` | Template (modified) | Card cresce con un `<button>` ✏️ tra il body e il "🗑" esistente. Heading + submit-label commutano in base a `form_mode`. **Nessun hidden field** (no concurrency token). **Nessun backdrop / modal wrapper** — il form resta inline come per add. |
 
 ### Interfaces
@@ -297,7 +297,7 @@ phx-submit="submit_edit"
 - **No optimistic concurrency.** Last-write-wins. L'unica race rilevata e gestita è `:not_found` (slice 12 parity).
 - **No hidden field, no `expected_updated_at`.** Esplicito out-of-scope test pin.
 - **Form inline per `:add` E per `:edit`.** Stessa presentazione, solo il contenuto (heading + submit label + valori) cambia. Nessun backdrop, nessun modal wrapper.
-- **No-op submit detection in LiveView via helper esplicito**: `Idea.changeset/2` con `put_assoc(:categories, ...)` registra un change `:replace` anche quando i category struct sono identici. Quindi `changeset.changes == %{}` da solo non basta. La LV usa `no_meaningful_changes?(idea, params)` che confronta scalar fields + sorted category_ids. Se identici → close form senza flash, senza DB write. Onesto, niente messaggio bugiardo.
+- **No-op submit detection in LiveView via helper esplicito**: `Idea.changeset/2` con `put_assoc(:categories, ...)` registra un change `:replace` anche quando i category struct sono identici. Quindi `changeset.changes == %{}` da solo non basta. La LV usa `no_meaningful_changes?(idea, attrs)` (arity 2) che confronta scalar fields + sorted category_ids — `attrs` ha già le `category_ids` risolte da `compose_form_attrs/2`. Se identici → close form senza flash, senza DB write. Onesto, niente messaggio bugiardo.
 - **`Idea.changeset/2` riusato**, no funzione `update_changeset/2` separata.
 - **`change_idea_with_categories/2` extracted as private context helper**, riusato da create + update. DRY.
 - **Atomic rollback via `Repo.transaction`** parallel `delete_idea` slice 12.
