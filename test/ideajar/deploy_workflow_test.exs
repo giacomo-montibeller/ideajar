@@ -13,6 +13,7 @@ defmodule Ideajar.DeployWorkflowTest do
   use ExUnit.Case, async: true
 
   @deploy_yml_path Path.expand("../../.github/workflows/deploy.yml", __DIR__)
+  @ci_yml_path Path.expand("../../.github/workflows/ci.yml", __DIR__)
 
   describe "trigger + concurrency (Step 1)" do
     test "deploy.yml exists" do
@@ -188,8 +189,59 @@ defmodule Ideajar.DeployWorkflowTest do
     end
   end
 
+  describe "out-of-scope guards (Step 5)" do
+    test "OS1a — ci.yml does not push to gigalixir" do
+      refute read_ci_yml!() =~ "gigalixir",
+             "ci.yml must stay test-only; gigalixir touchpoints belong in deploy.yml"
+    end
+
+    test "OS1b — ci.yml does not reference GIGALIXIR_* secrets" do
+      refute read_ci_yml!() =~ "GIGALIXIR_",
+             "ci.yml must not need any deploy secret"
+    end
+
+    test "OS1c — ci.yml workflow name is exactly `CI`" do
+      assert read_ci_yml!() =~ ~r/^name: CI$/m,
+             "deploy.yml's workflow_run trigger keys on `workflows: [\"CI\"]` — renaming silently breaks CD"
+    end
+
+    test "OS2 — deploy.yml does not invoke `gigalixir releases:rollback` as a bare command" do
+      refute read_deploy_yml!() =~ ~r/^\s*gigalixir releases:rollback\b/m,
+             "the rollback string is allowed only inside echo (smoke-test recovery hint), not as a run-line command"
+    end
+
+    test "OS3a — deploy.yml does not contain webhook domain literals" do
+      content = read_deploy_yml!()
+      refute content =~ "hooks.slack.com"
+      refute content =~ "discord.com/api/webhooks"
+      refute content =~ "events.pagerduty.com"
+    end
+
+    test "OS3b — deploy.yml does not POST to outbound webhooks via curl" do
+      content = read_deploy_yml!()
+      refute content =~ "curl -X POST"
+      refute content =~ "curl --data"
+      refute content =~ ~r/curl[^|]*-d "/
+    end
+
+    test "OS3c — deploy.yml does not pull in third-party notification actions" do
+      refute read_deploy_yml!() =~ ~r/uses: .*(notify|slack|discord|pagerduty)/i,
+             "no third-party notification action — failure email is the GH default channel"
+    end
+
+    test "OS4 — deploy.yml does not use path filters in its triggers" do
+      content = read_deploy_yml!()
+      refute content =~ ~r/^\s*paths:/m
+      refute content =~ ~r/^\s*paths-ignore:/m
+    end
+  end
+
   defp read_deploy_yml! do
     File.read!(@deploy_yml_path)
+  end
+
+  defp read_ci_yml! do
+    File.read!(@ci_yml_path)
   end
 
   defp step_offset!(content, step_name) do

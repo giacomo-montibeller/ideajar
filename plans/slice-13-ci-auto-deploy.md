@@ -86,15 +86,15 @@ Slice 13 trasforma l'attuale flusso "merge su main → push manuale a Gigalixir"
 - [x] **S5** — Smoke-test failure fa fallire il job; nessun rollback automatico (coperto da OS2).
 
 ### Out-of-scope guards
-- [ ] **OS1a** — `.github/workflows/ci.yml` non contiene la stringa `gigalixir`.
-- [ ] **OS1b** — `.github/workflows/ci.yml` non contiene `GIGALIXIR_`.
-- [ ] **OS1c** — `.github/workflows/ci.yml` contiene la riga `name: CI` (pin simmetrico — il `workflow_run` matcha sul nome, non sul filename, quindi rinominare `ci.yml` rompe il trigger silently).
-- [ ] **OS2** — `deploy.yml` non **invoca** `gigalixir releases:rollback` come bare command. La stringa è ammessa solo all'interno di `echo`/`printf` (recovery hint S4). Test pin: nessuna riga dello script matcha la regex `^\s*gigalixir releases:rollback\b` (cattura il bare command e ignora i contesti `echo "..."`).
-- [ ] **OS3** — `deploy.yml` non contiene chiamate webhook esterne. Heuristica multi-token:
+- [x] **OS1a** — `.github/workflows/ci.yml` non contiene la stringa `gigalixir`.
+- [x] **OS1b** — `.github/workflows/ci.yml` non contiene `GIGALIXIR_`.
+- [x] **OS1c** — `.github/workflows/ci.yml` contiene la riga `name: CI` (pin simmetrico — il `workflow_run` matcha sul nome, non sul filename, quindi rinominare `ci.yml` rompe il trigger silently).
+- [x] **OS2** — `deploy.yml` non **invoca** `gigalixir releases:rollback` come bare command. La stringa è ammessa solo all'interno di `echo`/`printf` (recovery hint S4). Test pin: nessuna riga dello script matcha la regex `^\s*gigalixir releases:rollback\b` (cattura il bare command e ignora i contesti `echo "..."`).
+- [x] **OS3** — `deploy.yml` non contiene chiamate webhook esterne. Heuristica multi-token:
   - NO domain literals: `hooks.slack.com`, `discord.com/api/webhooks`, `events.pagerduty.com`
   - NO outbound POST patterns: `curl -X POST`, `curl --data`, `curl -d "`
   - NO action di terze parti notification: regex `uses: .*(notify|slack|discord|pagerduty)`
-- [ ] **OS4** — Nessun `paths:` / `paths-ignore:` nei trigger.
+- [x] **OS4** — Nessun `paths:` / `paths-ignore:` nei trigger.
 
 ### Documentation
 - [ ] **D1** — `docs/deploy.md` §Routine deploys riscritto: apre con una frase che dichiara "Sotto condizioni normali nessuna azione manuale è necessaria; se `deploy.yml` segnala uno smoke-test failure il release precedente sta ancora servendo — vedi §Common failure modes". Sotto-sezioni "Automatic (default)" + "Manual fallback" che preservano il comando `git push gigalixir main`.
