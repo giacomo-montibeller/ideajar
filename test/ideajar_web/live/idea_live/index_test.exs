@@ -6396,4 +6396,83 @@ defmodule IdeajarWeb.IdeaLive.IndexTest do
       assert assigns.filter_state[mare.id] == :required
     end
   end
+
+  # ── Slice 14 step 2: pencil button on idea card ────────────────────
+  describe "Slice 14 step 2 — pencil button on idea card" do
+    test "renders an edit button for every idea card", %{conn: conn} do
+      a = insert_idea_with_categories!("Sirolo", ["mare"], ~U[2026-04-27 10:00:00Z])
+      b = insert_idea_with_categories!("Uffizi", ["museo"], ~U[2026-04-27 10:01:00Z])
+
+      view = mount_authenticated(conn)
+      html = render(view)
+
+      assert html =~ ~s(id="edit-btn-#{a.id}")
+      assert html =~ ~s(id="edit-btn-#{b.id}")
+
+      # Plain-title aria-label pin; special-char escape lives in its own test.
+      assert html =~ ~s(aria-label="Modifica Sirolo")
+      assert html =~ ~s(aria-label="Modifica Uffizi")
+    end
+
+    test "edit button has aria-label `Modifica <title>` with HTML-escaped special chars",
+         %{conn: conn} do
+      idea = insert_idea_with_categories!("Caffè & relax", ["mare"], ~U[2026-04-27 10:00:00Z])
+
+      view = mount_authenticated(conn)
+      html = render(view)
+
+      # HEEx attribute interpolation HTML-escapes &amp; → so `&` becomes `&amp;`.
+      assert html =~ ~s(aria-label="Modifica Caffè &amp; relax")
+      # Negative pin: bare `&` must NOT appear unescaped inside the aria-label.
+      refute html =~ ~s(aria-label="Modifica Caffè & relax")
+    end
+
+    test "edit button has min-w-44 min-h-44 tap target classes", %{conn: conn} do
+      idea = insert_idea_with_categories!("Sirolo", ["mare"], ~U[2026-04-27 10:00:00Z])
+
+      view = mount_authenticated(conn)
+      html = render(view)
+
+      assert html =~ ~r/<button[^>]*id="edit-btn-#{idea.id}"[^>]*class="[^"]*min-w-\[44px\][^"]*"/
+      assert html =~ ~r/<button[^>]*id="edit-btn-#{idea.id}"[^>]*class="[^"]*min-h-\[44px\][^"]*"/
+    end
+
+    test "edit button is a native <button> with no tabindex=-1", %{conn: conn} do
+      idea = insert_idea_with_categories!("Sirolo", ["mare"], ~U[2026-04-27 10:00:00Z])
+
+      view = mount_authenticated(conn)
+      html = render(view)
+
+      assert html =~ ~r/<button[^>]*id="edit-btn-#{idea.id}"/
+
+      refute html =~ ~r/<button[^>]*id="edit-btn-#{idea.id}"[^>]*tabindex="-1"/,
+             "the edit button must remain natively keyboard-focusable (Enter/Space activate it)"
+    end
+
+    test "edit button wires phx-click=request_edit and phx-value-id", %{conn: conn} do
+      idea = insert_idea_with_categories!("Sirolo", ["mare"], ~U[2026-04-27 10:00:00Z])
+
+      view = mount_authenticated(conn)
+      html = render(view)
+
+      assert html =~ ~r/<button[^>]*id="edit-btn-#{idea.id}"[^>]*phx-click="request_edit"/
+
+      assert html =~
+               ~r/<button[^>]*id="edit-btn-#{idea.id}"[^>]*phx-value-id="#{idea.id}"/
+    end
+
+    test "edit button sits to the LEFT of the trash button in the card markup",
+         %{conn: conn} do
+      idea = insert_idea_with_categories!("Sirolo", ["mare"], ~U[2026-04-27 10:00:00Z])
+
+      view = mount_authenticated(conn)
+      html = render(view)
+
+      edit_offset = html |> :binary.match(~s(id="edit-btn-#{idea.id}")) |> elem(0)
+      trash_offset = html |> :binary.match(~s(id="delete-btn-#{idea.id}")) |> elem(0)
+
+      assert edit_offset < trash_offset,
+             "edit button must precede trash button in the rendered HTML"
+    end
+  end
 end

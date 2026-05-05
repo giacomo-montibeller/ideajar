@@ -94,6 +94,11 @@ defmodule IdeajarWeb.IdeaLive.Index do
   end
 
   @impl Phoenix.LiveView
+  # Slice 14 step 2: stub handler so clicking the new ✏️ button does not
+  # crash the LiveView before Step 3 wires the real edit-form opening.
+  # Replaced in Step 3.
+  def handle_event("request_edit", _params, socket), do: {:noreply, socket}
+
   # Slice 12 step 3: opens the confirm modal for the idea matching `id`.
   # Reads from `@ideas` only (no DB hit). If the id is not in the current
   # list (race with another tab/device) the event is a silent no-op.

@@ -77,8 +77,8 @@ Slice 14 chiude l'ultimo gap CRUD del workspace aggiungendo la modifica di un'id
 - [ ] **L8** — `request_edit` con id sconosciuto: no-op silenzioso (no flash, no crash).
 
 ### UI / a11y
-- [ ] **U1** — Card ha `<button>` ✏️ con `aria-label="Modifica <title>"`, `min-w-[44px] min-h-[44px]`, posizionato a sinistra del 🗑.
-- [ ] **U2** — Pulsante è un `<button>` HTML nativo (no `tabindex="-1"`); test pin sull'element type.
+- [x] **U1** — Card ha `<button>` ✏️ con `aria-label="Modifica <title>"`, `min-w-[44px] min-h-[44px]`, posizionato a sinistra del 🗑.
+- [x] **U2** — Pulsante è un `<button>` HTML nativo (no `tabindex="-1"`); test pin sull'element type.
 - [ ] **U3** — Heading commuta tra `"Aggiungi idea"` e `"Modifica idea"` in base a `form_mode`.
 - [ ] **U4** — Submit button label commuta tra `"Aggiungi"` e `"Salva modifiche"`.
 - [ ] **U5** — Negative pin: NESSUN hidden input `expected_updated_at` nel form (in qualsiasi modalità).
@@ -87,7 +87,7 @@ Slice 14 chiude l'ultimo gap CRUD del workspace aggiungendo la modifica di un'id
   - chiudi (cancel/Esc/success/no-op/not_found) → push_event `:focus` to `#edit-btn-<id>`
 - [ ] **U7** — Esc key chiude il form (`phx-window-keydown` con `phx-key="Escape"` → `cancel_edit`).
 - [ ] **U8** — `assert_push_event(view, "ideajar:focus", ...)` pinned per **ogni** path di chiusura: open, cancel, submit-success, no-op, not_found, validation-error.
-- [ ] **U9** — Aria-label HTML-escape: test pin con title `"Caffè & relax"` rendered in card e nella validazione editor (Phoenix HEEx escaping in attribute context).
+- [x] **U9** — Aria-label HTML-escape: test pin con title `"Caffè & relax"` rendered in card e nella validazione editor (Phoenix HEEx escaping in attribute context).
 
 ### Filter interaction
 - [ ] **F1** — Update riuscito refresha lista rispettando filtri attivi.
