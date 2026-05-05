@@ -59,10 +59,10 @@ Slice 13 trasforma l'attuale flusso "merge su main → push manuale a Gigalixir"
 
 ### Workflow file presence + structure
 - [ ] **W1** — `actionlint .github/workflows/deploy.yml` non riporta errori (gate locale, pinnato in pre-PR checklist).
-- [ ] **W2** — Trigger `workflow_run` con `workflows: ["CI"]` e `types: [completed]`.
-- [ ] **W3** — Trigger `workflow_dispatch` presente.
-- [ ] **W4** — Job `deploy` ha l'`if:` con la **forma canonica esatta** `(github.event_name == 'workflow_dispatch') || (github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.head_branch == 'main')` — `workflow_dispatch` come prima alternativa, AND tra `conclusion` e `head_branch`. Test pin via exact substring match. **Negative pin**: il file NON contiene `||` che colleghi `conclusion` con `head_branch`.
-- [ ] **W5** — Concurrency group `deploy-prod` con `cancel-in-progress: false`.
+- [x] **W2** — Trigger `workflow_run` con `workflows: ["CI"]` e `types: [completed]`.
+- [x] **W3** — Trigger `workflow_dispatch` presente.
+- [x] **W4** — Job `deploy` ha l'`if:` con la **forma canonica esatta** `(github.event_name == 'workflow_dispatch') || (github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.head_branch == 'main')` — `workflow_dispatch` come prima alternativa, AND tra `conclusion` e `head_branch`. Test pin via exact substring match. **Negative pin**: il file NON contiene `||` che colleghi `conclusion` con `head_branch`.
+- [x] **W5** — Concurrency group `deploy-prod` con `cancel-in-progress: false`.
 
 ### Checkout + auth
 - [ ] **A1a** — `actions/checkout@v4` con `fetch-depth: 0`.
