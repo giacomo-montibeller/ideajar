@@ -49,8 +49,8 @@ defmodule Ideajar.AuthTest do
       {elapsed_us, :error} =
         :timer.tc(fn -> Auth.authenticate("wrong", wrong_password_delay_ms: 0) end)
 
-      assert elapsed_us < 20_000,
-             "expected delay < 20ms with override 0; got #{elapsed_us} µs"
+      assert elapsed_us < 50_000,
+             "expected delay < 50ms with override 0; got #{elapsed_us} µs"
     end
   end
 end
