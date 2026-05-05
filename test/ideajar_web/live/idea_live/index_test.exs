@@ -6837,4 +6837,235 @@ defmodule IdeajarWeb.IdeaLive.IndexTest do
       assert reloaded.updated_at == idea.updated_at
     end
   end
+
+  # ── Slice 14 step 5: submit_edit happy + validation + no-op ─────────
+  describe "Slice 14 step 5 — submit_edit" do
+    setup %{conn: conn} do
+      idea = insert_idea_with_categories!("Sirolo", ["mare"], ~U[2026-04-27 10:00:00Z])
+      view = mount_authenticated(conn)
+      render_click(view, "request_edit", %{"id" => Integer.to_string(idea.id)})
+      {:ok, idea: idea, view: view}
+    end
+
+    test "form submit binding is `submit_edit` in :edit mode", %{view: view} do
+      assert render(view) =~ ~r/<form[^>]*phx-submit="submit_edit"/
+    end
+
+    test "happy path: persists the new title, closes the form, flashes `Idea modificata`",
+         %{view: view, idea: idea} do
+      render_submit(view, "submit_edit", %{
+        "idea" => %{"title" => "Sirolo (Conero)"}
+      })
+
+      reloaded = Repo.get!(Idea, idea.id)
+      assert reloaded.title == "Sirolo (Conero)"
+
+      assigns = :sys.get_state(view.pid).socket.assigns
+      assert assigns.form_visible? == false
+      assert assigns.form_mode == nil
+      assert Phoenix.Flash.get(assigns.flash, :info) == "Idea modificata"
+    end
+
+    test "happy path: pushes focus to #edit-btn-<id>", %{view: view, idea: idea} do
+      render_submit(view, "submit_edit", %{
+        "idea" => %{"title" => "Sirolo (Conero)"}
+      })
+
+      target = "#edit-btn-#{idea.id}"
+      assert_push_event(view, "ideajar:focus", %{to: ^target})
+    end
+
+    test "happy path: refreshes the filtered list (the new title is rendered)",
+         %{view: view, idea: idea} do
+      render_submit(view, "submit_edit", %{
+        "idea" => %{"title" => "Sirolo (Conero)"}
+      })
+
+      html = render(view)
+      assert html =~ "Sirolo (Conero)"
+      refute html =~ ~r{<h3[^>]*>Sirolo</h3>}
+    end
+
+    test "no-op submit (same fields and same category_ids in same order) closes silently — no flash, no DB write",
+         %{view: view, idea: idea} do
+      mare_id = hd(idea.categories).id
+      original_updated_at = idea.updated_at
+
+      render_submit(view, "submit_edit", %{
+        "idea" => %{
+          "title" => idea.title,
+          "description" => idea.description || "",
+          "url" => idea.url || ""
+        },
+        "category_ids" => [Integer.to_string(mare_id)]
+      })
+
+      assigns = :sys.get_state(view.pid).socket.assigns
+      assert assigns.form_visible? == false
+      assert assigns.form_mode == nil
+      # No flash on no-op
+      assert Phoenix.Flash.get(assigns.flash, :info) == nil
+
+      reloaded = Repo.get!(Idea, idea.id)
+      assert reloaded.updated_at == original_updated_at
+    end
+
+    test "no-op submit also detects identical category_ids in REVERSE order",
+         %{conn: conn} do
+      mare = CategoriesFixtures.category_by_name!("mare")
+      museo = CategoriesFixtures.category_by_name!("museo")
+
+      idea =
+        %Idea{title: "Mix"}
+        |> Ecto.Changeset.change()
+        |> Ecto.Changeset.put_assoc(:categories, [mare, museo])
+        |> Repo.insert!()
+
+      view = mount_authenticated(conn)
+      render_click(view, "request_edit", %{"id" => Integer.to_string(idea.id)})
+
+      original_updated_at = idea.updated_at
+
+      # Submit with the SAME category ids but in reversed order — sorted
+      # comparison must still detect "no meaningful change".
+      render_submit(view, "submit_edit", %{
+        "idea" => %{"title" => idea.title},
+        "category_ids" => [Integer.to_string(museo.id), Integer.to_string(mare.id)]
+      })
+
+      assigns = :sys.get_state(view.pid).socket.assigns
+      assert assigns.form_visible? == false
+      assert Phoenix.Flash.get(assigns.flash, :info) == nil
+
+      reloaded = Repo.get!(Idea, idea.id)
+      assert reloaded.updated_at == original_updated_at
+    end
+
+    test "no-op submit pushes focus to #edit-btn-<id>", %{view: view, idea: idea} do
+      mare_id = hd(idea.categories).id
+
+      render_submit(view, "submit_edit", %{
+        "idea" => %{"title" => idea.title},
+        "category_ids" => [Integer.to_string(mare_id)]
+      })
+
+      target = "#edit-btn-#{idea.id}"
+      assert_push_event(view, "ideajar:focus", %{to: ^target})
+    end
+
+    test "validation error: empty title keeps form open with `Il titolo è obbligatorio`",
+         %{view: view, idea: idea} do
+      render_submit(view, "submit_edit", %{
+        "idea" => %{"title" => ""}
+      })
+
+      assigns = :sys.get_state(view.pid).socket.assigns
+      assert assigns.form_visible? == true
+      assert assigns.form_mode == {:edit, idea.id}
+
+      html = render(view)
+      assert html =~ "Il titolo è obbligatorio"
+    end
+
+    test "validation error: malformed url surfaces the slice 2 message", %{view: view} do
+      render_submit(view, "submit_edit", %{
+        "idea" => %{"title" => "Sirolo", "url" => "ftp://example.org/"}
+      })
+
+      assert render(view) =~ "Il link deve iniziare con http:// o https://"
+    end
+
+    test "validation error: 0 categories surfaces the slice 3 message",
+         %{view: view, idea: idea} do
+      # Deselect the existing category chip via the slice 3 toggle event
+      # so the LV's selected_category_ids assign actually becomes empty;
+      # render_submit does not pass arbitrary top-level params through.
+      mare_id = hd(idea.categories).id
+      render_click(view, "toggle_category", %{"id" => Integer.to_string(mare_id)})
+
+      render_submit(view, "submit_edit", %{
+        "idea" => %{"title" => "Sirolo"}
+      })
+
+      assert render(view) =~ "Seleziona almeno una categoria"
+    end
+
+    test "validation error: invalid duration surfaces `Durata non valida`", %{view: view} do
+      render_submit(view, "submit_edit", %{
+        "idea" => %{"title" => "Sirolo", "duration" => "infinita"}
+      })
+
+      assert render(view) =~ "Durata non valida"
+    end
+
+    test "validation error: invalid budget surfaces `Budget non valido`", %{view: view} do
+      render_submit(view, "submit_edit", %{
+        "idea" => %{"title" => "Sirolo", "estimated_cost" => "175"}
+      })
+
+      assert render(view) =~ "Budget non valido"
+    end
+
+    test "validation error pushes focus to first errored field's input", %{view: view} do
+      render_submit(view, "submit_edit", %{
+        "idea" => %{"title" => "", "url" => "ftp://bad"}
+      })
+
+      # title is the first field in pipeline order — focus must land on
+      # #idea-title (slice 2 reuse).
+      assert_push_event(view, "ideajar:focus", %{to: "#idea-title"})
+    end
+
+    test "validation parity: each error message produced on edit is byte-equal to add",
+         %{conn: conn} do
+      # Open both forms (one as edit, one as add) and collect the rendered
+      # error messages for the same invalid input. They must match.
+      idea = insert_idea_with_categories!("Existing", ["mare"], ~U[2026-04-27 10:00:00Z])
+
+      # :edit — open and clear the chip so selected_category_ids is empty
+      view_edit = mount_authenticated(conn)
+      render_click(view_edit, "request_edit", %{"id" => Integer.to_string(idea.id)})
+
+      render_click(view_edit, "toggle_category", %{
+        "id" => Integer.to_string(hd(idea.categories).id)
+      })
+
+      render_submit(view_edit, "submit_edit", %{
+        "idea" => %{
+          "title" => "",
+          "url" => "ftp://bad",
+          "duration" => "infinita",
+          "estimated_cost" => "175"
+        }
+      })
+
+      edit_html = render(view_edit)
+
+      # :add (separate view) — chip already empty by default
+      view_add = mount_authenticated(conn)
+      render_click(view_add, "toggle_form")
+
+      render_submit(view_add, "save", %{
+        "idea" => %{
+          "title" => "",
+          "url" => "ftp://bad",
+          "duration" => "infinita",
+          "estimated_cost" => "175"
+        }
+      })
+
+      add_html = render(view_add)
+
+      for msg <- [
+            "Il titolo è obbligatorio",
+            "Il link deve iniziare con http:// o https://",
+            "Durata non valida",
+            "Budget non valido",
+            "Seleziona almeno una categoria"
+          ] do
+        assert add_html =~ msg, "add HTML missing: #{msg}"
+        assert edit_html =~ msg, "edit HTML missing: #{msg}"
+      end
+    end
+  end
 end

@@ -13,7 +13,7 @@
       :if={@form_visible?}
       for={@form}
       id="idea-form"
-      phx-submit="save"
+      phx-submit={if match?({:edit, _}, @form_mode), do: "submit_edit", else: "save"}
       phx-window-keydown={if match?({:edit, _}, @form_mode), do: "cancel_edit"}
       phx-key="Escape"
       class="space-y-4 rounded-box border border-base-300 p-4"

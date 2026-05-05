@@ -62,18 +62,18 @@ Slice 14 chiude l'ultimo gap CRUD del workspace aggiungendo la modifica di un'id
 - [x] **C7** — Test pin: `function_exported?(Ideajar.Ideas, :update_idea, 3) == false` — la funzione è filter-unaware.
 
 ### Validation parity
-- [ ] **V1** — Stessa funzione `Idea.changeset/2` per add e edit (no `update_changeset/2`).
-- [ ] **V2** — Stessi error messages: `"Il titolo è obbligatorio"`, `"Il link deve iniziare con http:// o https://"`, `"Seleziona almeno una categoria"`, `"Durata non valida"`, `"Budget non valido"`, `"Posizione incompleta"` / `"Posizione non valida"`.
-- [ ] **V3** — Test pin: ogni regola di validazione produce errore byte-identico tra add e edit.
+- [x] **V1** — Stessa funzione `Idea.changeset/2` per add e edit (no `update_changeset/2`).
+- [x] **V2** — Stessi error messages: `"Il titolo è obbligatorio"`, `"Il link deve iniziare con http:// o https://"`, `"Seleziona almeno una categoria"`, `"Durata non valida"`, `"Budget non valido"`, `"Posizione incompleta"` / `"Posizione non valida"`.
+- [x] **V3** — Test pin: ogni regola di validazione produce errore byte-identico tra add e edit.
 
 ### LiveView events
 - [x] **L1** — `request_edit` con `%{"id" => raw}` apre il form pre-popolato in `:edit` mode.
 - [x] **L2** — `cancel_edit` chiude il form senza salvare.
-- [ ] **L3** — `submit_edit` builds the changeset, detects no-changes, branches accordingly.
-- [ ] **L4** — Su `{:ok, _}` (with real changes): refresh lista + flash `"Idea modificata"` + form chiuso + focus.
-- [ ] **L5** — Su no-changes: form chiuso, **NO flash**, no DB write, focus.
+- [x] **L3** — `submit_edit` builds the changeset, detects no-changes, branches accordingly.
+- [x] **L4** — Su `{:ok, _}` (with real changes): refresh lista + flash `"Idea modificata"` + form chiuso + focus.
+- [x] **L5** — Su no-changes: form chiuso, **NO flash**, no DB write, focus.
 - [ ] **L6** — Su `{:error, :not_found}`: flash `"Quest'idea è stata cancellata da un altro dispositivo."` + form chiuso + lista refreshata + focus.
-- [ ] **L7** — Su `{:error, %Changeset{}}`: re-render form con errori + focus al primo campo con errore. **"Primo campo"** = primo `field` per ordine di `changeset.errors` (il primo entry della keyword list), mappato all'`#edit-<field>` corrispondente nel DOM. Test pin: changeset con errori `[title: ..., url: ...]` → `assert_push_event(view, "ideajar:focus", %{to: "#idea-title"})`.
+- [x] **L7** — Su `{:error, %Changeset{}}`: re-render form con errori + focus al primo campo con errore (slice 2 reuse via `focus_first_invalid/1` mappato a `#idea-<field>` nel DOM).
 - [x] **L8** — `request_edit` con id sconosciuto: no-op silenzioso (no flash, no crash).
 
 ### UI / a11y

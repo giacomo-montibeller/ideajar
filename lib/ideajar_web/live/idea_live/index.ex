@@ -681,6 +681,131 @@ defmodule IdeajarWeb.IdeaLive.Index do
     {:noreply, socket |> reset_distance_filter() |> reload_ideas()}
   end
 
+  # Slice 14 step 5: persist an edit. Composes params from form fields
+  # plus the selected_* assigns (parallel to "save"), detects no-op
+  # submits via `no_meaningful_changes?/3` (so we don't bump
+  # updated_at when the user opened+submitted without touching anything),
+  # and dispatches the {:ok, _} / {:error, _} result through
+  # `handle_update_result/3`.
+  def handle_event("submit_edit", params, %{assigns: %{form_mode: {:edit, id}}} = socket) do
+    attrs = compose_form_attrs(params, socket)
+
+    case Repo.get(Idea, id) |> preload_idea_categories() do
+      nil ->
+        # Treated in Step 6 as :not_found path. Step 5 just guards.
+        {:noreply, socket}
+
+      %Idea{} = idea ->
+        if no_meaningful_changes?(idea, attrs, params) do
+          close_edit_form(socket)
+        else
+          id
+          |> Ideas.update_idea(attrs)
+          |> handle_update_result(socket)
+        end
+    end
+  end
+
+  defp compose_form_attrs(params, socket) do
+    base = Map.get(params, "idea", %{})
+
+    base
+    |> Map.put("category_ids", category_ids_from_params(params, socket))
+    |> maybe_inject_duration(socket.assigns.selected_duration, base)
+    |> maybe_inject_budget(socket.assigns.form_budget_index)
+    |> maybe_inject_location_name(socket.assigns.selected_location_name)
+    |> maybe_inject_lat(socket.assigns.selected_lat)
+    |> maybe_inject_lng(socket.assigns.selected_lng)
+  end
+
+  # `category_ids` may arrive as a top-level form param (slice 14 submit
+  # path uses raw category_ids list) or be absent (slice 2 save path which
+  # mirrors the assign). When absent, fall back to the current MapSet.
+  defp category_ids_from_params(%{"category_ids" => ids}, _socket) when is_list(ids), do: ids
+
+  defp category_ids_from_params(_params, socket),
+    do: MapSet.to_list(socket.assigns.selected_category_ids)
+
+  # No-op detection: scalar fields equal AND sorted category_ids equal.
+  # `params["category_ids"]` is the user-submitted list (string ids); we
+  # compare against the loaded idea's categories' integer ids, both sorted.
+  defp no_meaningful_changes?(%Idea{} = idea, attrs, _params) do
+    same_scalar?(idea, attrs) and same_categories?(idea, attrs)
+  end
+
+  defp same_scalar?(%Idea{} = idea, attrs) do
+    Enum.all?(
+      [
+        {idea.title, Map.get(attrs, "title")},
+        {idea.description || "", Map.get(attrs, "description") || ""},
+        {idea.url || "", Map.get(attrs, "url") || ""},
+        {duration_to_string(idea.duration), Map.get(attrs, "duration")},
+        {cost_to_string(idea.estimated_cost), Map.get(attrs, "estimated_cost")},
+        {idea.location_name || "", Map.get(attrs, "location_name") || ""},
+        {coord_to_string(idea.lat), Map.get(attrs, "lat")},
+        {coord_to_string(idea.lng), Map.get(attrs, "lng")}
+      ],
+      fn {a, b} -> a == b end
+    )
+  end
+
+  defp same_categories?(%Idea{categories: cats}, attrs) do
+    persisted = cats |> Enum.map(& &1.id) |> Enum.sort()
+
+    submitted =
+      attrs
+      |> Map.get("category_ids", [])
+      |> Enum.map(fn
+        id when is_integer(id) -> id
+        id when is_binary(id) -> String.to_integer(id)
+      end)
+      |> Enum.sort()
+
+    persisted == submitted
+  end
+
+  defp duration_to_string(nil), do: nil
+  defp duration_to_string(atom) when is_atom(atom), do: Atom.to_string(atom)
+
+  defp cost_to_string(nil), do: nil
+  defp cost_to_string(n) when is_integer(n), do: Integer.to_string(n)
+
+  defp coord_to_string(nil), do: nil
+  defp coord_to_string(f) when is_float(f), do: Float.to_string(f)
+
+  defp close_edit_form(socket) do
+    socket =
+      socket
+      |> assign(:form_visible?, false)
+      |> assign(:form_mode, nil)
+      |> reset_categories()
+      |> reset_duration()
+      |> reset_budget()
+      |> reset_location()
+      |> reset_location_search()
+      |> assign_form()
+      |> reload_ideas()
+
+    socket =
+      case socket.assigns[:edit_origin_btn_id] do
+        nil -> socket
+        btn_id -> push_event(socket, "ideajar:focus", %{to: "##{btn_id}"})
+      end
+
+    {:noreply, assign(socket, :edit_origin_btn_id, nil)}
+  end
+
+  defp handle_update_result({:ok, _idea}, socket) do
+    {:noreply, _} = close_edit_form(socket |> put_flash(:info, "Idea modificata"))
+  end
+
+  defp handle_update_result({:error, %Ecto.Changeset{} = changeset}, socket) do
+    {:noreply,
+     socket
+     |> assign(:form, to_form(changeset, as: "idea", action: :update))
+     |> push_event("ideajar:focus", %{to: focus_first_invalid(changeset)})}
+  end
+
   def handle_event("save", %{"idea" => attrs}, socket) do
     attrs_with_categories =
       Map.put(attrs, "category_ids", MapSet.to_list(socket.assigns.selected_category_ids))
