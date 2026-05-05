@@ -7134,4 +7134,132 @@ defmodule IdeajarWeb.IdeaLive.IndexTest do
       end
     end
   end
+
+  # ── Slice 14 step 7: filter interaction + out-of-scope guards ──────
+  describe "Slice 14 step 7 — filter interaction" do
+    test "F2 — edit that drops the idea from the active filter removes it from the list",
+         %{conn: conn} do
+      mare = CategoriesFixtures.category_by_name!("mare")
+      montagna = CategoriesFixtures.category_by_name!("passeggiata")
+
+      idea = insert_idea_with_categories!("Sirolo", ["mare"], ~U[2026-04-27 10:00:00Z])
+
+      view = mount_authenticated(conn)
+      # Cycle the mare filter to :required (2 clicks: off → optional → required)
+      render_click(view, "cycle_filter", %{"id" => Integer.to_string(mare.id)})
+      render_click(view, "cycle_filter", %{"id" => Integer.to_string(mare.id)})
+      assert render(view) =~ ~r{<h3[^>]*>Sirolo</h3>}
+
+      # Edit Sirolo, swap category mare → passeggiata
+      render_click(view, "request_edit", %{"id" => Integer.to_string(idea.id)})
+      render_click(view, "toggle_category", %{"id" => Integer.to_string(mare.id)})
+      render_click(view, "toggle_category", %{"id" => Integer.to_string(montagna.id)})
+      render_submit(view, "submit_edit", %{"idea" => %{"title" => "Sirolo"}})
+
+      html = render(view)
+      refute html =~ ~r{<h3[^>]*>Sirolo</h3>},
+             "Sirolo no longer matches the mare filter and must disappear from the list"
+    end
+
+    test "F3 — edit that keeps the idea matching the filter keeps it visible with the new title",
+         %{conn: conn} do
+      mare = CategoriesFixtures.category_by_name!("mare")
+      idea = insert_idea_with_categories!("Sirolo", ["mare"], ~U[2026-04-27 10:00:00Z])
+
+      view = mount_authenticated(conn)
+      render_click(view, "cycle_filter", %{"id" => Integer.to_string(mare.id)})
+      render_click(view, "cycle_filter", %{"id" => Integer.to_string(mare.id)})
+
+      render_click(view, "request_edit", %{"id" => Integer.to_string(idea.id)})
+      render_submit(view, "submit_edit", %{"idea" => %{"title" => "Sirolo (Conero)"}})
+
+      html = render(view)
+      assert html =~ "Sirolo (Conero)"
+      refute html =~ ~r{<h3[^>]*>Sirolo</h3>}
+    end
+  end
+
+  describe "Slice 14 step 7 — out-of-scope guards" do
+    test "OS1 — schema fields do not include audit/version columns" do
+      Code.ensure_loaded!(Idea)
+      fields = Idea.__schema__(:fields)
+
+      refute :previous_title in fields
+      refute :edit_history in fields
+      refute :version in fields
+    end
+
+    test "OS2 — router has no /ideas/:id/edit (or similar) route" do
+      paths = IdeajarWeb.Router.__routes__() |> Enum.map(& &1.path)
+
+      refute Enum.any?(paths, &(&1 =~ "edit")),
+             "no route should mention `edit`; got: #{inspect(paths)}"
+    end
+
+    test "OS3 — Idea schema does not export update_changeset/2" do
+      Code.ensure_loaded!(Idea)
+      refute function_exported?(Idea, :update_changeset, 2)
+    end
+
+    test "OS4 — happy-path flash is exactly `Idea modificata` (no embedded Annulla)",
+         %{conn: conn} do
+      idea = insert_idea_with_categories!("Sirolo", ["mare"], ~U[2026-04-27 10:00:00Z])
+
+      view = mount_authenticated(conn)
+      render_click(view, "request_edit", %{"id" => Integer.to_string(idea.id)})
+      render_submit(view, "submit_edit", %{"idea" => %{"title" => "Sirolo (Conero)"}})
+
+      assigns = :sys.get_state(view.pid).socket.assigns
+      flash = Phoenix.Flash.get(assigns.flash, :info)
+      assert flash == "Idea modificata"
+      refute flash =~ ~r/Annulla/i
+    end
+
+    test "OS5a — index.html.heex source does not mention expected_updated_at" do
+      heex = File.read!("lib/ideajar_web/live/idea_live/index.html.heex")
+      refute heex =~ "expected_updated_at"
+    end
+
+    test "OS5b — rendered HTML in :edit mode does not contain expected_updated_at",
+         %{conn: conn} do
+      idea = insert_idea_with_categories!("Sirolo", ["mare"], ~U[2026-04-27 10:00:00Z])
+
+      view = mount_authenticated(conn)
+      render_click(view, "request_edit", %{"id" => Integer.to_string(idea.id)})
+
+      refute render(view) =~ "expected_updated_at"
+    end
+
+    test "OS6 — no phx-confirm on cancel_edit triggers" do
+      heex = File.read!("lib/ideajar_web/live/idea_live/index.html.heex")
+      refute heex =~ ~r/phx-click="cancel_edit"[^>]*phx-confirm/
+      refute heex =~ ~r/phx-window-keydown="cancel_edit"[^>]*phx-confirm/
+    end
+
+    test "OS7 — idea card markup does not contain a multi-select checkbox", %{conn: conn} do
+      _idea = insert_idea_with_categories!("Sirolo", ["mare"], ~U[2026-04-27 10:00:00Z])
+
+      view = mount_authenticated(conn)
+      html = render(view)
+
+      # Extract the idea card section and assert no checkbox input is
+      # rendered inside it. The form section may contain inputs of other
+      # types (text/url/textarea/range) — we filter by data-testid.
+      [card_html] = Regex.run(~r{<li[^>]*data-testid="idea-card".*?</li>}s, html)
+      refute card_html =~ ~r/<input[^>]*type="checkbox"/
+    end
+
+    test "OS8 — the edit form does not render any element with class `backdrop`",
+         %{conn: conn} do
+      idea = insert_idea_with_categories!("Sirolo", ["mare"], ~U[2026-04-27 10:00:00Z])
+
+      view = mount_authenticated(conn)
+      render_click(view, "request_edit", %{"id" => Integer.to_string(idea.id)})
+      html = render(view)
+
+      # @deletion is nil here, so the delete modal's backdrop is absent;
+      # any backdrop class would come from the edit form itself.
+      refute html =~ ~r/<[^>]*class="[^"]*\bbackdrop\b[^"]*"/
+    end
+  end
 end

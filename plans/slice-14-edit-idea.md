@@ -90,19 +90,19 @@ Slice 14 chiude l'ultimo gap CRUD del workspace aggiungendo la modifica di un'id
 - [x] **U9** — Aria-label HTML-escape: test pin con title `"Caffè & relax"` rendered in card e nella validazione editor (Phoenix HEEx escaping in attribute context).
 
 ### Filter interaction
-- [ ] **F1** — Update riuscito refresha lista rispettando filtri attivi.
-- [ ] **F2** — Filtro `mare` attivo, edit cambia categoria a `montagna` → idea sparisce.
-- [ ] **F3** — Filtro `mare` attivo, edit cambia solo titolo → idea resta visibile con nuovo titolo.
+- [x] **F1** — Update riuscito refresha lista rispettando filtri attivi.
+- [x] **F2** — Filtro `mare` attivo, edit cambia categoria a `montagna` → idea sparisce.
+- [x] **F3** — Filtro `mare` attivo, edit cambia solo titolo → idea resta visibile con nuovo titolo.
 
 ### Out-of-scope guards
-- [ ] **OS1** — Schema-field pin: `:previous_title`, `:edit_history`, `:version` NOT in `Idea.__schema__(:fields)` (replace del fragile file-count pin).
-- [ ] **OS2** — Nessuna nuova route. `IdeajarWeb.Router.__routes__()` non contiene path per edit.
-- [ ] **OS3** — `refute function_exported?(Ideajar.Ideas.Idea, :update_changeset, 2)`.
-- [ ] **OS4** — Flash post-save `"Idea modificata"` esatto, no toast con bottone Annulla.
-- [ ] **OS5** — Negative template pin: NESSUN occorrenza di `expected_updated_at` in `index.html.heex`.
-- [ ] **OS6** — Nessun `phx-confirm` su Annulla / Esc (no dirty-check).
-- [ ] **OS7** — Nessuna checkbox multi-select sulla card markup.
-- [ ] **OS8** — Negative template pin: NESSUN elemento con classe `backdrop` nel form section (form è inline).
+- [x] **OS1** — Schema-field pin: `:previous_title`, `:edit_history`, `:version` NOT in `Idea.__schema__(:fields)` (replace del fragile file-count pin).
+- [x] **OS2** — Nessuna nuova route. `IdeajarWeb.Router.__routes__()` non contiene path per edit.
+- [x] **OS3** — `refute function_exported?(Ideajar.Ideas.Idea, :update_changeset, 2)`.
+- [x] **OS4** — Flash post-save `"Idea modificata"` esatto, no toast con bottone Annulla.
+- [x] **OS5** — Negative template pin: NESSUN occorrenza di `expected_updated_at` in `index.html.heex` (file source AND rendered HTML).
+- [x] **OS6** — Nessun `phx-confirm` su Annulla / Esc (no dirty-check).
+- [x] **OS7** — Nessuna checkbox multi-select sulla card markup.
+- [x] **OS8** — Negative template pin: NESSUN elemento con classe `backdrop` nel form section (form è inline).
 
 ### Operational
 - [ ] **O1** — Nessun cambio a Dockerfile, runtime, mix.exs, deploy workflow.
