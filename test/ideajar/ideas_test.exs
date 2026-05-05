@@ -1760,4 +1760,132 @@ defmodule Ideajar.IdeasTest do
       force: true
     )
   end
+
+  # ── Slice 14: update_idea/2 ─────────────────────────────────────────
+  describe "update_idea/2 (slice 14)" do
+    setup do
+      idea =
+        insert_idea_with_categories!("Sirolo", [by_name("mare")], ~U[2026-04-27 10:00:00Z])
+
+      {:ok, idea: idea}
+    end
+
+    test "returns {:ok, idea} with updated title and preloaded categories", %{idea: idea} do
+      assert {:ok, %Idea{} = updated} =
+               Ideas.update_idea(idea.id, %{
+                 "title" => "Sirolo (Conero)",
+                 "category_ids" => [Integer.to_string(hd(idea.categories).id)]
+               })
+
+      assert updated.title == "Sirolo (Conero)"
+      assert [%Category{name: "mare"}] = updated.categories
+    end
+
+    test "returns {:error, :not_found} when the id does not exist" do
+      assert {:error, :not_found} = Ideas.update_idea(99_999_999, %{"title" => "Anything"})
+    end
+
+    test "returns {:error, %Changeset{}} with title required when title is blank", %{idea: idea} do
+      assert {:error, %Ecto.Changeset{} = cs} =
+               Ideas.update_idea(idea.id, %{
+                 "title" => "",
+                 "category_ids" => [Integer.to_string(hd(idea.categories).id)]
+               })
+
+      assert first_error(cs, :title) == @title_required
+    end
+
+    test "returns {:error, %Changeset{}} with categories required when category_ids is empty",
+         %{idea: idea} do
+      assert {:error, %Ecto.Changeset{} = cs} =
+               Ideas.update_idea(idea.id, %{
+                 "title" => "Sirolo",
+                 "category_ids" => []
+               })
+
+      assert first_error(cs, :categories) == @categories_required
+    end
+
+    test "returns {:error, %Changeset{}} with categoria non valida when category_id is unknown",
+         %{idea: idea} do
+      assert {:error, %Ecto.Changeset{} = cs} =
+               Ideas.update_idea(idea.id, %{
+                 "title" => "Sirolo",
+                 "category_ids" => ["999999"]
+               })
+
+      assert first_error(cs, :categories) == @category_invalid
+    end
+
+    test "returns {:error, %Changeset{}} with link error when url is malformed", %{idea: idea} do
+      assert {:error, %Ecto.Changeset{} = cs} =
+               Ideas.update_idea(idea.id, %{
+                 "title" => "Sirolo",
+                 "url" => "ftp://example.org/sirolo",
+                 "category_ids" => [Integer.to_string(hd(idea.categories).id)]
+               })
+
+      assert first_error(cs, :url) == "Il link deve iniziare con http:// o https://"
+    end
+
+    test "returns {:error, %Changeset{}} with duration error when duration is invalid",
+         %{idea: idea} do
+      assert {:error, %Ecto.Changeset{} = cs} =
+               Ideas.update_idea(idea.id, %{
+                 "title" => "Sirolo",
+                 "duration" => "infinita",
+                 "category_ids" => [Integer.to_string(hd(idea.categories).id)]
+               })
+
+      assert first_error(cs, :duration) == "Durata non valida"
+    end
+
+    test "returns {:error, %Changeset{}} with budget error when estimated_cost is off whitelist",
+         %{idea: idea} do
+      assert {:error, %Ecto.Changeset{} = cs} =
+               Ideas.update_idea(idea.id, %{
+                 "title" => "Sirolo",
+                 "estimated_cost" => "175",
+                 "category_ids" => [Integer.to_string(hd(idea.categories).id)]
+               })
+
+      assert first_error(cs, :estimated_cost) == "Budget non valido"
+    end
+
+    test "returns {:error, %Changeset{}} with location error when only one of lat/lng is set",
+         %{idea: idea} do
+      assert {:error, %Ecto.Changeset{} = cs} =
+               Ideas.update_idea(idea.id, %{
+                 "title" => "Sirolo",
+                 "lat" => "43.5",
+                 # lng deliberately missing
+                 "category_ids" => [Integer.to_string(hd(idea.categories).id)]
+               })
+
+      # The schema surfaces "Posizione incompleta" or similar — match either
+      # consistency error message used elsewhere for this rule.
+      assert cs.errors[:lng] != nil or cs.errors[:lat] != nil or cs.errors[:location_name] != nil
+    end
+
+    test "rolls back atomically: failure on categories does NOT empty categories on disk",
+         %{idea: idea} do
+      assert {:error, %Ecto.Changeset{}} =
+               Ideas.update_idea(idea.id, %{
+                 "title" => "New title that would have been valid",
+                 "category_ids" => []
+               })
+
+      reloaded = Repo.get!(Idea, idea.id) |> Repo.preload(:categories)
+      assert [%Category{name: "mare"}] = reloaded.categories
+      assert reloaded.title == "Sirolo"
+    end
+
+    test "Ideas.update_idea/3 is NOT exported (filter-unaware contract proxy)" do
+      Code.ensure_loaded!(Ideas)
+      # NOTE: arity-3 absence is a proxy, not a semantic guarantee. A
+      # developer could still add filter logic inside the arity-2 body.
+      # The pin is a regression guard against the most common drift shape.
+      refute function_exported?(Ideas, :update_idea, 3)
+    end
+  end
 end

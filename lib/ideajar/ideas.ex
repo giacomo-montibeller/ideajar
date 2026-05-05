@@ -119,16 +119,34 @@ defmodule Ideajar.Ideas do
   """
   @spec create_idea(map()) :: {:ok, Idea.t()} | {:error, Ecto.Changeset.t()}
   def create_idea(attrs) when is_map(attrs) do
-    raw_ids = fetch_raw_category_ids(attrs)
+    case change_idea_with_categories(%Idea{}, attrs) do
+      {:ok, changeset} ->
+        with {:ok, idea} <- Repo.insert(changeset) do
+          {:ok, Repo.preload(idea, categories: Categories.preload_query())}
+        end
 
-    case Categories.list_by_ids(raw_ids) do
+      {:error, :invalid_categories} ->
+        {:error, build_invalid_categories_changeset(attrs)}
+    end
+  end
+
+  # Slice 14: shared helper between `create_idea/1` and `update_idea/2`.
+  # Resolves the submitted `category_ids` via `Categories.list_by_ids/1`
+  # (returns `{:error, :not_found}` if any id is unknown) and builds the
+  # `Idea.changeset/2` against the given `base` (an `%Idea{}` for create,
+  # the loaded idea for update). The atom error `:invalid_categories`
+  # lets each caller wrap with its own controlled error changeset (which
+  # for create starts from `%Idea{}` and for update preserves the loaded
+  # idea's other fields, so the form re-render stays useful).
+  @spec change_idea_with_categories(Idea.t(), map()) ::
+          {:ok, Ecto.Changeset.t()} | {:error, :invalid_categories}
+  defp change_idea_with_categories(%Idea{} = base, attrs) do
+    case attrs |> fetch_raw_category_ids() |> Categories.list_by_ids() do
       {:ok, cats} ->
-        attrs
-        |> inject_resolved_categories(cats)
-        |> insert_idea()
+        {:ok, Idea.changeset(base, inject_resolved_categories(attrs, cats))}
 
       {:error, :not_found} ->
-        {:error, build_invalid_categories_changeset(attrs)}
+        {:error, :invalid_categories}
     end
   end
 
@@ -152,9 +170,56 @@ defmodule Ideajar.Ideas do
     Enum.any?(Map.keys(attrs), &is_binary/1)
   end
 
-  defp insert_idea(attrs) do
-    with {:ok, idea} <- %Idea{} |> Idea.changeset(attrs) |> Repo.insert() do
-      {:ok, Repo.preload(idea, categories: Categories.preload_query())}
+  @doc """
+  Updates the idea identified by `id` with the given attributes.
+
+  Slice 14. Wraps the lookup + category resolution + `Idea.changeset/2`
+  + `Repo.update` in a single `Repo.transaction` so any failure (lookup
+  miss, invalid category id, validation error) rolls back atomically.
+
+  Last-write-wins between devices: there is no `expected_updated_at`
+  token. The only race surfaced explicitly is `:not_found`
+  (delete-vs-edit) — see slice 12 parity.
+
+  Returns:
+    * `{:ok, idea}` with `:categories` preloaded fresh on success.
+    * `{:error, :not_found}` if the id does not match any row.
+    * `{:error, %Ecto.Changeset{}}` for validation failures, including
+      the controlled "Categoria non valida" message when a submitted
+      `category_id` does not resolve in `Categories.list_by_ids/1`.
+  """
+  @spec update_idea(integer(), map()) ::
+          {:ok, Idea.t()} | {:error, :not_found} | {:error, Ecto.Changeset.t()}
+  def update_idea(id, attrs) when is_integer(id) and is_map(attrs) do
+    Repo.transaction(fn -> do_update_idea(id, attrs) end)
+  end
+
+  defp do_update_idea(id, attrs) do
+    case Repo.get(Idea, id) do
+      nil -> Repo.rollback(:not_found)
+      idea -> apply_idea_update(idea, attrs)
+    end
+  end
+
+  defp apply_idea_update(%Idea{} = idea, attrs) do
+    idea = Repo.preload(idea, categories: Categories.preload_query())
+
+    case change_idea_with_categories(idea, attrs) do
+      {:ok, changeset} ->
+        persist_idea_update(changeset)
+
+      {:error, :invalid_categories} ->
+        Repo.rollback(build_invalid_categories_changeset(idea, attrs))
+    end
+  end
+
+  defp persist_idea_update(changeset) do
+    case Repo.update(changeset) do
+      {:ok, updated} ->
+        Repo.preload(updated, [categories: Categories.preload_query()], force: true)
+
+      {:error, cs} ->
+        Repo.rollback(cs)
     end
   end
 
@@ -199,8 +264,15 @@ defmodule Ideajar.Ideas do
   # avoid running `Idea.changeset/2` here — its
   # `validate_at_least_one_category` would add a second error on the
   # same field.
-  defp build_invalid_categories_changeset(attrs) do
-    %Idea{}
+  #
+  # `base` defaults to `%Idea{}` for the create path and is the loaded
+  # idea for the update path (slice 14), so the form re-render keeps the
+  # other fields the user did not retype (duration, budget, location).
+  defp build_invalid_categories_changeset(attrs),
+    do: build_invalid_categories_changeset(%Idea{}, attrs)
+
+  defp build_invalid_categories_changeset(%Idea{} = base, attrs) do
+    base
     |> Ecto.Changeset.cast(attrs, [:title, :description, :url])
     |> Ecto.Changeset.add_error(:categories, Categories.invalid_message())
   end

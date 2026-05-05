@@ -68,7 +68,9 @@ defmodule Ideajar.Ideas.Idea do
     field :lat, :float
     field :lng, :float
 
-    many_to_many :categories, Ideajar.Categories.Category, join_through: "idea_categories"
+    many_to_many :categories, Ideajar.Categories.Category,
+      join_through: "idea_categories",
+      on_replace: :delete
 
     timestamps(type: :utc_datetime)
   end

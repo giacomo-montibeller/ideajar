@@ -237,7 +237,7 @@ Feature: Edit an idea
 
 **`Ideajar.Ideas.update_idea/2`**:
 ```elixir
-@spec update_idea(integer() | String.t(), map()) ::
+@spec update_idea(integer(), map()) ::
         {:ok, Idea.t()}
         | {:error, :not_found}
         | {:error, Ecto.Changeset.t()}
@@ -297,7 +297,7 @@ phx-submit="submit_edit"
 - **No optimistic concurrency.** Last-write-wins. L'unica race rilevata e gestita è `:not_found` (slice 12 parity).
 - **No hidden field, no `expected_updated_at`.** Esplicito out-of-scope test pin.
 - **Form inline per `:add` E per `:edit`.** Stessa presentazione, solo il contenuto (heading + submit label + valori) cambia. Nessun backdrop, nessun modal wrapper.
-- **No-op submit detection in LiveView**: prima di chiamare `update_idea/2`, la LV controlla `changeset.changes == %{}`. Se vuoto → close form senza flash, senza DB write. Onesto, niente messaggio bugiardo.
+- **No-op submit detection in LiveView via helper esplicito**: `Idea.changeset/2` con `put_assoc(:categories, ...)` registra un change `:replace` anche quando i category struct sono identici. Quindi `changeset.changes == %{}` da solo non basta. La LV usa `no_meaningful_changes?(idea, params)` che confronta scalar fields + sorted category_ids. Se identici → close form senza flash, senza DB write. Onesto, niente messaggio bugiardo.
 - **`Idea.changeset/2` riusato**, no funzione `update_changeset/2` separata.
 - **`change_idea_with_categories/2` extracted as private context helper**, riusato da create + update. DRY.
 - **Atomic rollback via `Repo.transaction`** parallel `delete_idea` slice 12.

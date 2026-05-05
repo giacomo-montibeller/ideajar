@@ -28,7 +28,7 @@ Slice 14 chiude l'ultimo gap CRUD del workspace aggiungendo la modifica di un'id
 
 - **DD-S14-4 — `update_idea/2` atomico in `Repo.transaction`.** Failure su qualsiasi sub-step rollback completo. Coerente con `delete_idea` di slice 12. Test pin C6: changeset failure su edit non lascia categorie semi-aggiornate.
 
-- **DD-S14-5 — Helper privato `change_idea_with_categories/2` condiviso.** Estratto dalla logica di `create_idea/1` (risoluzione `category_ids` via `Categories.list_by_ids/1` + `put_assoc(:categories, …)`). Riusato da `create_idea` e `update_idea`. DRY senza duplicazione.
+- **DD-S14-5 — Helper privato `change_idea_with_categories/2` condiviso, con invalid-id guard preservato.** Il `create_idea/1` esistente ha 4 fasi: `fetch_raw_category_ids/1` → `Categories.list_by_ids/1` (returns `{:error, :not_found}` se un id non esiste in DB) → `inject_resolved_categories/2` → `insert_idea/1`, con un fallback `build_invalid_categories_changeset/1` se la lookup fallisce. Il refactor estrae il "core" come `change_idea_with_categories(idea_or_changeset, attrs) :: {:ok, Changeset.t()} | {:error, :invalid_categories}` (signature esplicita, NON `{:ok, idea}`/`{:error, ...}`). Sia `create_idea` che `update_idea` chiamano l'helper, fanno match sul tuple, e poi `Repo.insert` o `Repo.update`. **L'invalid-id guard è preservato**: se l'utente sottomette un `category_id` non esistente (DOM tampering, race su delete categoria), entrambi i path producono lo stesso changeset error invece di crashare. Test pin esplicito in Step 1.
 
 - **DD-S14-6 — No-op detection nella LiveView via helper esplicito.** `Idea.changeset/2` con `put_assoc(:categories, ...)` registra un change `:replace` anche quando i category struct sono gli stessi (semantica Ecto del put_assoc). Quindi `changeset.changes == %{}` non è sufficiente. La LV usa un helper privato `no_meaningful_changes?(idea, params)` che confronta:
   1. ogni scalar field (`title`, `description`, `url`, `duration`, `estimated_cost`, `location_name`, `lat`, `lng`) tra `idea` e i `params` cast-ati
@@ -53,13 +53,13 @@ Slice 14 chiude l'ultimo gap CRUD del workspace aggiungendo la modifica di un'id
 > Mappatura uno-a-uno con `docs/specs/edit-idea.md`.
 
 ### Context layer
-- [ ] **C1** — `Ideas.update_idea/2` exists con signature `(id, attrs) :: {:ok, Idea.t()} | {:error, :not_found | Changeset.t()}`.
-- [ ] **C2** — `Repo.get` non trova → `{:error, :not_found}`.
-- [ ] **C3** — Successo → `{:ok, idea}` con `categories` preloaded fresh (forced reload).
-- [ ] **C4** — Validation failure → `{:error, %Ecto.Changeset{}}` per ogni regola (title vuoto, url malformato, 0 categorie, duration invalido, budget invalido, location parziale).
-- [ ] **C5** — `Repo.transaction` wrappa l'operazione.
-- [ ] **C6** — Test pin: changeset failure (es. titolo valido + categorie zero) lascia l'idea su DB **invariata** — `idea.categories` non si svuota se l'update fallisce.
-- [ ] **C7** — Test pin: `function_exported?(Ideajar.Ideas, :update_idea, 3) == false` — la funzione è filter-unaware.
+- [x] **C1** — `Ideas.update_idea/2` exists con signature `(id, attrs) :: {:ok, Idea.t()} | {:error, :not_found | Changeset.t()}`.
+- [x] **C2** — `Repo.get` non trova → `{:error, :not_found}`.
+- [x] **C3** — Successo → `{:ok, idea}` con `categories` preloaded fresh (forced reload).
+- [x] **C4** — Validation failure → `{:error, %Ecto.Changeset{}}` per ogni regola (title vuoto, url malformato, 0 categorie, duration invalido, budget invalido, location parziale).
+- [x] **C5** — `Repo.transaction` wrappa l'operazione.
+- [x] **C6** — Test pin: changeset failure (es. titolo valido + categorie zero) lascia l'idea su DB **invariata** — `idea.categories` non si svuota se l'update fallisce.
+- [x] **C7** — Test pin: `function_exported?(Ideajar.Ideas, :update_idea, 3) == false` — la funzione è filter-unaware.
 
 ### Validation parity
 - [ ] **V1** — Stessa funzione `Idea.changeset/2` per add e edit (no `update_changeset/2`).
@@ -292,7 +292,8 @@ Feature: Edit an idea
 - "update_idea/2 returns {:error, :not_found} when the id does not exist"
 - "update_idea/2 returns {:error, %Changeset{}} for each validation rule" (title empty, url bad, 0 categories, duration invalid, budget invalid, location partial)
 - "update_idea/2 rolls back atomically on changeset failure" — pin C6: setup idea con cat ["mare"], chiama update_idea con title valido + categories []; verifica che dopo il fail, l'idea su DB ha ancora cat ["mare"] (non vuoto)
-- "Ideas.update_idea/3 is NOT exported" — pin C7 filter-unaware contract
+- "update_idea/2 with invalid category_id returns changeset error (not crash)" — pin DD-S14-5: passa un `category_ids: ["999999"]` non esistente; verifica che il return sia `{:error, %Ecto.Changeset{}}` con error sulla key `:categories`, non `:not_found` né crash
+- "Ideas.update_idea/3 is NOT exported" — pin C7 filter-unaware contract (proxy via arity-3 absence; nota nel test che è un proxy, non semantic guarantee — un dev può ancora aggiungere logica filter-aware all'interno della arity-2)
 
 **GREEN** (`lib/ideajar/ideas.ex`):
 - Implementa `update_idea/2` con la signature dello spec (no `expected_updated_at`)
@@ -302,7 +303,7 @@ Feature: Edit an idea
 
 **REFACTOR**: estrai `change_idea_with_categories/2` come helper privato del modulo `Ideas`, riusato da `create_idea/1` e `update_idea/2`. DRY pulito.
 
-**Files**: `lib/ideajar/ideas.ex`, `test/ideajar/ideas_test.exs`.
+**Files**: `lib/ideajar/ideas.ex`, `lib/ideajar/ideas/idea.ex` (`on_replace: :delete` su `many_to_many :categories`, necessario per `put_assoc` su update path), `test/ideajar/ideas_test.exs`.
 
 **Commit (draft)**: `Add Ideas.update_idea/2 with atomic rollback and shared changeset validation`
 
@@ -353,7 +354,9 @@ Feature: Edit an idea
 - "submit button label reads `Salva modifiche` in :edit mode"
 - "request_edit pushes focus event to #edit-title" — `assert_push_event(view, "ideajar:focus", %{to: "#edit-title"})`
 - "request_edit with unknown id is a no-op (no flash, no crash)" — L8 defensive
-- "form does NOT contain hidden input named expected_updated_at" — U5 negative pin (anche in :edit mode)
+- "request_edit while delete modal is open is a no-op (mutual exclusion)" — pin: aprire prima `request_delete`, poi `request_edit` sullo stesso o altro id → assigns invariati, `form_mode` non commuta, no push focus al title (perché la modal delete sta gestendo l'Esc)
+- "form in :edit mode renders DOM ids for every focusable error field" — pin di esistenza: il rendered HTML deve contenere `id="edit-title"`, `id="edit-description"`, `id="edit-url"`, `id="edit-duration"` (o equivalente per il duration toggle/select), `id="edit-estimated_cost"` (slider), `id="edit-location_name"`. Senza questi id, il push_event focus su validation error fallisce silently. Pin via `assert html =~ ~s(id="edit-#{field}")` per ogni field.
+- "form does NOT contain hidden input named expected_updated_at" — U5 negative pin (anche in :edit mode, rendered HTML check, non solo file grep)
 - "form does NOT contain element with class `backdrop`" — OS8 negative pin
 - "form remains inline (no modal wrapper around the form section)" — structural pin
 
@@ -486,7 +489,8 @@ Feature: Edit an idea
 - OS2: nessun route nuova in `IdeajarWeb.Router.__routes__()` con `path =~ "edit"`
 - OS3: `refute function_exported?(Ideajar.Ideas.Idea, :update_changeset, 2)` (after `Code.ensure_loaded!`)
 - OS4: il flash dopo save success è esattamente `"Idea modificata"`, non contiene `"Annulla"`
-- OS5: `refute File.read!("lib/ideajar_web/live/idea_live/index.html.heex") =~ "expected_updated_at"`
+- OS5a: `refute File.read!("lib/ideajar_web/live/idea_live/index.html.heex") =~ "expected_updated_at"` (file-level grep, fast cheap guard)
+- OS5b: rendered-HTML pin in `:edit` mode: `refute render(view) =~ "expected_updated_at"` — cattura anche un eventuale hidden field renderizzato da componenti estratti, non solo dal template principale
 - OS6: `refute File.read!("lib/ideajar_web/live/idea_live/index.html.heex") =~ ~r/phx-click="cancel_edit".*phx-confirm/`
 - OS7: nel rendered HTML della lista NON appare `<input type="checkbox"` dentro la card markup
 - OS8: `refute html =~ ~r/<[^>]*class="[^"]*backdrop[^"]*"/` quando il form è in `:edit` mode
