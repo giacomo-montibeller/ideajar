@@ -115,43 +115,6 @@ defmodule IdeajarWeb.IdeaLive.Index do
     end
   end
 
-  defp open_edit_form(socket, id) do
-    case Repo.get(Idea, id) |> preload_idea_categories() do
-      nil ->
-        {:noreply, socket}
-
-      %Idea{} = idea ->
-        socket =
-          socket
-          |> assign(:form_mode, {:edit, idea.id})
-          |> assign(:edit_origin_btn_id, "edit-btn-#{idea.id}")
-          |> assign(:form_visible?, true)
-          |> assign(:selected_category_ids, MapSet.new(Enum.map(idea.categories, & &1.id)))
-          |> assign(:selected_duration, idea.duration)
-          |> assign(:form_budget_index, Budget.value_to_index(idea.estimated_cost))
-          |> assign(:selected_location_name, idea.location_name)
-          |> assign(:selected_lat, idea.lat)
-          |> assign(:selected_lng, idea.lng)
-          |> reset_location_search()
-          |> assign(:form, to_form(Idea.changeset(idea, %{}), as: "idea"))
-          |> push_event("ideajar:focus", %{to: "#idea-title"})
-
-        {:noreply, socket}
-    end
-  end
-
-  defp preload_idea_categories(nil), do: nil
-  defp preload_idea_categories(%Idea{} = idea), do: Repo.preload(idea, :categories)
-
-  defp parse_int_id(raw) when is_binary(raw) do
-    case Integer.parse(raw) do
-      {n, ""} when n > 0 -> {:ok, n}
-      _ -> :error
-    end
-  end
-
-  defp parse_int_id(_), do: :error
-
   # Slice 14 step 4: closes the form (whether opened in :add or :edit
   # mode) and, if the form was in :edit mode, pushes focus back to the
   # originating ✏️ button on the card. Nil-safe: when the form was in
@@ -710,6 +673,28 @@ defmodule IdeajarWeb.IdeaLive.Index do
     end
   end
 
+  def handle_event("save", %{"idea" => attrs}, socket) do
+    attrs_with_categories =
+      Map.put(attrs, "category_ids", MapSet.to_list(socket.assigns.selected_category_ids))
+
+    attrs_with_duration =
+      maybe_inject_duration(attrs_with_categories, socket.assigns.selected_duration, attrs)
+
+    attrs_with_budget =
+      maybe_inject_budget(attrs_with_duration, socket.assigns.form_budget_index)
+
+    attrs_with_location =
+      attrs_with_budget
+      |> maybe_inject_location_name(socket.assigns.selected_location_name)
+      |> maybe_inject_lat(socket.assigns.selected_lat)
+      |> maybe_inject_lng(socket.assigns.selected_lng)
+
+    socket
+    |> create_idea_fun()
+    |> apply([attrs_with_location])
+    |> handle_save_result(socket, attrs)
+  end
+
   defp compose_form_attrs(params, socket) do
     base = Map.get(params, "idea", %{})
 
@@ -821,27 +806,45 @@ defmodule IdeajarWeb.IdeaLive.Index do
      |> push_event("ideajar:focus", %{to: focus_first_invalid(changeset)})}
   end
 
-  def handle_event("save", %{"idea" => attrs}, socket) do
-    attrs_with_categories =
-      Map.put(attrs, "category_ids", MapSet.to_list(socket.assigns.selected_category_ids))
+  # Slice 14 step 3 helpers (grouped here so all `handle_event/3` clauses
+  # remain contiguous above — Elixir's compile-time grouping check needs
+  # public clauses with the same name+arity not to be split by privates).
+  defp open_edit_form(socket, id) do
+    case Repo.get(Idea, id) |> preload_idea_categories() do
+      nil ->
+        {:noreply, socket}
 
-    attrs_with_duration =
-      maybe_inject_duration(attrs_with_categories, socket.assigns.selected_duration, attrs)
+      %Idea{} = idea ->
+        socket =
+          socket
+          |> assign(:form_mode, {:edit, idea.id})
+          |> assign(:edit_origin_btn_id, "edit-btn-#{idea.id}")
+          |> assign(:form_visible?, true)
+          |> assign(:selected_category_ids, MapSet.new(Enum.map(idea.categories, & &1.id)))
+          |> assign(:selected_duration, idea.duration)
+          |> assign(:form_budget_index, Budget.value_to_index(idea.estimated_cost))
+          |> assign(:selected_location_name, idea.location_name)
+          |> assign(:selected_lat, idea.lat)
+          |> assign(:selected_lng, idea.lng)
+          |> reset_location_search()
+          |> assign(:form, to_form(Idea.changeset(idea, %{}), as: "idea"))
+          |> push_event("ideajar:focus", %{to: "#idea-title"})
 
-    attrs_with_budget =
-      maybe_inject_budget(attrs_with_duration, socket.assigns.form_budget_index)
-
-    attrs_with_location =
-      attrs_with_budget
-      |> maybe_inject_location_name(socket.assigns.selected_location_name)
-      |> maybe_inject_lat(socket.assigns.selected_lat)
-      |> maybe_inject_lng(socket.assigns.selected_lng)
-
-    socket
-    |> create_idea_fun()
-    |> apply([attrs_with_location])
-    |> handle_save_result(socket, attrs)
+        {:noreply, socket}
+    end
   end
+
+  defp preload_idea_categories(nil), do: nil
+  defp preload_idea_categories(%Idea{} = idea), do: Repo.preload(idea, :categories)
+
+  defp parse_int_id(raw) when is_binary(raw) do
+    case Integer.parse(raw) do
+      {n, ""} when n > 0 -> {:ok, n}
+      _ -> :error
+    end
+  end
+
+  defp parse_int_id(_), do: :error
 
   # `phx-change` on a form-bound input sends the full form params shape
   # (`%{"idea" => %{"location_name" => "..."}}`), while direct

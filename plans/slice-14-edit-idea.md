@@ -2,7 +2,7 @@
 
 **Created**: 2026-05-05
 **Branch**: main (trunk-based)
-**Status**: approved
+**Status**: implemented
 **Spec**: `docs/specs/edit-idea.md`
 
 ## Build conventions (carried from slice 1-13)
@@ -105,9 +105,9 @@ Slice 14 chiude l'ultimo gap CRUD del workspace aggiungendo la modifica di un'id
 - [x] **OS8** — Negative template pin: NESSUN elemento con classe `backdrop` nel form section (form è inline).
 
 ### Operational
-- [ ] **O1** — Nessun cambio a Dockerfile, runtime, mix.exs, deploy workflow.
-- [ ] **O2** — Nessun nuovo Hex dep.
-- [ ] **O3** — Test suite resta verde (893+ esistenti + N nuovi).
+- [x] **O1** — Nessun cambio a Dockerfile, runtime, mix.exs, deploy workflow.
+- [x] **O2** — Nessun nuovo Hex dep.
+- [x] **O3** — Test suite resta verde (964 — 893 baseline + 71 nuovi).
 - [ ] **O4** — Manual smoke: open `/`, ✏️ su un'idea, modifica titolo, submit → titolo aggiornato in lista. Path :not_found: aprire edit in tab A, delete in tab B, submit in A → flash `"…cancellata da un altro dispositivo"`.
 
 ## User-Facing Behavior

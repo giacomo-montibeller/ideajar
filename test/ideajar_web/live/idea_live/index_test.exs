@@ -7157,6 +7157,7 @@ defmodule IdeajarWeb.IdeaLive.IndexTest do
       render_submit(view, "submit_edit", %{"idea" => %{"title" => "Sirolo"}})
 
       html = render(view)
+
       refute html =~ ~r{<h3[^>]*>Sirolo</h3>},
              "Sirolo no longer matches the mare filter and must disappear from the list"
     end
