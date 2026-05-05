@@ -6051,11 +6051,13 @@ defmodule IdeajarWeb.IdeaLive.IndexTest do
 
       # Buttons present with the required attributes.
       assert html =~ ~s|id="delete-cancel-btn"|
-      assert html =~ ~r/<button[^>]*id="delete-cancel-btn"[^>]*type="button"[^>]*phx-click="cancel_delete"[^>]*>Annulla<\/button>/
+
+      assert html =~
+               ~r/<button[^>]*id="delete-cancel-btn"[^>]*type="button"[^>]*phx-click="cancel_delete"[^>]*>\s*Annulla\s*<\/button>/
 
       # F13: confirm button carries phx-disable-with attribute.
       assert html =~
-               ~r/<button[^>]*type="button"[^>]*phx-click="confirm_delete"[^>]*phx-disable-with="Eliminazione…"[^>]*>Elimina<\/button>/
+               ~r/<button[^>]*type="button"[^>]*phx-click="confirm_delete"[^>]*phx-disable-with="Eliminazione…"[^>]*>\s*Elimina\s*<\/button>/
     end
 
     test "F10: opening the modal pushes focus to the cancel button", %{conn: conn} do
