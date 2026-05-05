@@ -34,7 +34,23 @@ jobs:
         env:
           GIGALIXIR_EMAIL: ${{ secrets.GIGALIXIR_EMAIL }}
           GIGALIXIR_API_KEY: ${{ secrets.GIGALIXIR_API_KEY }}
-        run: gigalixir login -e "$GIGALIXIR_EMAIL" -y
+        run: |
+          # Write ~/.netrc directly — same store gigalixir login uses
+          # internally, but avoids the interactive password prompt that
+          # `gigalixir login -y` still triggers on TTY-less CI runners.
+          # The api_key sits in a 0600 file on an ephemeral runner — never
+          # on argv (no /proc leak) and never echoed to stdout.
+          umask 077
+          cat > ~/.netrc <<NETRC
+          machine api.gigalixir.com
+            login $GIGALIXIR_EMAIL
+            password $GIGALIXIR_API_KEY
+          machine git.gigalixir.com
+            login $GIGALIXIR_EMAIL
+            password $GIGALIXIR_API_KEY
+          NETRC
+          chmod 0600 ~/.netrc
+          gigalixir account
 
       - name: Add gigalixir remote
         run: gigalixir git:remote "$GIGALIXIR_APP_NAME"

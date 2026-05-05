@@ -100,11 +100,15 @@ defmodule Ideajar.DeployWorkflowTest do
       assert read_deploy_yml!() =~ "pipx install gigalixir"
     end
 
-    test "authenticates via GIGALIXIR_EMAIL + GIGALIXIR_API_KEY secrets" do
+    test "authenticates by writing the secrets to a chmod-0600 ~/.netrc" do
       content = read_deploy_yml!()
       assert content =~ "secrets.GIGALIXIR_EMAIL"
       assert content =~ "secrets.GIGALIXIR_API_KEY"
-      assert content =~ "gigalixir login"
+      # ~/.netrc is the credentials store gigalixir reads at runtime — same
+      # store `gigalixir login` uses internally, but bypasses the interactive
+      # password prompt that even `-y` cannot suppress on a TTY-less CI runner.
+      assert content =~ "~/.netrc"
+      assert content =~ "chmod 0600"
     end
 
     test "no echo or printf of GIGALIXIR_* secrets" do
