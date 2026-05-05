@@ -679,17 +679,22 @@ defmodule IdeajarWeb.IdeaLive.Index do
   def handle_event("submit_edit", _params, socket), do: {:noreply, socket}
 
   def handle_event("save", %{"idea" => attrs} = params, socket) do
-    composed = compose_form_attrs(params, socket)
-
     socket
     |> create_idea_fun()
-    |> apply([composed])
+    |> apply([compose_form_attrs(params, socket, attrs)])
     |> handle_save_result(socket, attrs)
   end
 
-  defp compose_form_attrs(params, socket) do
-    base = Map.get(params, "idea", %{})
+  # `compose_form_attrs/2` (and the `/3` variant for callers that already
+  # extracted `"idea"` to avoid a double Map.get) merge the form's `idea`
+  # sub-map with the slice 2/9/7a assigns (selected_duration, budget
+  # index, location_*) and the resolved category_ids list. The `/3`
+  # variant lets `save` reuse the `attrs` it already pattern-matched
+  # without re-extracting from `params`.
+  defp compose_form_attrs(params, socket),
+    do: compose_form_attrs(params, socket, Map.get(params, "idea", %{}))
 
+  defp compose_form_attrs(params, socket, base) do
     base
     |> Map.put("category_ids", category_ids_from_params(params, socket))
     |> maybe_inject_duration(socket.assigns.selected_duration, base)
@@ -699,9 +704,17 @@ defmodule IdeajarWeb.IdeaLive.Index do
     |> maybe_inject_lng(socket.assigns.selected_lng)
   end
 
-  # `category_ids` may arrive as a top-level form param (slice 14 submit
-  # path uses raw category_ids list) or be absent (slice 2 save path which
-  # mirrors the assign). When absent, fall back to the current MapSet.
+  # In production, neither the slice 2 add form nor the slice 14 edit
+  # form has an input named `"category_ids"` — the chips toggle the
+  # `selected_category_ids` MapSet via `toggle_category` events, so the
+  # form-submit payload never carries `category_ids` at the top level
+  # and the fallback clause below is the only one that fires at runtime.
+  #
+  # The first clause exists for test ergonomics: `render_submit/3` lets
+  # tests inject `"category_ids"` directly in the simulated payload (see
+  # the slice 14 step 5 no-op REVERSE order test) without having to
+  # replay the chip toggle sequence event-by-event. This is the only
+  # call site that exercises the first clause.
   defp category_ids_from_params(%{"category_ids" => ids}, _socket) when is_list(ids), do: ids
 
   defp category_ids_from_params(_params, socket),
