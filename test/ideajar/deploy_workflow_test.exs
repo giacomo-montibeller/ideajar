@@ -132,6 +132,62 @@ defmodule Ideajar.DeployWorkflowTest do
     end
   end
 
+  describe "smoke test (Step 4)" do
+    test "curls /health on PHX_HOST" do
+      assert read_deploy_yml!() =~ ~s(curl -fsS "https://$PHX_HOST/health")
+    end
+
+    test "retries 10 times at 15-second intervals" do
+      content = read_deploy_yml!()
+      assert content =~ "for i in $(seq 1 10)"
+      assert content =~ "sleep 15"
+    end
+
+    test "asserts status ok in the response body" do
+      assert read_deploy_yml!() =~ ~s("status":"ok")
+    end
+
+    test "exit 0 fires inside the conditional after grep -q, before the first sleep" do
+      content = read_deploy_yml!()
+      grep_offset = offset!(content, "grep -q")
+      then_offset = offset!(content, "; then")
+      exit_zero_offset = offset!(content, "exit 0")
+      first_sleep_offset = offset!(content, "sleep 15")
+
+      assert grep_offset < then_offset,
+             "the `; then` opener must follow the grep test"
+
+      assert then_offset < exit_zero_offset,
+             "exit 0 must live inside the then-branch (after the `; then` opener), not before"
+
+      assert exit_zero_offset < first_sleep_offset,
+             "exit 0 must come before sleep 15 — inside the then branch, not after"
+    end
+
+    test "exit 1 fires only after the retry loop is exhausted" do
+      content = read_deploy_yml!()
+      last_sleep_offset = last_offset!(content, "sleep 15")
+      exit_one_offset = offset!(content, "exit 1")
+
+      assert last_sleep_offset < exit_one_offset,
+             "exit 1 must come after the loop's last sleep — only when retries are exhausted"
+    end
+
+    test "failure prints recovery hints (previous release, gigalixir logs, releases:rollback)" do
+      content = read_deploy_yml!()
+      assert content =~ "previous release"
+      assert content =~ "gigalixir logs"
+      assert content =~ "gigalixir releases:rollback"
+    end
+
+    test "Migrate precedes Smoke test in the file" do
+      content = read_deploy_yml!()
+
+      assert step_offset!(content, "Migrate") < step_offset!(content, "Smoke test"),
+             "Smoke test must run after Migrate so a migrate failure short-circuits the pipeline"
+    end
+  end
+
   defp read_deploy_yml! do
     File.read!(@deploy_yml_path)
   end
@@ -140,6 +196,20 @@ defmodule Ideajar.DeployWorkflowTest do
     case :binary.match(content, "name: #{step_name}") do
       {offset, _} -> offset
       :nomatch -> flunk("step `name: #{step_name}` not found in deploy.yml")
+    end
+  end
+
+  defp offset!(content, needle) do
+    case :binary.match(content, needle) do
+      {offset, _} -> offset
+      :nomatch -> flunk("substring `#{needle}` not found in deploy.yml")
+    end
+  end
+
+  defp last_offset!(content, needle) do
+    case :binary.matches(content, needle) do
+      [] -> flunk("substring `#{needle}` not found in deploy.yml")
+      matches -> matches |> List.last() |> elem(0)
     end
   end
 end

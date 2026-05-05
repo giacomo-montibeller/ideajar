@@ -44,3 +44,17 @@ jobs:
 
       - name: Migrate
         run: gigalixir run -- bin/ideajar eval "Ideajar.Release.migrate"
+
+      - name: Smoke test
+        run: |
+          for i in $(seq 1 10); do
+            if curl -fsS "https://$PHX_HOST/health" | grep -q '"status":"ok"'; then
+              echo "Smoke test passed on attempt $i."
+              exit 0
+            fi
+            sleep 15
+          done
+          echo "Smoke test failed after 10 attempts; previous release likely still serving."
+          echo "Inspect: gigalixir logs"
+          echo "Rollback if needed: gigalixir releases:rollback"
+          exit 1

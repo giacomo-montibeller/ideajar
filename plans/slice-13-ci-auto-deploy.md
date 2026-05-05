@@ -79,11 +79,11 @@ Slice 13 trasforma l'attuale flusso "merge su main → push manuale a Gigalixir"
 - [x] **M2** — Migrate failure blocca lo smoke test (coperto da P2 + P3).
 
 ### Smoke test
-- [ ] **S1** — Step "Smoke test" fa `curl -fsS "https://$PHX_HOST/health"`.
-- [ ] **S2** — Retry: **10 tentativi a 15s** (totale 150s), esce 0 al primo 200 con body `"status":"ok"`.
-- [ ] **S3** — Pin strutturale del flusso: `exit 0` appare in un blocco condizionale (dentro `if [...]; then` o equivalente, dopo il `grep -q`) PRIMA di `sleep 15`; `exit 1` appare DOPO la chiusura del loop.
-- [ ] **S4** — A fallimento, lo step stampa esplicitamente: messaggio "Smoke test failed after 10 attempts; previous release likely still serving", riferimento a `gigalixir logs`, comando `gigalixir releases:rollback`. Pinned via token.
-- [ ] **S5** — Smoke-test failure fa fallire il job; nessun rollback automatico (coperto da OS2).
+- [x] **S1** — Step "Smoke test" fa `curl -fsS "https://$PHX_HOST/health"`.
+- [x] **S2** — Retry: **10 tentativi a 15s** (totale 150s), esce 0 al primo 200 con body `"status":"ok"`.
+- [x] **S3** — Pin strutturale del flusso: `exit 0` appare in un blocco condizionale (dentro `if [...]; then` o equivalente, dopo il `grep -q`) PRIMA di `sleep 15`; `exit 1` appare DOPO la chiusura del loop.
+- [x] **S4** — A fallimento, lo step stampa esplicitamente: messaggio "Smoke test failed after 10 attempts; previous release likely still serving", riferimento a `gigalixir logs`, comando `gigalixir releases:rollback`. Pinned via token.
+- [x] **S5** — Smoke-test failure fa fallire il job; nessun rollback automatico (coperto da OS2).
 
 ### Out-of-scope guards
 - [ ] **OS1a** — `.github/workflows/ci.yml` non contiene la stringa `gigalixir`.
