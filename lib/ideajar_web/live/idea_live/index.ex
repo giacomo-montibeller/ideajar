@@ -37,6 +37,7 @@ defmodule IdeajarWeb.IdeaLive.Index do
   alias Ideajar.Ideas.Budget
   alias Ideajar.Ideas.Duration
   alias Ideajar.Ideas.Idea
+  alias Ideajar.Repo
   alias IdeajarWeb.Components.BudgetBadge
   alias IdeajarWeb.Components.DurationChip
   alias IdeajarWeb.Components.LocationBadge
@@ -75,6 +76,8 @@ defmodule IdeajarWeb.IdeaLive.Index do
      |> assign(:max_budget_index, 0)
      |> assign(:categories, Categories.list_categories())
      |> assign(:form_visible?, false)
+     |> assign(:form_mode, nil)
+     |> assign(:edit_origin_btn_id, nil)
      |> assign(:deletion, nil)
      |> reset_categories()
      |> reset_duration()
@@ -94,10 +97,60 @@ defmodule IdeajarWeb.IdeaLive.Index do
   end
 
   @impl Phoenix.LiveView
-  # Slice 14 step 2: stub handler so clicking the new ✏️ button does not
-  # crash the LiveView before Step 3 wires the real edit-form opening.
-  # Replaced in Step 3.
-  def handle_event("request_edit", _params, socket), do: {:noreply, socket}
+  # Slice 14 step 3: opens the form pre-populated for editing the idea.
+  # Mutual exclusion with the delete modal: if @deletion is non-nil, the
+  # event is a silent no-op so the user does not end up with both the
+  # confirm modal and an edit form competing for keyboard focus + Esc.
+  # An unknown id is also a silent no-op (defensive against a stale DOM:
+  # the other device deleted while we still rendered the ✏️ button).
+  def handle_event("request_edit", _params, %{assigns: %{deletion: deletion}} = socket)
+      when not is_nil(deletion) do
+    {:noreply, socket}
+  end
+
+  def handle_event("request_edit", %{"id" => raw}, socket) do
+    case parse_int_id(raw) do
+      {:ok, id} -> open_edit_form(socket, id)
+      :error -> {:noreply, socket}
+    end
+  end
+
+  defp open_edit_form(socket, id) do
+    case Repo.get(Idea, id) |> preload_idea_categories() do
+      nil ->
+        {:noreply, socket}
+
+      %Idea{} = idea ->
+        socket =
+          socket
+          |> assign(:form_mode, {:edit, idea.id})
+          |> assign(:edit_origin_btn_id, "edit-btn-#{idea.id}")
+          |> assign(:form_visible?, true)
+          |> assign(:selected_category_ids, MapSet.new(Enum.map(idea.categories, & &1.id)))
+          |> assign(:selected_duration, idea.duration)
+          |> assign(:form_budget_index, Budget.value_to_index(idea.estimated_cost))
+          |> assign(:selected_location_name, idea.location_name)
+          |> assign(:selected_lat, idea.lat)
+          |> assign(:selected_lng, idea.lng)
+          |> reset_location_search()
+          |> assign(:form, to_form(Idea.changeset(idea, %{}), as: "idea"))
+          |> push_event("ideajar:focus", %{to: "#idea-title"})
+
+        {:noreply, socket}
+    end
+  end
+
+  defp preload_idea_categories(nil), do: nil
+  defp preload_idea_categories(%Idea{} = idea), do: Repo.preload(idea, :categories)
+
+  defp parse_int_id(raw) when is_binary(raw) do
+    case Integer.parse(raw) do
+      {n, ""} when n > 0 -> {:ok, n}
+      _ -> :error
+    end
+  end
+
+  defp parse_int_id(_), do: :error
 
   # Slice 12 step 3: opens the confirm modal for the idea matching `id`.
   # Reads from `@ideas` only (no DB hit). If the id is not in the current

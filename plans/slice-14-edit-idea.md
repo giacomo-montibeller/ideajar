@@ -38,7 +38,7 @@ Slice 14 chiude l'ultimo gap CRUD del workspace aggiungendo la modifica di un'id
 
 - **DD-S14-7 — Bottone ✏️ stessa shape del 🗑.** `min-w-[44px] min-h-[44px]`, aria-label dinamica `"Modifica <title>"`, native `<button>` (Enter/Space activate natively). Posizionato a sinistra del 🗑. ID `#edit-btn-<idea_id>` per il focus restoration.
 
-- **DD-S14-8 — Focus management identico a slice 12.** Apri → push_event focus su `#edit-title`; chiudi (cancel/Esc/success/no-op/not_found) → push_event focus su `#edit-btn-<id>` della card sorgente. Pinned via `assert_push_event` test su tutti i path di chiusura.
+- **DD-S14-8 — Focus management identico a slice 12.** Apri → push_event focus su `#idea-title`; chiudi (cancel/Esc/success/no-op/not_found) → push_event focus su `#edit-btn-<id>` della card sorgente. Pinned via `assert_push_event` test su tutti i path di chiusura.
 
 - **DD-S14-9 — Cancel flow due vie (Annulla / Esc).** Stesso pattern slice 12 ridotto. **NESSUN backdrop** (form inline, non modal). NESSUN dirty-check confirmation. Click su Annulla / `phx-key="Escape"` convergono su `cancel_edit`.
 
@@ -67,23 +67,23 @@ Slice 14 chiude l'ultimo gap CRUD del workspace aggiungendo la modifica di un'id
 - [ ] **V3** — Test pin: ogni regola di validazione produce errore byte-identico tra add e edit.
 
 ### LiveView events
-- [ ] **L1** — `request_edit` con `%{"id" => raw}` apre il form pre-popolato in `:edit` mode.
+- [x] **L1** — `request_edit` con `%{"id" => raw}` apre il form pre-popolato in `:edit` mode.
 - [ ] **L2** — `cancel_edit` chiude il form senza salvare.
 - [ ] **L3** — `submit_edit` builds the changeset, detects no-changes, branches accordingly.
 - [ ] **L4** — Su `{:ok, _}` (with real changes): refresh lista + flash `"Idea modificata"` + form chiuso + focus.
 - [ ] **L5** — Su no-changes: form chiuso, **NO flash**, no DB write, focus.
 - [ ] **L6** — Su `{:error, :not_found}`: flash `"Quest'idea è stata cancellata da un altro dispositivo."` + form chiuso + lista refreshata + focus.
-- [ ] **L7** — Su `{:error, %Changeset{}}`: re-render form con errori + focus al primo campo con errore. **"Primo campo"** = primo `field` per ordine di `changeset.errors` (il primo entry della keyword list), mappato all'`#edit-<field>` corrispondente nel DOM. Test pin: changeset con errori `[title: ..., url: ...]` → `assert_push_event(view, "ideajar:focus", %{to: "#edit-title"})`.
-- [ ] **L8** — `request_edit` con id sconosciuto: no-op silenzioso (no flash, no crash).
+- [ ] **L7** — Su `{:error, %Changeset{}}`: re-render form con errori + focus al primo campo con errore. **"Primo campo"** = primo `field` per ordine di `changeset.errors` (il primo entry della keyword list), mappato all'`#edit-<field>` corrispondente nel DOM. Test pin: changeset con errori `[title: ..., url: ...]` → `assert_push_event(view, "ideajar:focus", %{to: "#idea-title"})`.
+- [x] **L8** — `request_edit` con id sconosciuto: no-op silenzioso (no flash, no crash).
 
 ### UI / a11y
 - [x] **U1** — Card ha `<button>` ✏️ con `aria-label="Modifica <title>"`, `min-w-[44px] min-h-[44px]`, posizionato a sinistra del 🗑.
 - [x] **U2** — Pulsante è un `<button>` HTML nativo (no `tabindex="-1"`); test pin sull'element type.
-- [ ] **U3** — Heading commuta tra `"Aggiungi idea"` e `"Modifica idea"` in base a `form_mode`.
-- [ ] **U4** — Submit button label commuta tra `"Aggiungi"` e `"Salva modifiche"`.
-- [ ] **U5** — Negative pin: NESSUN hidden input `expected_updated_at` nel form (in qualsiasi modalità).
+- [x] **U3** — Heading commuta tra `"Aggiungi idea"` e `"Modifica idea"` in base a `form_mode`.
+- [x] **U4** — Submit button label commuta tra `"Salva"` (slice 2 esistente, `:add` mode) e `"Salva modifiche"` (`:edit` mode).
+- [x] **U5** — Negative pin: NESSUN hidden input `expected_updated_at` nel form (in qualsiasi modalità).
 - [ ] **U6** — Focus management:
-  - apri → push_event `:focus` to `#edit-title`
+  - apri → push_event `:focus` to `#idea-title`
   - chiudi (cancel/Esc/success/no-op/not_found) → push_event `:focus` to `#edit-btn-<id>`
 - [ ] **U7** — Esc key chiude il form (`phx-window-keydown` con `phx-key="Escape"` → `cancel_edit`).
 - [ ] **U8** — `assert_push_event(view, "ideajar:focus", ...)` pinned per **ogni** path di chiusura: open, cancel, submit-success, no-op, not_found, validation-error.
@@ -352,10 +352,10 @@ Feature: Edit an idea
 - "request_edit pre-populates the category chip selection from idea.categories"
 - "form heading reads `Modifica idea` in :edit mode"
 - "submit button label reads `Salva modifiche` in :edit mode"
-- "request_edit pushes focus event to #edit-title" — `assert_push_event(view, "ideajar:focus", %{to: "#edit-title"})`
+- "request_edit pushes focus event to #idea-title" — `assert_push_event(view, "ideajar:focus", %{to: "#idea-title"})`
 - "request_edit with unknown id is a no-op (no flash, no crash)" — L8 defensive
 - "request_edit while delete modal is open is a no-op (mutual exclusion)" — pin: aprire prima `request_delete`, poi `request_edit` sullo stesso o altro id → assigns invariati, `form_mode` non commuta, no push focus al title (perché la modal delete sta gestendo l'Esc)
-- "form in :edit mode renders DOM ids for every focusable error field" — pin di esistenza: il rendered HTML deve contenere `id="edit-title"`, `id="edit-description"`, `id="edit-url"`, `id="edit-duration"` (o equivalente per il duration toggle/select), `id="edit-estimated_cost"` (slider), `id="edit-location_name"`. Senza questi id, il push_event focus su validation error fallisce silently. Pin via `assert html =~ ~s(id="edit-#{field}")` per ogni field.
+- "form in :edit mode renders DOM ids for focusable error fields" — pin di esistenza: il rendered HTML in `:edit` deve contenere `id="idea-title"`, `id="idea-description"`, `id="idea-url"`, `id="idea-categories-error"` (slice 2 region) — gli stessi id usati dal form add (riuso). Pin via `assert html =~ ~s(id="idea-title")` etc.
 - "form does NOT contain hidden input named expected_updated_at" — U5 negative pin (anche in :edit mode, rendered HTML check, non solo file grep)
 - "form does NOT contain element with class `backdrop`" — OS8 negative pin
 - "form remains inline (no modal wrapper around the form section)" — structural pin
@@ -364,7 +364,7 @@ Feature: Edit an idea
 - Sostituisci stub. `handle_event("request_edit", %{"id" => raw}, socket)` → parse id → `Repo.get(Idea, id) |> Repo.preload(:categories)` (NON-bang per coerenza con R3 — id sconosciuto deve essere no-op, non crash)
 - Se nil → `{:noreply, socket}` (no flash, no crash, defensive)
 - Altrimenti → assign `form_mode: {:edit, id}`, `edit_origin_btn_id: "edit-btn-#{id}"`, `edit_form: Idea.changeset(idea, %{}) |> to_form(...)` (riuso del to_form pattern del form add)
-- `push_event(socket, "ideajar:focus", %{to: "#edit-title"})`
+- `push_event(socket, "ideajar:focus", %{to: "#idea-title"})`
 
 **GREEN** (`index.html.heex`):
 - Heading commuta in base a `@form_mode`
@@ -558,7 +558,7 @@ Feature: Edit an idea
 
 - **R5 — Aria-label HTML escaping.** Phoenix HEEx escapa automaticamente le interpolazioni `{}` in attribute context. *Mitigazione*: Step 2 RED ha un pin con title `"Caffè & relax"` per validare il behavior.
 
-- **R6 — Form inline può aprirsi off-screen su liste lunghe.** Il form vive in cima alla pagina (`<section>` slice 2). Se l'utente clicca ✏️ su una card a metà lista, il form apre fuori dal viewport. Il push_event focus su `#edit-title` causa il browser a scrollare nativamente sull'elemento (behavior default `focus()` su elementi non-visible è `scrollIntoView`). *Mitigazione*: ereditata dal browser; per couple-of-2 con liste corte (< 50 idee) il rischio è bassissimo. Se in futuro la lista cresce, valuta `scrollIntoView({behavior: 'smooth', block: 'start'})` esplicito nel JS hook. Non blocking per slice 14.
+- **R6 — Form inline può aprirsi off-screen su liste lunghe.** Il form vive in cima alla pagina (`<section>` slice 2). Se l'utente clicca ✏️ su una card a metà lista, il form apre fuori dal viewport. Il push_event focus su `#idea-title` causa il browser a scrollare nativamente sull'elemento (behavior default `focus()` su elementi non-visible è `scrollIntoView`). *Mitigazione*: ereditata dal browser; per couple-of-2 con liste corte (< 50 idee) il rischio è bassissimo. Se in futuro la lista cresce, valuta `scrollIntoView({behavior: 'smooth', block: 'start'})` esplicito nel JS hook. Non blocking per slice 14.
 
 ## Plan Review Summary
 

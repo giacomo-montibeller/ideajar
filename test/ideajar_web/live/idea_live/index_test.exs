@@ -6475,4 +6475,256 @@ defmodule IdeajarWeb.IdeaLive.IndexTest do
              "edit button must precede trash button in the rendered HTML"
     end
   end
+
+  # ── Slice 14 step 3: request_edit opens form prepopulated + focus ──
+  describe "Slice 14 step 3 — request_edit opens form pre-populated" do
+    test "request_edit assigns form_mode = {:edit, id} and opens the form",
+         %{conn: conn} do
+      idea = insert_idea_with_categories!("Sirolo", ["mare"], ~U[2026-04-27 10:00:00Z])
+
+      view = mount_authenticated(conn)
+      render_click(view, "request_edit", %{"id" => Integer.to_string(idea.id)})
+
+      assigns = :sys.get_state(view.pid).socket.assigns
+      assert assigns.form_mode == {:edit, idea.id}
+      assert assigns.form_visible? == true
+      assert assigns.edit_origin_btn_id == "edit-btn-#{idea.id}"
+    end
+
+    test "form heading reads `Modifica idea` in :edit mode and `Aggiungi idea` in :add",
+         %{conn: conn} do
+      idea = insert_idea_with_categories!("Sirolo", ["mare"], ~U[2026-04-27 10:00:00Z])
+
+      view = mount_authenticated(conn)
+
+      # Open form in :add mode (toggle_form is the slice 2 path)
+      render_click(view, "toggle_form")
+      assigns = :sys.get_state(view.pid).socket.assigns
+      assert assigns.form_visible? == true
+      assert render(view) =~ "Aggiungi idea"
+
+      # Open form in :edit mode
+      render_click(view, "request_edit", %{"id" => Integer.to_string(idea.id)})
+      html = render(view)
+      assert html =~ "Modifica idea"
+    end
+
+    test "submit button label reads `Salva modifiche` in :edit mode and `Salva` in :add",
+         %{conn: conn} do
+      idea = insert_idea_with_categories!("Sirolo", ["mare"], ~U[2026-04-27 10:00:00Z])
+
+      view = mount_authenticated(conn)
+      render_click(view, "toggle_form")
+      # In :add mode the slice 2 button reads "Salva" (also a substring of
+      # "Salvataggio…" — disambiguate by looking for `>Salva<` between tags).
+      assert render(view) =~ ~r/>\s*Salva\s*</
+
+      render_click(view, "request_edit", %{"id" => Integer.to_string(idea.id)})
+      assert render(view) =~ "Salva modifiche"
+    end
+
+    test "request_edit pre-populates title, description, url", %{conn: conn} do
+      idea =
+        %Idea{
+          title: "Sirolo",
+          description: "spiaggia bianca",
+          url: "https://example.org/sirolo"
+        }
+        |> Ecto.Changeset.change()
+        |> Ecto.Changeset.put_assoc(:categories, [
+          CategoriesFixtures.category_by_name!("mare")
+        ])
+        |> Repo.insert!()
+
+      view = mount_authenticated(conn)
+      render_click(view, "request_edit", %{"id" => Integer.to_string(idea.id)})
+      html = render(view)
+
+      assert html =~ ~s(value="Sirolo")
+      assert html =~ "spiaggia bianca"
+      assert html =~ "https://example.org/sirolo"
+    end
+
+    test "request_edit pre-populates the category chip selection", %{conn: conn} do
+      mare = CategoriesFixtures.category_by_name!("mare")
+      museo = CategoriesFixtures.category_by_name!("museo")
+
+      idea =
+        %Idea{title: "Mix"}
+        |> Ecto.Changeset.change()
+        |> Ecto.Changeset.put_assoc(:categories, [mare, museo])
+        |> Repo.insert!()
+
+      view = mount_authenticated(conn)
+      render_click(view, "request_edit", %{"id" => Integer.to_string(idea.id)})
+
+      assigns = :sys.get_state(view.pid).socket.assigns
+      assert MapSet.equal?(assigns.selected_category_ids, MapSet.new([mare.id, museo.id]))
+    end
+
+    test "request_edit pre-populates the duration when set", %{conn: conn} do
+      idea =
+        %Idea{title: "Sirolo", duration: :mezza_giornata}
+        |> Ecto.Changeset.change()
+        |> Ecto.Changeset.put_assoc(:categories, [
+          CategoriesFixtures.category_by_name!("mare")
+        ])
+        |> Repo.insert!()
+
+      view = mount_authenticated(conn)
+      render_click(view, "request_edit", %{"id" => Integer.to_string(idea.id)})
+
+      assigns = :sys.get_state(view.pid).socket.assigns
+      assert assigns.selected_duration == :mezza_giornata
+    end
+
+    test "request_edit leaves duration nil when the idea has none", %{conn: conn} do
+      idea = insert_idea_with_categories!("NoDuration", ["mare"], ~U[2026-04-27 10:00:00Z])
+
+      view = mount_authenticated(conn)
+      render_click(view, "request_edit", %{"id" => Integer.to_string(idea.id)})
+
+      assigns = :sys.get_state(view.pid).socket.assigns
+      assert assigns.selected_duration == nil
+    end
+
+    test "request_edit pre-populates the budget slider when estimated_cost is set",
+         %{conn: conn} do
+      idea =
+        %Idea{title: "Sirolo", estimated_cost: 50}
+        |> Ecto.Changeset.change()
+        |> Ecto.Changeset.put_assoc(:categories, [
+          CategoriesFixtures.category_by_name!("mare")
+        ])
+        |> Repo.insert!()
+
+      view = mount_authenticated(conn)
+      render_click(view, "request_edit", %{"id" => Integer.to_string(idea.id)})
+
+      assigns = :sys.get_state(view.pid).socket.assigns
+      assert assigns.form_budget_index == Ideajar.Ideas.Budget.value_to_index(50)
+    end
+
+    test "request_edit leaves budget slider at index 0 when estimated_cost is nil",
+         %{conn: conn} do
+      idea = insert_idea_with_categories!("NoBudget", ["mare"], ~U[2026-04-27 10:00:00Z])
+
+      view = mount_authenticated(conn)
+      render_click(view, "request_edit", %{"id" => Integer.to_string(idea.id)})
+
+      assigns = :sys.get_state(view.pid).socket.assigns
+      assert assigns.form_budget_index == 0
+    end
+
+    test "request_edit pre-populates location when set", %{conn: conn} do
+      idea =
+        %Idea{
+          title: "Sirolo",
+          location_name: "Sirolo, Marche",
+          lat: 43.523,
+          lng: 13.617
+        }
+        |> Ecto.Changeset.change()
+        |> Ecto.Changeset.put_assoc(:categories, [
+          CategoriesFixtures.category_by_name!("mare")
+        ])
+        |> Repo.insert!()
+
+      view = mount_authenticated(conn)
+      render_click(view, "request_edit", %{"id" => Integer.to_string(idea.id)})
+
+      assigns = :sys.get_state(view.pid).socket.assigns
+      assert assigns.selected_location_name == "Sirolo, Marche"
+      assert assigns.selected_lat == 43.523
+      assert assigns.selected_lng == 13.617
+    end
+
+    test "request_edit leaves location empty when the idea has none", %{conn: conn} do
+      idea = insert_idea_with_categories!("NoLoc", ["mare"], ~U[2026-04-27 10:00:00Z])
+
+      view = mount_authenticated(conn)
+      render_click(view, "request_edit", %{"id" => Integer.to_string(idea.id)})
+
+      assigns = :sys.get_state(view.pid).socket.assigns
+      assert assigns.selected_location_name == nil
+      assert assigns.selected_lat == nil
+      assert assigns.selected_lng == nil
+    end
+
+    test "request_edit pushes focus event to #idea-title", %{conn: conn} do
+      idea = insert_idea_with_categories!("Sirolo", ["mare"], ~U[2026-04-27 10:00:00Z])
+
+      view = mount_authenticated(conn)
+      render_click(view, "request_edit", %{"id" => Integer.to_string(idea.id)})
+
+      assert_push_event(view, "ideajar:focus", %{to: "#idea-title"})
+    end
+
+    test "request_edit with unknown id is a silent no-op (no flash, no crash, no form open)",
+         %{conn: conn} do
+      view = mount_authenticated_collapsed(conn)
+
+      render_click(view, "request_edit", %{"id" => "99999999"})
+
+      assigns = :sys.get_state(view.pid).socket.assigns
+      assert assigns.form_mode == nil
+      assert assigns.form_visible? == false
+      refute render(view) =~ "Modifica idea"
+    end
+
+    test "request_edit while delete modal is open is a no-op (mutual exclusion)",
+         %{conn: conn} do
+      idea = insert_idea_with_categories!("Sirolo", ["mare"], ~U[2026-04-27 10:00:00Z])
+
+      view = mount_authenticated(conn)
+      # Open delete modal first
+      render_click(view, "request_delete", %{"id" => Integer.to_string(idea.id)})
+      assigns_before = :sys.get_state(view.pid).socket.assigns
+      assert assigns_before.deletion != nil
+
+      # Now try to open edit on the same idea — should NOT switch mode
+      render_click(view, "request_edit", %{"id" => Integer.to_string(idea.id)})
+      assigns_after = :sys.get_state(view.pid).socket.assigns
+      assert assigns_after.form_mode == nil
+      # Delete modal stays open
+      assert assigns_after.deletion != nil
+    end
+
+    test "form in :edit mode does NOT render expected_updated_at hidden field",
+         %{conn: conn} do
+      idea = insert_idea_with_categories!("Sirolo", ["mare"], ~U[2026-04-27 10:00:00Z])
+
+      view = mount_authenticated(conn)
+      render_click(view, "request_edit", %{"id" => Integer.to_string(idea.id)})
+
+      refute render(view) =~ "expected_updated_at"
+    end
+
+    test "form in :edit mode does NOT render any element with class `backdrop`",
+         %{conn: conn} do
+      idea = insert_idea_with_categories!("Sirolo", ["mare"], ~U[2026-04-27 10:00:00Z])
+
+      view = mount_authenticated(conn)
+      render_click(view, "request_edit", %{"id" => Integer.to_string(idea.id)})
+
+      html = render(view)
+      # The edit form must remain inline (no modal / no backdrop overlay).
+      # The delete modal's backdrop is gated by @deletion which is nil
+      # here, so any backdrop string is from the edit form regression.
+      refute html =~ ~r/<[^>]*class="[^"]*\bbackdrop\b[^"]*"/
+    end
+
+    test "form in :edit mode keeps the focusable error field DOM ids",
+         %{conn: conn} do
+      idea = insert_idea_with_categories!("Sirolo", ["mare"], ~U[2026-04-27 10:00:00Z])
+
+      view = mount_authenticated(conn)
+      render_click(view, "request_edit", %{"id" => Integer.to_string(idea.id)})
+      html = render(view)
+
+      assert html =~ ~s(id="idea-title")
+      assert html =~ ~s(id="idea-description")
+      assert html =~ ~s(id="idea-url")
+    end
+  end
 end

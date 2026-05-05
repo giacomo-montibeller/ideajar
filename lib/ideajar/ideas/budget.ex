@@ -87,4 +87,16 @@ defmodule Ideajar.Ideas.Budget do
   def index_to_value(0), do: nil
   def index_to_value(n) when is_integer(n) and n in 1..7, do: Map.fetch!(@index_to_value, n)
   def index_to_value(_), do: nil
+
+  @value_to_index Map.new(@index_to_value, fn {k, v} -> {v, k} end)
+
+  @doc """
+  Inverse of `index_to_value/1`. Returns the slider index (1..7) for a
+  whitelisted budget value, or 0 for `nil` (no-budget). Slice 14 uses this
+  to pre-populate the form slider when the edit form opens on an existing
+  idea.
+  """
+  @spec value_to_index(integer | nil) :: 0..7
+  def value_to_index(nil), do: 0
+  def value_to_index(v) when v in @values, do: Map.fetch!(@value_to_index, v)
 end

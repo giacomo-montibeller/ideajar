@@ -273,7 +273,7 @@ phx-click="request_edit" phx-value-id={idea.id}
   → assign(:form_mode, {:edit, idea.id})
   → assign(:edit_origin_btn_id, "edit-btn-#{idea.id}")
   → assign(:edit_form, Idea.changeset(idea, %{}))
-  → push_event(:focus, %{to: "#edit-title"})
+  → push_event(:focus, %{to: "#idea-title"})
 
 phx-click="cancel_edit"  /  phx-key="Escape"
   → assign(:form_mode, nil)
@@ -301,7 +301,7 @@ phx-submit="submit_edit"
 - **`Idea.changeset/2` riusato**, no funzione `update_changeset/2` separata.
 - **`change_idea_with_categories/2` extracted as private context helper**, riusato da create + update. DRY.
 - **Atomic rollback via `Repo.transaction`** parallel `delete_idea` slice 12.
-- **Focus management**: apri → `#edit-title`, chiudi (cancel/Esc/success/not_found) → `#edit-btn-<id>`. Pinned via test.
+- **Focus management**: apri → `#idea-title`, chiudi (cancel/Esc/success/not_found) → `#edit-btn-<id>`. Pinned via test.
 - **Tap target ≥ 44×44 px** sul nuovo bottone ✏️ (slice 12 parity).
 - **Aria-label dinamico**: `"Modifica <title>"`, parallelo `"Elimina <title>"` di slice 12. Il title viene escapato automaticamente da HEEx in attribute context.
 - **`Ideas.update_idea/2` è filter-unaware**: `function_exported?(Ideas, :update_idea, 3)` deve essere `false`. Il refresh della lista filtrata è responsabilità della LV.
@@ -365,10 +365,10 @@ phx-submit="submit_edit"
 - [ ] **U1** — Card include `<button>` ✏️ con `aria-label="Modifica <title>"`, `min-w-[44px] min-h-[44px]`, posizionato a sinistra del 🗑.
 - [ ] **U2** — Il pulsante è un `<button>` HTML nativo (Enter/Space lo attivano natively); test pin dell'elemento + assenza di `tabindex="-1"`.
 - [ ] **U3** — Form section heading commuta tra `"Aggiungi idea"` e `"Modifica idea"` in base a `form_mode`.
-- [ ] **U4** — Submit button label commuta tra `"Aggiungi"` e `"Salva modifiche"`.
+- [ ] **U4** — Submit button label commuta tra `"Salva"` (slice 2 esistente, `:add` mode) e `"Salva modifiche"` (`:edit` mode).
 - [ ] **U5** — **Nessun hidden input `expected_updated_at` nel form**, in qualsiasi modalità (negative pin).
 - [ ] **U6** — Focus management:
-  - apri → push_event `:focus` to `#edit-title`
+  - apri → push_event `:focus` to `#idea-title`
   - chiudi (cancel / Esc / submit success / not_found / no-op) → push_event `:focus` to `#edit-btn-<id>`
 - [ ] **U7** — Esc key chiude il form (`phx-window-keydown` con `phx-key="Escape"` → `cancel_edit`).
 - [ ] **U8** — `assert_push_event(view, "ideajar:focus", ...)` pinned per: open, cancel close, submit-success close, not_found close, no-op close, validation-error focus.
