@@ -7,8 +7,8 @@
 
 ## Prerequisites
 
-- Local clone is on `main` with the slice 11b code committed.
-- `gigalixir` CLI installed. On macOS: `brew install gigalixir`. On Debian/Ubuntu (PEP 668-managed Python): `pip install --user --break-system-packages gigalixir` or `pipx install gigalixir`. Verify: `gigalixir --help`.
+- The four GitHub Actions secrets are configured (see §GitHub Actions secrets) — required for any deploy through the CD pipeline, automatic or via `workflow_dispatch`.
+- `gigalixir` CLI installed locally — only needed for the manual fallback path (`git push gigalixir main`) and for ad-hoc admin commands (`gigalixir logs`, `gigalixir releases:rollback`). On macOS: `brew install gigalixir`. On Debian/Ubuntu (PEP 668-managed Python): `pip install --user --break-system-packages gigalixir` or `pipx install gigalixir`. Verify: `gigalixir --help`.
 - Docker (optional, for a local image smoke test before pushing).
 - A working credit card on the Gigalixir account — required even for the free tier (no charge unless you exceed the threshold).
 
@@ -108,7 +108,7 @@ open https://ideajar.gigalixirapp.com/
 
 ## GitHub Actions secrets
 
-The CD pipeline (`.github/workflows/deploy.yml`) authenticates to Gigalixir using four repository secrets. **Set them before merging slice 13**, otherwise the first `workflow_dispatch` will fail at the Authenticate step.
+The CD pipeline (`.github/workflows/deploy.yml`) authenticates to Gigalixir using four repository secrets. **Set all four before the first deploy run** (automatic or manual via `workflow_dispatch`); if any secret is missing, the workflow fails at the Authenticate step.
 
 Path: `Settings → Secrets and variables → Actions → New repository secret`.
 

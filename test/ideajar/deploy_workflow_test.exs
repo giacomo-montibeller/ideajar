@@ -36,14 +36,24 @@ defmodule Ideajar.DeployWorkflowTest do
       assert read_deploy_yml!() =~ "workflow_dispatch:"
     end
 
-    test "deploy job gate matches the canonical if expression" do
+    test "deploy job gate matches the canonical if expression on a single line" do
       canonical =
         "(github.event_name == 'workflow_dispatch') || " <>
           "(github.event.workflow_run.conclusion == 'success' && " <>
           "github.event.workflow_run.head_branch == 'main')"
 
-      assert read_deploy_yml!() =~ canonical,
+      content = read_deploy_yml!()
+
+      assert content =~ canonical,
              "deploy.yml must contain the canonical if expression verbatim — see plan W4"
+
+      # Guard against a YAML reflow that breaks the expression across lines:
+      # the canonical form must live on a single physical line so the
+      # exact-substring check above is not silently bypassed by an editor
+      # rewrapping it (which would change the test's meaning, not the
+      # workflow's behavior).
+      assert Enum.any?(String.split(content, "\n"), &String.contains?(&1, canonical)),
+             "the canonical if expression must stay on a single line"
     end
 
     test "deploy job gate does NOT use OR between conclusion and head_branch" do
@@ -192,10 +202,10 @@ defmodule Ideajar.DeployWorkflowTest do
 
   describe "documentation (Step 6)" do
     test "D1 — Routine deploys opens with the no-manual-action framing" do
-      content = read_deploy_md!()
-      assert content =~ "no manual action is needed"
-      assert content =~ "previous release"
-      assert content =~ "still serving"
+      section = md_section!("Routine deploys")
+      assert section =~ "no manual action is needed"
+      assert section =~ "previous release"
+      assert section =~ "still serving"
     end
 
     test "D1 — preamble does not claim there is no CI auto-push" do
@@ -227,10 +237,10 @@ defmodule Ideajar.DeployWorkflowTest do
     end
 
     test "D2 — smoke-test failure interpretation calls out the 150s budget" do
-      content = read_deploy_md!()
-      assert content =~ "previous release"
-      assert content =~ "still serving"
-      assert content =~ "150"
+      section = md_section!("Common failure modes")
+      assert section =~ "previous release"
+      assert section =~ "still serving"
+      assert section =~ "150"
     end
 
     test "D3 — GitHub Actions secrets section lists all four secrets and the UI path" do
@@ -242,9 +252,9 @@ defmodule Ideajar.DeployWorkflowTest do
       assert content =~ "Settings → Secrets and variables → Actions"
     end
 
-    test "D3 — secrets ordering constraint says set them before merging" do
-      assert read_deploy_md!() =~ ~r/(before merging|prima del merge)/i,
-             "the secrets section must spell out the timing constraint"
+    test "D3 — secrets ordering constraint pins the before-first-deploy timing" do
+      assert read_deploy_md!() =~ ~r/before (merging|the first deploy)/i,
+             "the secrets section must spell out the timing constraint without tying it to a one-off slice event"
     end
 
     test "D4 — First-time activation section explains the workflow_dispatch bootstrap" do
@@ -318,6 +328,20 @@ defmodule Ideajar.DeployWorkflowTest do
 
   defp read_deploy_md! do
     File.read!(@deploy_md_path)
+  end
+
+  # Extract the body of a top-level section in docs/deploy.md, from `## <name>`
+  # up to (but not including) the next `## ` heading. Lets section-scoped tests
+  # assert against the right block instead of accidentally satisfying an
+  # assertion via tokens that live in a different section.
+  defp md_section!(heading) do
+    content = read_deploy_md!()
+    pattern = ~r/^## #{Regex.escape(heading)}\b.*?(?=^## |\z)/ms
+
+    case Regex.run(pattern, content) do
+      [section] -> section
+      _ -> flunk("section `## #{heading}` not found in docs/deploy.md")
+    end
   end
 
   defp step_offset!(content, step_name) do
