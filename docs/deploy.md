@@ -1,8 +1,9 @@
 # Production deploy — Gigalixir
 
-> Slice 11b runbook. Manual deploy: there is no CI auto-push. Run these
-> steps the first time, then `git push gigalixir main` for every
-> subsequent release.
+> Slice 11b + 13 runbook. CD is active: every green CI run on `main`
+> deploys automatically via `.github/workflows/deploy.yml`. The manual
+> `git push gigalixir main` remains a fallback — see §Routine deploys
+> → Manual fallback.
 
 ## Prerequisites
 
@@ -105,12 +106,62 @@ open https://ideajar.gigalixirapp.com/
 # → /login form, submit WORKSPACE_PASSWORD, land on the idea list
 ```
 
+## GitHub Actions secrets
+
+The CD pipeline (`.github/workflows/deploy.yml`) authenticates to Gigalixir using four repository secrets. **Set them before merging slice 13**, otherwise the first `workflow_dispatch` will fail at the Authenticate step.
+
+Path: `Settings → Secrets and variables → Actions → New repository secret`.
+
+| Secret | Value | Notes |
+|---|---|---|
+| `GIGALIXIR_EMAIL` | The email used at `gigalixir signup` | |
+| `GIGALIXIR_API_KEY` | API key from `gigalixir api_key` (or the dashboard) | The Gigalixir CLI picks it up automatically via the `GIGALIXIR_*` env-var prefix |
+| `GIGALIXIR_APP_NAME` | The app name claimed in step 2 (e.g. `ideajar`) | Lets `deploy.yml` parameterize without hardcoding |
+| `PHX_HOST` | `<app>.gigalixirapp.com` | Used by the smoke-test step to curl `/health` |
+
+## First-time activation
+
+The merge that introduces `deploy.yml` does **not** trigger a deploy automatically. GitHub Actions requires the target workflow to already exist on the default branch when the upstream `workflow_run` event fires — the merge itself is the placement, so the upstream CI run that produced the merge cannot trigger it. To bootstrap the first deploy:
+
+1. After the merge lands on `main`, open `Actions → Deploy to Gigalixir → Run workflow`.
+2. Select the `main` branch and click `Run workflow`.
+3. The job runs through push + migrate + smoke test. This is the first real deploy.
+4. From the next commit onward, every green CI run on `main` triggers `deploy.yml` automatically.
+
+If the bootstrap run fails, the most likely cause is a missing or wrong secret — see §Common failure modes.
+
+## Migration safety
+
+The CD pipeline applies every pending migration on every deploy via `Ideajar.Release.migrate`. For the **additive** schema changes used in slices 1-12 (new tables, new nullable columns) this is safe even while the rolling update of web containers is in flight: old code does not reference the new columns, new code does.
+
+For **breaking** schema changes (drop column, rename, type narrowing) the same automatic application is unsafe — old containers can hit a column that no longer exists and crash. Before merging a breaking migration:
+
+1. Either pause the CD pipeline (edit the `if:` on the deploy job to `if: false`, or temporarily revert `deploy.yml`) and apply the migration in a coordinated manual deploy with downtime, or
+2. Split the change into two deploys: deploy 1 stops referencing the column (safe rolling change), then deploy 2 drops it.
+
+The same advisory applies to migrations that add a NOT NULL column without a default: backfill in deploy 1, add the constraint in deploy 2.
+
 ## Routine deploys
+
+Under normal conditions no manual action is needed: every green CI run on `main` triggers `.github/workflows/deploy.yml`, which pushes, migrates, and smoke-tests automatically. If `deploy.yml` reports a smoke-test failure in the Actions tab, the previous release is still serving traffic — see §Common failure modes for the recovery path.
+
+### Automatic (default)
+
+1. Merge into `main` via PR.
+2. CI (`.github/workflows/ci.yml`) runs. If green, GitHub fires `workflow_run` against `deploy.yml`.
+3. `deploy.yml` checks out the validated SHA, installs the Gigalixir CLI, authenticates with the repo secrets, runs `git push gigalixir HEAD:refs/heads/main`, applies pending migrations via `Ideajar.Release.migrate`, and polls `https://$PHX_HOST/health` (10×15s, 150s budget) before marking the run green.
+4. On failure, GitHub sends the default failure-notification email to repo admins.
+
+### Manual fallback
+
+When the CD pipeline is intentionally paused (e.g., for a breaking schema migration — see §Migration safety) or when a redeploy is needed without a new commit:
 
 ```bash
 git push gigalixir main
 gigalixir run -- bin/ideajar eval "Ideajar.Release.migrate"  # only if new migrations landed
 ```
+
+For redeploys without code changes, prefer running the `Deploy to Gigalixir` workflow via `Actions → Deploy to Gigalixir → Run workflow` (`workflow_dispatch`); it follows the same path as the automatic trigger and avoids drift between the two channels.
 
 That's it. No release notes, no manifest bumps — Gigalixir handles versioning internally.
 
@@ -190,6 +241,16 @@ Record the audit results in this file (or a follow-up note) so the gate is durab
 | 503 from Gigalixir edge | App didn't start within startup timeout | Check logs for slow init; `gigalixir ps` to verify worker count |
 | `/health` returns 200 but `/` redirects to `/login` even when authenticated | Cookie domain mismatch | Verify `PHX_HOST` matches the actual hostname (subdomain claimed at signup) |
 | `Postgrex.Error: connection refused` post-deploy | DATABASE_URL not set or DB not provisioned | `gigalixir config | grep DATABASE_URL`; if empty, `gigalixir pg:create --free` |
+
+**CD-specific failures**
+
+| Symptom | Cause | Fix |
+|---|---|---|
+| `workflow_run` never fires after a merge | CI failed, or push was on a non-`main` branch — `deploy.yml` requires `conclusion == 'success'` AND `head_branch == 'main'` | Re-run CI; if main really is green, run the `Deploy to Gigalixir` workflow manually (`workflow_dispatch`) |
+| `deploy.yml` job fails on Authenticate step | One of `GIGALIXIR_EMAIL` / `GIGALIXIR_API_KEY` / `GIGALIXIR_APP_NAME` is missing or wrong on the repo | `Settings → Secrets and variables → Actions` → re-add the secret; rerun the workflow |
+| `deploy.yml` job fails on Push step | Gigalixir build error (Dockerfile, dep, asset) | `gigalixir logs` — fix locally, push a new commit; previous release is still serving |
+| `deploy.yml` smoke test loops 10 times then fails | Build OK, migrate OK, but `/health` did not return 200 within the 150s window — likely cold-start exceeded budget OR the new release crash-looped | Check `gigalixir logs`; the **previous release is still serving** traffic. If the new release is hard-broken, `gigalixir releases:rollback` |
+| Migrate step fails with `could not obtain lock` | Operator ran `gigalixir run -- bin/ideajar eval "Ideajar.Release.migrate"` manually while CD was running it | Use `workflow_dispatch` instead of manual `gigalixir run` while the CD pipeline is active |
 
 ## Cost (free tier)
 

@@ -14,6 +14,7 @@ defmodule Ideajar.DeployWorkflowTest do
 
   @deploy_yml_path Path.expand("../../.github/workflows/deploy.yml", __DIR__)
   @ci_yml_path Path.expand("../../.github/workflows/ci.yml", __DIR__)
+  @deploy_md_path Path.expand("../../docs/deploy.md", __DIR__)
 
   describe "trigger + concurrency (Step 1)" do
     test "deploy.yml exists" do
@@ -189,6 +190,77 @@ defmodule Ideajar.DeployWorkflowTest do
     end
   end
 
+  describe "documentation (Step 6)" do
+    test "D1 — Routine deploys opens with the no-manual-action framing" do
+      content = read_deploy_md!()
+      assert content =~ "no manual action is needed"
+      assert content =~ "previous release"
+      assert content =~ "still serving"
+    end
+
+    test "D1 — preamble does not claim there is no CI auto-push" do
+      refute read_deploy_md!() =~ "there is no CI auto-push",
+             "the slice 11b preamble said this; slice 13 made it false — the line cannot drift back"
+    end
+
+    test "D1 — Routine deploys has both Automatic and Manual fallback sub-headings" do
+      content = read_deploy_md!()
+      assert content =~ ~r/^#+\s+Automatic/m
+      assert content =~ ~r/^#+\s+Manual fallback/m
+    end
+
+    test "D1 — manual fallback parity preserved (`git push gigalixir main`)" do
+      assert read_deploy_md!() =~ "git push gigalixir main",
+             "the manual fallback path must remain documented even after CD becomes the default"
+    end
+
+    test "D2 — Common failure modes carries a CD-specific caption" do
+      assert read_deploy_md!() =~ "**CD-specific failures**"
+    end
+
+    test "D2 — CD-specific failure rows cover the four canonical symptoms" do
+      content = read_deploy_md!()
+      assert content =~ "workflow_run"
+      assert content =~ "Authenticate"
+      assert content =~ "smoke test"
+      assert content =~ "lock"
+    end
+
+    test "D2 — smoke-test failure interpretation calls out the 150s budget" do
+      content = read_deploy_md!()
+      assert content =~ "previous release"
+      assert content =~ "still serving"
+      assert content =~ "150"
+    end
+
+    test "D3 — GitHub Actions secrets section lists all four secrets and the UI path" do
+      content = read_deploy_md!()
+      assert content =~ "GIGALIXIR_EMAIL"
+      assert content =~ "GIGALIXIR_API_KEY"
+      assert content =~ "GIGALIXIR_APP_NAME"
+      assert content =~ "PHX_HOST"
+      assert content =~ "Settings → Secrets and variables → Actions"
+    end
+
+    test "D3 — secrets ordering constraint says set them before merging" do
+      assert read_deploy_md!() =~ ~r/(before merging|prima del merge)/i,
+             "the secrets section must spell out the timing constraint"
+    end
+
+    test "D4 — First-time activation section explains the workflow_dispatch bootstrap" do
+      content = read_deploy_md!()
+      assert content =~ ~r/^#+\s+First-time activation/m
+      assert content =~ "workflow_dispatch"
+      assert content =~ ~r/(bootstrap|first deploy)/i
+    end
+
+    test "D5 — migration safety distinguishes additive from breaking schema changes" do
+      content = read_deploy_md!()
+      assert content =~ ~r/additive/i
+      assert content =~ ~r/(breaking|drop colonna|rename)/i
+    end
+  end
+
   describe "out-of-scope guards (Step 5)" do
     test "OS1a — ci.yml does not push to gigalixir" do
       refute read_ci_yml!() =~ "gigalixir",
@@ -242,6 +314,10 @@ defmodule Ideajar.DeployWorkflowTest do
 
   defp read_ci_yml! do
     File.read!(@ci_yml_path)
+  end
+
+  defp read_deploy_md! do
+    File.read!(@deploy_md_path)
   end
 
   defp step_offset!(content, step_name) do
