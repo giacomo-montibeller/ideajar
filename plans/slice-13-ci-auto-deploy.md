@@ -2,7 +2,7 @@
 
 **Created**: 2026-05-04
 **Branch**: main (trunk-based)
-**Status**: approved
+**Status**: implemented
 **Spec**: `docs/specs/ci-auto-deploy.md`
 
 ## Build conventions (carried from slice 1-12)
@@ -58,7 +58,7 @@ Slice 13 trasforma l'attuale flusso "merge su main → push manuale a Gigalixir"
 > Mappatura uno-a-uno con `docs/specs/ci-auto-deploy.md`.
 
 ### Workflow file presence + structure
-- [ ] **W1** — `actionlint .github/workflows/deploy.yml` non riporta errori (gate locale, pinnato in pre-PR checklist).
+- [x] **W1** — `actionlint .github/workflows/deploy.yml` non riporta errori (gate locale, pinnato in pre-PR checklist).
 - [x] **W2** — Trigger `workflow_run` con `workflows: ["CI"]` e `types: [completed]`.
 - [x] **W3** — Trigger `workflow_dispatch` presente.
 - [x] **W4** — Job `deploy` ha l'`if:` con la **forma canonica esatta** `(github.event_name == 'workflow_dispatch') || (github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.head_branch == 'main')` — `workflow_dispatch` come prima alternativa, AND tra `conclusion` e `head_branch`. Test pin via exact substring match. **Negative pin**: il file NON contiene `||` che colleghi `conclusion` con `head_branch`.
@@ -104,9 +104,9 @@ Slice 13 trasforma l'attuale flusso "merge su main → push manuale a Gigalixir"
 - [x] **D5** — `docs/deploy.md` annota una nota sulla sicurezza delle migration: "La pipeline CD applica ogni migration pendente automaticamente. Per il database schema attuale (additive only) questo è sicuro anche se i container web sono ancora in rolling update. Per future migration breaking (drop colonna, rename), pausa la pipeline CD via `workflow_dispatch` disabilitato o pianifica downtime."
 
 ### Operational
-- [ ] **O1** — Nessun cambio a Elixir/Dockerfile/runtime.exs/mix.exs/release.ex.
-- [ ] **O2** — Nessun nuovo Hex dep.
-- [ ] **O3** — Test suite resta verde.
+- [x] **O1** — Nessun cambio a Elixir/Dockerfile/runtime.exs/mix.exs/release.ex.
+- [x] **O2** — Nessun nuovo Hex dep.
+- [x] **O3** — Test suite resta verde (893 test).
 - [ ] **O4** — Validation manuale post-merge in **due fasi**:
   - **O4a (bootstrap)** — Subito dopo il merge, l'operatore lancia `workflow_dispatch` manuale. Il job deve completare verde end-to-end (push + migrate + smoke test). Risolve l'ambiguità di R4: il primo deploy reale è il `workflow_dispatch`, non il primo `workflow_run`.
   - **O4b (auto-trigger)** — Il primo `workflow_run` post-bootstrap (es. il commit successivo su main) deve produrre un deploy verde end-to-end senza intervento manuale. Solo a questo punto la pipeline CD è validata.
