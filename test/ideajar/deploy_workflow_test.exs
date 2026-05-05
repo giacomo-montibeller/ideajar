@@ -107,7 +107,39 @@ defmodule Ideajar.DeployWorkflowTest do
     end
   end
 
+  describe "push + migrate + ordering (Step 3)" do
+    test "push step runs the documented git command" do
+      assert read_deploy_yml!() =~ "git push gigalixir HEAD:refs/heads/main"
+    end
+
+    test "migrate step runs Ideajar.Release.migrate via gigalixir run" do
+      assert read_deploy_yml!() =~
+               ~s(gigalixir run -- bin/ideajar eval "Ideajar.Release.migrate")
+    end
+
+    test "no step suppresses failure with continue-on-error: true" do
+      refute read_deploy_yml!() =~ "continue-on-error: true",
+             "fail-fast must remain the default — push, migrate, and smoke test must each block the next step on failure"
+    end
+
+    test "Push precedes Migrate in the file" do
+      content = read_deploy_yml!()
+      push_offset = step_offset!(content, "Push")
+      migrate_offset = step_offset!(content, "Migrate")
+
+      assert push_offset < migrate_offset,
+             "Push must appear before Migrate so a push failure prevents the migrator from running"
+    end
+  end
+
   defp read_deploy_yml! do
     File.read!(@deploy_yml_path)
+  end
+
+  defp step_offset!(content, step_name) do
+    case :binary.match(content, "name: #{step_name}") do
+      {offset, _} -> offset
+      :nomatch -> flunk("step `name: #{step_name}` not found in deploy.yml")
+    end
   end
 end

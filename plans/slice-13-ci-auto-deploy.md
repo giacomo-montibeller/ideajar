@@ -72,11 +72,11 @@ Slice 13 trasforma l'attuale flusso "merge su main → push manuale a Gigalixir"
 - [x] **A4** — `gigalixir git:remote "$GIGALIXIR_APP_NAME"` aggiunge il remote.
 
 ### Push + migrate
-- [ ] **P1** — Step "Push" esegue `git push gigalixir HEAD:refs/heads/main`.
-- [ ] **P2** — Né "Push" né "Migrate" né "Smoke test" hanno `continue-on-error: true` (negative pin globale).
-- [ ] **P3** — Step ordering pinnato: posizione di "Push" < posizione di "Migrate" < posizione di "Smoke test" nel file. Garantisce che il fail-stop default di GH Actions valga in sequenza corretta.
-- [ ] **M1** — Step "Migrate" esegue `gigalixir run -- bin/ideajar eval "Ideajar.Release.migrate"`.
-- [ ] **M2** — Migrate failure blocca lo smoke test (coperto da P2 + P3).
+- [x] **P1** — Step "Push" esegue `git push gigalixir HEAD:refs/heads/main`.
+- [x] **P2** — Né "Push" né "Migrate" né "Smoke test" hanno `continue-on-error: true` (negative pin globale).
+- [x] **P3** — Step ordering pinnato: posizione di "Push" < posizione di "Migrate" < posizione di "Smoke test" nel file. (Smoke test extension lands in Step 4.)
+- [x] **M1** — Step "Migrate" esegue `gigalixir run -- bin/ideajar eval "Ideajar.Release.migrate"`.
+- [x] **M2** — Migrate failure blocca lo smoke test (coperto da P2 + P3).
 
 ### Smoke test
 - [ ] **S1** — Step "Smoke test" fa `curl -fsS "https://$PHX_HOST/health"`.

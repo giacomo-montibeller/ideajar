@@ -38,3 +38,9 @@ jobs:
 
       - name: Add gigalixir remote
         run: gigalixir git:remote "$GIGALIXIR_APP_NAME"
+
+      - name: Push
+        run: git push gigalixir HEAD:refs/heads/main
+
+      - name: Migrate
+        run: gigalixir run -- bin/ideajar eval "Ideajar.Release.migrate"
