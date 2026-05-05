@@ -65,11 +65,11 @@ Slice 13 trasforma l'attuale flusso "merge su main → push manuale a Gigalixir"
 - [x] **W5** — Concurrency group `deploy-prod` con `cancel-in-progress: false`.
 
 ### Checkout + auth
-- [ ] **A1a** — `actions/checkout@v4` con `fetch-depth: 0`.
-- [ ] **A1b** — Il `ref` differenzia i due trigger: `workflow_run` → `${{ github.event.workflow_run.head_sha }}`; `workflow_dispatch` → `refs/heads/main`. (Implementabile come blocco `if`/`else` con due step di checkout, oppure via `ref: ${{ github.event.workflow_run.head_sha || 'refs/heads/main' }}`.)
-- [ ] **A2** — Step "Install gigalixir CLI" via `pipx install gigalixir`.
-- [ ] **A3** — Step "Authenticate" usa `secrets.GIGALIXIR_EMAIL` + `secrets.GIGALIXIR_API_KEY`. NO `echo` di queste variabili. *Coverage gap noto*: il fallimento di `gigalixir login` su API key mancante è solo verificabile a runtime → coperto da O4, non da unit test.
-- [ ] **A4** — `gigalixir git:remote "$GIGALIXIR_APP_NAME"` aggiunge il remote.
+- [x] **A1a** — `actions/checkout@v4` con `fetch-depth: 0`.
+- [x] **A1b** — Il `ref` differenzia i due trigger: `workflow_run` → `${{ github.event.workflow_run.head_sha }}`; `workflow_dispatch` → `refs/heads/main`. (Implementabile come blocco `if`/`else` con due step di checkout, oppure via `ref: ${{ github.event.workflow_run.head_sha || 'refs/heads/main' }}`.)
+- [x] **A2** — Step "Install gigalixir CLI" via `pipx install gigalixir`.
+- [x] **A3** — Step "Authenticate" usa `secrets.GIGALIXIR_EMAIL` + `secrets.GIGALIXIR_API_KEY`. NO `echo` di queste variabili. *Coverage gap noto*: il fallimento di `gigalixir login` su API key mancante è solo verificabile a runtime → coperto da O4, non da unit test.
+- [x] **A4** — `gigalixir git:remote "$GIGALIXIR_APP_NAME"` aggiunge il remote.
 
 ### Push + migrate
 - [ ] **P1** — Step "Push" esegue `git push gigalixir HEAD:refs/heads/main`.

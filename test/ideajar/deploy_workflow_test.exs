@@ -57,6 +57,56 @@ defmodule Ideajar.DeployWorkflowTest do
     end
   end
 
+  describe "checkout + auth (Step 2)" do
+    test "checkout uses fetch-depth 0" do
+      content = read_deploy_yml!()
+      assert content =~ "actions/checkout@v4"
+      assert content =~ "fetch-depth: 0"
+    end
+
+    test "checkout ref pulls the validated SHA on workflow_run" do
+      assert read_deploy_yml!() =~ "github.event.workflow_run.head_sha",
+             "workflow_run trigger must check out the SHA that CI validated"
+    end
+
+    test "checkout ref falls back to main tip on workflow_dispatch" do
+      assert read_deploy_yml!() =~ "refs/heads/main",
+             "workflow_dispatch must check out refs/heads/main, not the workflow file SHA"
+    end
+
+    test "checkout ref does NOT use github.sha (typo trap or unsafe form)" do
+      content = read_deploy_yml!()
+
+      refute content =~ ~r/ref:\s*\$\{\{\s*github\.sha\s*\|\|/,
+             "github.sha is always truthy on workflow_run, the fallback would never fire"
+
+      refute content =~ "ref: ${{ github.sha }}",
+             "github.sha for workflow_dispatch points to the workflow file SHA, not main tip"
+    end
+
+    test "installs gigalixir CLI via pipx" do
+      assert read_deploy_yml!() =~ "pipx install gigalixir"
+    end
+
+    test "authenticates via GIGALIXIR_EMAIL + GIGALIXIR_API_KEY secrets" do
+      content = read_deploy_yml!()
+      assert content =~ "secrets.GIGALIXIR_EMAIL"
+      assert content =~ "secrets.GIGALIXIR_API_KEY"
+      assert content =~ "gigalixir login"
+    end
+
+    test "no echo or printf of GIGALIXIR_* secrets" do
+      refute read_deploy_yml!() =~ ~r/(echo|printf).*GIGALIXIR_/,
+             "secrets must never reach stdout"
+    end
+
+    test "adds the gigalixir remote with the app-name secret" do
+      content = read_deploy_yml!()
+      assert content =~ "secrets.GIGALIXIR_APP_NAME"
+      assert content =~ ~s(gigalixir git:remote "$GIGALIXIR_APP_NAME")
+    end
+  end
+
   defp read_deploy_yml! do
     File.read!(@deploy_yml_path)
   end
