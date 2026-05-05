@@ -692,8 +692,12 @@ defmodule IdeajarWeb.IdeaLive.Index do
 
     case Repo.get(Idea, id) |> preload_idea_categories() do
       nil ->
-        # Treated in Step 6 as :not_found path. Step 5 just guards.
-        {:noreply, socket}
+        # Slice 14 step 6: the other device deleted the idea between
+        # request_edit and submit_edit. Loud not_found flash + close +
+        # refresh, parallel to the Ideas.update_idea/2 :not_found branch
+        # below (covered when Repo.get returns a row but Ideas.update_idea
+        # races and gets nil during its own transaction).
+        handle_update_result({:error, :not_found}, socket)
 
       %Idea{} = idea ->
         if no_meaningful_changes?(idea, attrs, params) do
@@ -797,6 +801,17 @@ defmodule IdeajarWeb.IdeaLive.Index do
 
   defp handle_update_result({:ok, _idea}, socket) do
     {:noreply, _} = close_edit_form(socket |> put_flash(:info, "Idea modificata"))
+  end
+
+  defp handle_update_result({:error, :not_found}, socket) do
+    {:noreply, _} =
+      close_edit_form(
+        put_flash(
+          socket,
+          :error,
+          "Quest'idea è stata cancellata da un altro dispositivo."
+        )
+      )
   end
 
   defp handle_update_result({:error, %Ecto.Changeset{} = changeset}, socket) do

@@ -72,7 +72,7 @@ Slice 14 chiude l'ultimo gap CRUD del workspace aggiungendo la modifica di un'id
 - [x] **L3** — `submit_edit` builds the changeset, detects no-changes, branches accordingly.
 - [x] **L4** — Su `{:ok, _}` (with real changes): refresh lista + flash `"Idea modificata"` + form chiuso + focus.
 - [x] **L5** — Su no-changes: form chiuso, **NO flash**, no DB write, focus.
-- [ ] **L6** — Su `{:error, :not_found}`: flash `"Quest'idea è stata cancellata da un altro dispositivo."` + form chiuso + lista refreshata + focus.
+- [x] **L6** — Su `{:error, :not_found}`: flash `"Quest'idea è stata cancellata da un altro dispositivo."` + form chiuso + lista refreshata + focus.
 - [x] **L7** — Su `{:error, %Changeset{}}`: re-render form con errori + focus al primo campo con errore (slice 2 reuse via `focus_first_invalid/1` mappato a `#idea-<field>` nel DOM).
 - [x] **L8** — `request_edit` con id sconosciuto: no-op silenzioso (no flash, no crash).
 

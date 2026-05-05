@@ -5,6 +5,7 @@ defmodule IdeajarWeb.IdeaLive.IndexTest do
 
   alias Ideajar.Categories.Category
   alias Ideajar.CategoriesFixtures
+  alias Ideajar.Ideas
   alias Ideajar.Ideas.Duration
   alias Ideajar.Ideas.Idea
   alias Ideajar.Repo
@@ -7014,6 +7015,71 @@ defmodule IdeajarWeb.IdeaLive.IndexTest do
       # title is the first field in pipeline order — focus must land on
       # #idea-title (slice 2 reuse).
       assert_push_event(view, "ideajar:focus", %{to: "#idea-title"})
+    end
+
+    test "race :not_found — submit after the idea was deleted shows the cancellation flash",
+         %{view: view, idea: idea} do
+      # Simulate the other device deleting the idea between request_edit
+      # and submit_edit.
+      {:ok, _} = Ideas.delete_idea(idea.id)
+
+      render_submit(view, "submit_edit", %{
+        "idea" => %{"title" => "Sirolo (Conero)"}
+      })
+
+      assigns = :sys.get_state(view.pid).socket.assigns
+      assert assigns.form_visible? == false
+      assert assigns.form_mode == nil
+
+      assert Phoenix.Flash.get(assigns.flash, :error) ==
+               "Quest'idea è stata cancellata da un altro dispositivo."
+    end
+
+    test "race :not_found refreshes the list (the deleted idea is gone)",
+         %{view: view, idea: idea} do
+      {:ok, _} = Ideas.delete_idea(idea.id)
+
+      render_submit(view, "submit_edit", %{
+        "idea" => %{"title" => "Sirolo (Conero)"}
+      })
+
+      html = render(view)
+      refute html =~ ~r{<h3[^>]*>Sirolo</h3>}
+    end
+
+    test "race :not_found pushes focus to #edit-btn-<id>", %{view: view, idea: idea} do
+      {:ok, _} = Ideas.delete_idea(idea.id)
+
+      render_submit(view, "submit_edit", %{
+        "idea" => %{"title" => "Sirolo (Conero)"}
+      })
+
+      target = "#edit-btn-#{idea.id}"
+      assert_push_event(view, "ideajar:focus", %{to: ^target})
+    end
+
+    test "last-write-wins: editing after the other device already changed the record overwrites it",
+         %{view: view, idea: idea} do
+      mare_id = hd(idea.categories).id
+
+      # Simulate device B saving an edit while device A's form is open.
+      {:ok, _} =
+        Ideas.update_idea(idea.id, %{
+          "title" => "Sirolo (B)",
+          "category_ids" => [Integer.to_string(mare_id)]
+        })
+
+      # Device A submits its own edit. Should succeed with happy-path
+      # flash; NO :stale error class exists in this slice.
+      render_submit(view, "submit_edit", %{
+        "idea" => %{"title" => "Sirolo (A)"}
+      })
+
+      reloaded = Repo.get!(Idea, idea.id)
+      assert reloaded.title == "Sirolo (A)"
+
+      assigns = :sys.get_state(view.pid).socket.assigns
+      assert Phoenix.Flash.get(assigns.flash, :info) == "Idea modificata"
     end
 
     test "validation parity: each error message produced on edit is byte-equal to add",
