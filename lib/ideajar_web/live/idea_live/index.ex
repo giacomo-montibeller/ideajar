@@ -152,6 +152,32 @@ defmodule IdeajarWeb.IdeaLive.Index do
 
   defp parse_int_id(_), do: :error
 
+  # Slice 14 step 4: closes the form (whether opened in :add or :edit
+  # mode) and, if the form was in :edit mode, pushes focus back to the
+  # originating ✏️ button on the card. Nil-safe: when the form was in
+  # :add mode (`edit_origin_btn_id` is nil), no focus event is pushed —
+  # the slice 2 close-form behavior is preserved.
+  def handle_event("cancel_edit", _params, socket) do
+    socket =
+      socket
+      |> assign(:form_visible?, false)
+      |> assign(:form_mode, nil)
+      |> reset_categories()
+      |> reset_duration()
+      |> reset_budget()
+      |> reset_location()
+      |> reset_location_search()
+      |> assign_form()
+
+    socket =
+      case socket.assigns[:edit_origin_btn_id] do
+        nil -> socket
+        btn_id -> push_event(socket, "ideajar:focus", %{to: "##{btn_id}"})
+      end
+
+    {:noreply, assign(socket, :edit_origin_btn_id, nil)}
+  end
+
   # Slice 12 step 3: opens the confirm modal for the idea matching `id`.
   # Reads from `@ideas` only (no DB hit). If the id is not in the current
   # list (race with another tab/device) the event is a silent no-op.

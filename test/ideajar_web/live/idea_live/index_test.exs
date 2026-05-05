@@ -3626,7 +3626,7 @@ defmodule IdeajarWeb.IdeaLive.IndexTest do
       durata_idx = :binary.match(html, ">Durata<") |> elem(0)
       budget_idx = :binary.match(html, ">Budget<") |> elem(0)
       posizione_idx = :binary.match(html, ">Posizione<") |> elem(0)
-      salva_idx = :binary.match(html, ">\n        Salva\n      <") |> elem(0)
+      [{salva_idx, _}] = Regex.run(~r/>\s*Salva\s*</, html, return: :index)
 
       assert categorie_idx < durata_idx
       assert durata_idx < budget_idx
@@ -3976,7 +3976,7 @@ defmodule IdeajarWeb.IdeaLive.IndexTest do
       durata_idx = :binary.match(html, ">Durata<") |> elem(0)
       budget_idx = :binary.match(html, ">Budget<") |> elem(0)
       posizione_idx = :binary.match(html, ">Posizione<") |> elem(0)
-      salva_idx = :binary.match(html, ">\n        Salva\n      <") |> elem(0)
+      [{salva_idx, _}] = Regex.run(~r/>\s*Salva\s*</, html, return: :index)
 
       assert categorie_idx < durata_idx
       assert durata_idx < budget_idx
@@ -6725,6 +6725,116 @@ defmodule IdeajarWeb.IdeaLive.IndexTest do
       assert html =~ ~s(id="idea-title")
       assert html =~ ~s(id="idea-description")
       assert html =~ ~s(id="idea-url")
+    end
+  end
+
+  # ── Slice 14 step 4: cancel_edit (Annulla / Esc) + focus restore ───
+  describe "Slice 14 step 4 — cancel_edit closes the form" do
+    test "cancel_edit resets form_mode to nil and hides the form",
+         %{conn: conn} do
+      idea = insert_idea_with_categories!("Sirolo", ["mare"], ~U[2026-04-27 10:00:00Z])
+
+      view = mount_authenticated(conn)
+      render_click(view, "request_edit", %{"id" => Integer.to_string(idea.id)})
+
+      render_click(view, "cancel_edit")
+
+      assigns = :sys.get_state(view.pid).socket.assigns
+      assert assigns.form_mode == nil
+      assert assigns.form_visible? == false
+    end
+
+    test "cancel_edit pushes focus event back to the originating edit button",
+         %{conn: conn} do
+      idea = insert_idea_with_categories!("Sirolo", ["mare"], ~U[2026-04-27 10:00:00Z])
+
+      view = mount_authenticated(conn)
+      render_click(view, "request_edit", %{"id" => Integer.to_string(idea.id)})
+
+      render_click(view, "cancel_edit")
+
+      target = "#edit-btn-#{idea.id}"
+      assert_push_event(view, "ideajar:focus", %{to: ^target})
+    end
+
+    test "cancel_edit on the :add form (no edit origin) leaves :add behavior intact",
+         %{conn: conn} do
+      view = mount_authenticated(conn)
+      render_click(view, "toggle_form")
+      assigns_open = :sys.get_state(view.pid).socket.assigns
+      assert assigns_open.form_visible? == true
+      assert assigns_open.form_mode == nil
+      assert assigns_open.edit_origin_btn_id == nil
+
+      # cancel_edit on :add form: must be nil-safe — no crash when
+      # edit_origin_btn_id is nil. It still closes the form (parity with
+      # the existing close_form behavior).
+      render_click(view, "cancel_edit")
+
+      assigns = :sys.get_state(view.pid).socket.assigns
+      assert assigns.form_visible? == false
+      assert assigns.form_mode == nil
+      # Pid is still alive (no crash from a nil push target)
+      assert Process.alive?(view.pid)
+    end
+
+    test "the form has an Annulla button visible in :edit mode that triggers cancel_edit",
+         %{conn: conn} do
+      idea = insert_idea_with_categories!("Sirolo", ["mare"], ~U[2026-04-27 10:00:00Z])
+
+      view = mount_authenticated(conn)
+      render_click(view, "request_edit", %{"id" => Integer.to_string(idea.id)})
+      html = render(view)
+
+      assert html =~ ~r/<button[^>]*phx-click="cancel_edit"[^>]*>\s*Annulla\s*</
+    end
+
+    test "Esc key on the form triggers cancel_edit when in :edit mode", %{conn: conn} do
+      idea = insert_idea_with_categories!("Sirolo", ["mare"], ~U[2026-04-27 10:00:00Z])
+
+      view = mount_authenticated(conn)
+      render_click(view, "request_edit", %{"id" => Integer.to_string(idea.id)})
+      html = render(view)
+
+      # Form area carries phx-window-keydown="cancel_edit" with phx-key="Escape"
+      assert html =~ ~r/phx-window-keydown="cancel_edit"[^>]*phx-key="Escape"/ or
+               html =~ ~r/phx-key="Escape"[^>]*phx-window-keydown="cancel_edit"/
+    end
+
+    test "no phx-confirm on Annulla / Esc bindings (no dirty-check prompt)",
+         %{conn: conn} do
+      idea = insert_idea_with_categories!("Sirolo", ["mare"], ~U[2026-04-27 10:00:00Z])
+
+      view = mount_authenticated(conn)
+      render_click(view, "request_edit", %{"id" => Integer.to_string(idea.id)})
+      html = render(view)
+
+      refute html =~ ~r/phx-click="cancel_edit"[^>]*phx-confirm/
+      refute html =~ ~r/phx-window-keydown="cancel_edit"[^>]*phx-confirm/
+    end
+
+    test "phx-window-keydown is NOT bound in :add mode (Esc must not close the add form)",
+         %{conn: conn} do
+      view = mount_authenticated(conn)
+      render_click(view, "toggle_form")
+      html = render(view)
+
+      # In :add mode the binding is nil, which HEEx drops entirely.
+      refute html =~ "phx-window-keydown"
+    end
+
+    test "cancel_edit does NOT touch the database (no reload, idea persists)",
+         %{conn: conn} do
+      idea = insert_idea_with_categories!("Sirolo", ["mare"], ~U[2026-04-27 10:00:00Z])
+
+      view = mount_authenticated(conn)
+      render_click(view, "request_edit", %{"id" => Integer.to_string(idea.id)})
+
+      render_click(view, "cancel_edit")
+
+      reloaded = Repo.get!(Idea, idea.id)
+      assert reloaded.title == "Sirolo"
+      assert reloaded.updated_at == idea.updated_at
     end
   end
 end

@@ -68,7 +68,7 @@ Slice 14 chiude l'ultimo gap CRUD del workspace aggiungendo la modifica di un'id
 
 ### LiveView events
 - [x] **L1** — `request_edit` con `%{"id" => raw}` apre il form pre-popolato in `:edit` mode.
-- [ ] **L2** — `cancel_edit` chiude il form senza salvare.
+- [x] **L2** — `cancel_edit` chiude il form senza salvare.
 - [ ] **L3** — `submit_edit` builds the changeset, detects no-changes, branches accordingly.
 - [ ] **L4** — Su `{:ok, _}` (with real changes): refresh lista + flash `"Idea modificata"` + form chiuso + focus.
 - [ ] **L5** — Su no-changes: form chiuso, **NO flash**, no DB write, focus.
@@ -83,9 +83,9 @@ Slice 14 chiude l'ultimo gap CRUD del workspace aggiungendo la modifica di un'id
 - [x] **U4** — Submit button label commuta tra `"Salva"` (slice 2 esistente, `:add` mode) e `"Salva modifiche"` (`:edit` mode).
 - [x] **U5** — Negative pin: NESSUN hidden input `expected_updated_at` nel form (in qualsiasi modalità).
 - [ ] **U6** — Focus management:
-  - apri → push_event `:focus` to `#idea-title`
-  - chiudi (cancel/Esc/success/no-op/not_found) → push_event `:focus` to `#edit-btn-<id>`
-- [ ] **U7** — Esc key chiude il form (`phx-window-keydown` con `phx-key="Escape"` → `cancel_edit`).
+  - apri → push_event `:focus` to `#idea-title` (Step 3 ✅)
+  - chiudi (cancel/Esc → Step 4 ✅; success/no-op/not_found → Step 5/6)
+- [x] **U7** — Esc key chiude il form (`phx-window-keydown` con `phx-key="Escape"` → `cancel_edit`).
 - [ ] **U8** — `assert_push_event(view, "ideajar:focus", ...)` pinned per **ogni** path di chiusura: open, cancel, submit-success, no-op, not_found, validation-error.
 - [x] **U9** — Aria-label HTML-escape: test pin con title `"Caffè & relax"` rendered in card e nella validazione editor (Phoenix HEEx escaping in attribute context).
 
