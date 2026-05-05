@@ -159,6 +159,7 @@ defmodule Ideajar.Ideas.FilterTest do
       # R1 pin: the public API contract for the new `Ideajar.Ideas.Filter`
       # module is `apply(query, opts)`. Dynamic introspection prevents
       # accidental private-ization or arity drift across future slices.
+      Code.ensure_loaded!(Ideajar.Ideas.Filter)
       assert function_exported?(Ideajar.Ideas.Filter, :apply, 2)
     end
 
