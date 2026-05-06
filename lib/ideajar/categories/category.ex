@@ -15,6 +15,7 @@ defmodule Ideajar.Categories.Category do
   schema "categories" do
     field :name, :string
     field :display_order, :integer
+    field :emoji, :string
 
     timestamps(type: :utc_datetime)
   end

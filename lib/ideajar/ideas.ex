@@ -122,7 +122,13 @@ defmodule Ideajar.Ideas do
     case change_idea_with_categories(%Idea{}, attrs) do
       {:ok, changeset} ->
         with {:ok, idea} <- Repo.insert(changeset) do
-          {:ok, Repo.preload(idea, categories: Categories.preload_query())}
+          # `force: true` is load-bearing: the changeset's `put_assoc`
+          # already populated `idea.categories` in the order returned by
+          # `Categories.list_by_ids/1` (Postgres heap order, no
+          # ORDER BY), so a non-forced preload would no-op and leave the
+          # association unordered. Mirrors the symmetric `force: true`
+          # in `persist_idea_update/1`.
+          {:ok, Repo.preload(idea, [categories: Categories.preload_query()], force: true)}
         end
 
       {:error, :invalid_categories} ->

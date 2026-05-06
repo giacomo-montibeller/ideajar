@@ -3,6 +3,7 @@ defmodule Ideajar.CategoriesTest do
 
   alias Ideajar.Categories
   alias Ideajar.Categories.Category
+  alias Ideajar.CategoriesFixtures
 
   # The seed migration ran in the test environment, so the sandbox already
   # sees the 8 canonical categories. These tests rely on that.
@@ -29,6 +30,15 @@ defmodule Ideajar.CategoriesTest do
              ]
 
       assert Enum.map(cats, & &1.display_order) == [1, 2, 3, 4, 5, 6, 7, 8]
+    end
+
+    test "every canonical category has its canonical emoji populated" do
+      expected = CategoriesFixtures.canonical_emojis()
+
+      for %Category{name: name, emoji: emoji} <- Categories.list_categories() do
+        assert emoji == Map.fetch!(expected, name),
+               "category #{name} has emoji #{inspect(emoji)}; expected #{inspect(expected[name])}"
+      end
     end
 
     # The "empty table" branch is implicit in the canonical-8 case (length>0

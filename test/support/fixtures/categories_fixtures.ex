@@ -23,4 +23,27 @@ defmodule Ideajar.CategoriesFixtures do
   """
   @spec all_canonical_categories() :: [Category.t()]
   def all_canonical_categories, do: Categories.list_categories()
+
+  @canonical_emojis %{
+    "passeggiata" => "🚶",
+    "mare" => "🏖️",
+    "museo" => "🏛️",
+    "ristorante" => "🍽️",
+    "sport" => "⚽",
+    "cultura" => "🎭",
+    "cinema" => "🎬",
+    "viaggio" => "✈️"
+  }
+
+  @doc """
+  Single source of truth for the canonical category emojis in tests.
+
+  Mirrors the values written by the `add_emoji_to_categories` migration —
+  if those drift, the corresponding `Ideajar.CategoriesTest` assertion
+  fails and pins the divergence. Tests must read emoji strings from this
+  function rather than hard-coding them inline, to avoid drift on the
+  variation-selector forms (e.g. `🏖️` is U+1F3D6 + U+FE0F).
+  """
+  @spec canonical_emojis() :: %{String.t() => String.t()}
+  def canonical_emojis, do: @canonical_emojis
 end

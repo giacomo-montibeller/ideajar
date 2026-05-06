@@ -639,7 +639,8 @@ defmodule IdeajarWeb.IdeaLive.IndexTest do
       naughty =
         Repo.insert!(%Category{
           name: "<script>alert(1)</script>",
-          display_order: 999
+          display_order: 999,
+          emoji: "🧪"
         })
 
       idea =
@@ -1325,7 +1326,8 @@ defmodule IdeajarWeb.IdeaLive.IndexTest do
          %{conn: conn} do
       Repo.insert!(%Category{
         name: "<script>alert(1)</script>",
-        display_order: 999
+        display_order: 999,
+        emoji: "🧪"
       })
 
       view = mount_authenticated(conn)
