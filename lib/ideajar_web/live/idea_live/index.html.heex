@@ -70,6 +70,112 @@
         </p>
       </fieldset>
 
+      <fieldset class="fieldset" id="idea-target-fieldset">
+        <legend class="label mb-1">Quando</legend>
+        <p id="idea-target-help" class="text-sm text-base-content/70 mb-2">
+          Quando pensi di farlo?
+        </p>
+        <div role="radiogroup" aria-labelledby="idea-target-help" class="flex gap-3 mb-2">
+          <label class="cursor-pointer flex items-center gap-1">
+            <input
+              type="radio"
+              name="target_granularity_radio"
+              value="day"
+              checked={@target_window.granularity == :day}
+              phx-click="set_target_granularity"
+              phx-value-granularity="day"
+            /> Giorni
+          </label>
+          <label class="cursor-pointer flex items-center gap-1">
+            <input
+              type="radio"
+              name="target_granularity_radio"
+              value="month"
+              checked={@target_window.granularity == :month}
+              phx-click="set_target_granularity"
+              phx-value-granularity="month"
+            /> Mesi
+          </label>
+        </div>
+
+        <form
+          :if={@target_window.granularity == :day}
+          id="idea-target-day-form"
+          phx-change="update_target_window"
+          class="flex gap-2 mb-2"
+        >
+          <input
+            type="date"
+            name="target_start"
+            value={target_iso_date(@target_window.start)}
+            class="input"
+          />
+          <input
+            type="date"
+            name="target_end"
+            value={target_iso_date(@target_window.end)}
+            class="input"
+          />
+        </form>
+
+        <form
+          :if={@target_window.granularity == :month}
+          id="idea-target-month-form"
+          phx-change="update_target_window"
+          class="flex gap-2 mb-2"
+        >
+          <input
+            type="month"
+            name="target_start_month"
+            value={target_iso_month(@target_window.start)}
+            class="input"
+          />
+          <input
+            type="month"
+            name="target_end_month"
+            value={target_iso_month(@target_window.end)}
+            class="input"
+          />
+        </form>
+
+        <label
+          :if={@target_window.granularity == :month}
+          class="cursor-pointer flex items-center gap-1 mb-2"
+        >
+          <input
+            type="checkbox"
+            checked={@target_window.weekend_only}
+            phx-click="toggle_target_weekend_only"
+          /> Solo nei weekend
+        </label>
+
+        <p
+          aria-live="polite"
+          data-testid="target-window-preview"
+          class="text-sm text-base-content/80 mb-1"
+        >
+          {@target_window.preview}
+        </p>
+
+        <button
+          type="button"
+          phx-click="clear_target_window"
+          class="btn btn-ghost btn-xs"
+        >
+          Rimuovi quando
+        </button>
+
+        <p
+          :if={has_target_error?(@form)}
+          id="idea-target-error"
+          class="mt-1.5 flex gap-2 items-center text-sm text-error"
+          role="alert"
+        >
+          <.icon name="hero-exclamation-circle" class="size-5" />
+          {target_error_message(@form)}
+        </p>
+      </fieldset>
+
       <fieldset class="fieldset">
         <legend class="label mb-1">Durata</legend>
         <div class="flex flex-wrap gap-2">

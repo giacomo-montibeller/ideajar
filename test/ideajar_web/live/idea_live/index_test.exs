@@ -938,6 +938,133 @@ defmodule IdeajarWeb.IdeaLive.IndexTest do
     end
   end
 
+  # ── Slice 15 step 6: target-window fieldset "Quando" ──────────────
+  describe "target window — form fieldset (slice 15 step 6)" do
+    test "opening the form renders the Quando fieldset with both radios unselected and no inputs",
+         %{conn: conn} do
+      view = mount_authenticated(conn)
+      html = render_click(view, "toggle_form")
+
+      assert html =~ "Quando"
+      assert html =~ "Quando pensi di farlo?"
+      assert html =~ ~s(value="day")
+      assert html =~ ~s(value="month")
+      # No granularity selected → date/month inputs not rendered yet
+      refute html =~ ~s(name="target_start")
+      refute html =~ ~s(name="target_start_month")
+      refute html =~ "Solo nei weekend"
+    end
+
+    test "clicking 'Giorni' radio reveals two date inputs, no weekend checkbox",
+         %{conn: conn} do
+      view = mount_authenticated(conn) |> open_form()
+      html = render_click(view, "set_target_granularity", %{"granularity" => "day"})
+
+      assert html =~ ~s(type="date")
+      assert html =~ ~s(name="target_start")
+      assert html =~ ~s(name="target_end")
+      refute html =~ "Solo nei weekend"
+    end
+
+    test "clicking 'Mesi' radio reveals two month inputs plus the weekend checkbox",
+         %{conn: conn} do
+      view = mount_authenticated(conn) |> open_form()
+      html = render_click(view, "set_target_granularity", %{"granularity" => "month"})
+
+      assert html =~ ~s(type="month")
+      assert html =~ ~s(name="target_start_month")
+      assert html =~ ~s(name="target_end_month")
+      assert html =~ "Solo nei weekend"
+    end
+
+    test "filling a day range live-updates the preview to '<emoji-free> <name>'",
+         %{conn: conn} do
+      view = mount_authenticated(conn) |> open_form()
+      render_click(view, "set_target_granularity", %{"granularity" => "day"})
+
+      html =
+        render_change(view, "update_target_window", %{
+          "target_start" => "2026-05-05",
+          "target_end" => "2026-05-07"
+        })
+
+      assert html =~ ~s(data-testid="target-window-preview")
+      assert html =~ "5-7 maggio"
+    end
+
+    test "filling a month range with weekend flag previews 'weekend tra ... e ...'",
+         %{conn: conn} do
+      view = mount_authenticated(conn) |> open_form()
+      render_click(view, "set_target_granularity", %{"granularity" => "month"})
+
+      render_change(view, "update_target_window", %{
+        "target_start_month" => "2026-05",
+        "target_end_month" => "2026-06"
+      })
+
+      html = render_click(view, "toggle_target_weekend_only")
+      assert html =~ "weekend tra maggio e giugno"
+    end
+
+    test "'Rimuovi quando' clears state to empty (preview gone, granularity null)",
+         %{conn: conn} do
+      view = mount_authenticated(conn) |> open_form()
+      render_click(view, "set_target_granularity", %{"granularity" => "day"})
+
+      render_change(view, "update_target_window", %{
+        "target_start" => "2026-05-05",
+        "target_end" => "2026-05-07"
+      })
+
+      html = render_click(view, "clear_target_window")
+
+      assigns = :sys.get_state(view.pid).socket.assigns.target_window
+      assert assigns.granularity == nil
+      assert assigns.start == nil
+      assert assigns.end == nil
+      assert assigns.weekend_only == false
+      refute html =~ "5-7 maggio"
+    end
+
+    test "save with a valid day range persists all 4 target fields and renders the badge",
+         %{conn: conn} do
+      view = mount_authenticated(conn) |> open_form()
+      render_click(view, "set_target_granularity", %{"granularity" => "day"})
+
+      render_change(view, "update_target_window", %{
+        "target_start" => "2026-05-06",
+        "target_end" => "2026-05-06"
+      })
+
+      html = submit(view, %{title: "Cinema stasera"})
+
+      idea = Ideas.list_ideas() |> Enum.find(&(&1.title == "Cinema stasera"))
+      assert idea
+      assert idea.target_start == ~D[2026-05-06]
+      assert idea.target_end == ~D[2026-05-06]
+      assert idea.target_granularity == :day
+      assert idea.target_weekend_only == false
+
+      assert html =~ ~s(data-testid="idea-target-window-badge")
+    end
+
+    test "save with end before start surfaces the canonical error and does not create the idea",
+         %{conn: conn} do
+      view = mount_authenticated(conn) |> open_form()
+      render_click(view, "set_target_granularity", %{"granularity" => "day"})
+
+      render_change(view, "update_target_window", %{
+        "target_start" => "2026-05-10",
+        "target_end" => "2026-05-05"
+      })
+
+      html = submit(view, %{title: "Bad range"})
+
+      assert html =~ "La data di fine deve essere uguale o successiva alla data di inizio"
+      refute Ideas.list_ideas() |> Enum.any?(&(&1.title == "Bad range"))
+    end
+  end
+
   # ── Slice 3: out-of-scope guard + auth boundary ───────────────────
   describe "out-of-scope and auth boundary" do
     # Scenario: There is no UI to manage categories

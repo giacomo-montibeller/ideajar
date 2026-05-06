@@ -37,6 +37,7 @@ defmodule IdeajarWeb.IdeaLive.Index do
   alias Ideajar.Ideas.Budget
   alias Ideajar.Ideas.Duration
   alias Ideajar.Ideas.Idea
+  alias Ideajar.Ideas.TargetWindow
   alias Ideajar.Repo
   alias IdeajarWeb.Components.BudgetBadge
   alias IdeajarWeb.Components.DurationChip
@@ -86,6 +87,7 @@ defmodule IdeajarWeb.IdeaLive.Index do
      |> reset_location()
      |> reset_location_search()
      |> reset_user_location()
+     |> reset_target_window()
      |> assign(:max_distance_index, 0)
      |> assign(:text_search_query, "")
      |> assign(:filters_expanded?, false)
@@ -131,6 +133,7 @@ defmodule IdeajarWeb.IdeaLive.Index do
       |> reset_budget()
       |> reset_location()
       |> reset_location_search()
+      |> reset_target_window()
       |> assign_form()
 
     socket =
@@ -235,6 +238,7 @@ defmodule IdeajarWeb.IdeaLive.Index do
      |> reset_budget()
      |> reset_location()
      |> reset_location_search()
+     |> reset_target_window()
      |> assign_form()
      |> push_event("ideajar:focus", %{to: "#idea-title"})}
   end
@@ -254,6 +258,7 @@ defmodule IdeajarWeb.IdeaLive.Index do
      |> reset_budget()
      |> reset_location()
      |> reset_location_search()
+     |> reset_target_window()
      |> assign_form()}
   end
 
@@ -292,6 +297,56 @@ defmodule IdeajarWeb.IdeaLive.Index do
   # Catchall for hostile or malformed phx-value-duration payloads (non-string
   # types or missing key).
   def handle_event("toggle_form_duration", _params, socket), do: {:noreply, socket}
+
+  # Slice 15 step 6 — granularity radio click. Switching granularity is a
+  # state reset (date/month inputs are mutually exclusive; carrying values
+  # across would be ambiguous). On day, also force weekend_only=false.
+  def handle_event("set_target_granularity", %{"granularity" => g}, socket)
+      when g in ["day", "month"] do
+    g_atom = String.to_existing_atom(g)
+    fresh = %{empty_target_window() | granularity: g_atom}
+    {:noreply, assign(socket, :target_window, fresh)}
+  end
+
+  def handle_event("set_target_granularity", _params, socket), do: {:noreply, socket}
+
+  # Slice 15 step 6 — date/month inputs phx-change handler. Single
+  # entry-point with multi-shape extraction (day vs month). Hostile or
+  # malformed payloads are silent no-ops.
+  def handle_event("update_target_window", params, socket) do
+    case parse_target_window_params(params, socket.assigns.target_window.granularity) do
+      {:ok, partial} ->
+        merged = Map.merge(socket.assigns.target_window, partial)
+        {:noreply, assign(socket, :target_window, recompute_target_preview(merged))}
+
+      :error ->
+        {:noreply, socket}
+    end
+  end
+
+  # Slice 15 step 6 — weekend-only checkbox. Meaningful only when
+  # granularity is :month; on :day the toggle is a silent no-op (the UI
+  # hides the checkbox in that branch — this guard is defense-in-depth).
+  def handle_event("toggle_target_weekend_only", _params, socket) do
+    case socket.assigns.target_window.granularity do
+      :month ->
+        w = %{
+          socket.assigns.target_window
+          | weekend_only: not socket.assigns.target_window.weekend_only
+        }
+
+        {:noreply, assign(socket, :target_window, recompute_target_preview(w))}
+
+      _ ->
+        {:noreply, socket}
+    end
+  end
+
+  # Slice 15 step 6 — "Rimuovi quando" button. Always visible (OQ2
+  # decision); no-op when state is already empty.
+  def handle_event("clear_target_window", _params, socket) do
+    {:noreply, reset_target_window(socket)}
+  end
 
   # Slice 6 step 4 — binary single-select budget chip on the form.
   # Membership-gated parse via `Budget.parse/1`; hostile payloads
@@ -703,6 +758,7 @@ defmodule IdeajarWeb.IdeaLive.Index do
     |> maybe_inject_location_name(socket.assigns.selected_location_name)
     |> maybe_inject_lat(socket.assigns.selected_lat)
     |> maybe_inject_lng(socket.assigns.selected_lng)
+    |> maybe_inject_target_window(socket.assigns.target_window)
   end
 
   # In production, neither the slice 2 add form nor the slice 14 edit
@@ -794,6 +850,7 @@ defmodule IdeajarWeb.IdeaLive.Index do
       |> reset_budget()
       |> reset_location()
       |> reset_location_search()
+      |> reset_target_window()
       |> assign_form()
       |> reload_ideas()
 
@@ -975,6 +1032,80 @@ defmodule IdeajarWeb.IdeaLive.Index do
   defp maybe_inject_lng(params, lng) when is_number(lng),
     do: Map.put(params, "lng", lng)
 
+  # Slice 15 step 6 — symmetric to maybe_inject_duration/budget/location:
+  # the `@target_window` assign is the source of truth at save time. We
+  # inject the 4 idea fields only when granularity is set; otherwise the
+  # idea is saved with no target window (all 4 columns nil/false).
+  defp maybe_inject_target_window(params, %{granularity: nil}), do: params
+
+  defp maybe_inject_target_window(params, %{
+         granularity: g,
+         start: %Date{} = s,
+         end: %Date{} = e,
+         weekend_only: w
+       }) do
+    params
+    |> Map.put("target_start", s)
+    |> Map.put("target_end", e)
+    |> Map.put("target_granularity", Atom.to_string(g))
+    |> Map.put("target_weekend_only", w)
+  end
+
+  defp maybe_inject_target_window(params, _other), do: params
+
+  # Slice 15 step 6 — multi-shape parser for the target-window date/month
+  # inputs. The input names differ by granularity (`target_start` /
+  # `target_end` for day, `target_start_month` / `target_end_month` for
+  # month) so we dispatch on the current `@target_window.granularity`.
+  defp parse_target_window_params(%{"target_start" => s, "target_end" => e}, :day)
+       when is_binary(s) and is_binary(e) do
+    with {:ok, start_date} <- parse_iso_date(s),
+         {:ok, end_date} <- parse_iso_date(e) do
+      {:ok, %{start: start_date, end: end_date}}
+    end
+  end
+
+  defp parse_target_window_params(
+         %{"target_start_month" => s, "target_end_month" => e},
+         :month
+       )
+       when is_binary(s) and is_binary(e) do
+    with {:ok, start_date} <- parse_iso_month_to_date_start(s),
+         {:ok, end_date} <- parse_iso_month_to_date_end(e) do
+      {:ok, %{start: start_date, end: end_date}}
+    end
+  end
+
+  defp parse_target_window_params(_, _), do: :error
+
+  defp parse_iso_date(s) when s in [nil, ""], do: {:ok, nil}
+
+  defp parse_iso_date(s) when is_binary(s) do
+    case Date.from_iso8601(s) do
+      {:ok, d} -> {:ok, d}
+      _ -> :error
+    end
+  end
+
+  defp parse_iso_month_to_date_start(s) when s in [nil, ""], do: {:ok, nil}
+
+  defp parse_iso_month_to_date_start(s) when is_binary(s) do
+    # `<input type="month">` sends YYYY-MM. Pad to YYYY-MM-01 for parsing.
+    case Date.from_iso8601(s <> "-01") do
+      {:ok, d} -> {:ok, d}
+      _ -> :error
+    end
+  end
+
+  defp parse_iso_month_to_date_end(s) when s in [nil, ""], do: {:ok, nil}
+
+  defp parse_iso_month_to_date_end(s) when is_binary(s) do
+    case Date.from_iso8601(s <> "-01") do
+      {:ok, d} -> {:ok, Date.end_of_month(d)}
+      _ -> :error
+    end
+  end
+
   # Test seam: tests assign `:create_idea_fun` to inject a deterministic
   # failure without dragging in Mox for a single call site. In production
   # the assign is absent and we fall back to the real context call.
@@ -991,6 +1122,7 @@ defmodule IdeajarWeb.IdeaLive.Index do
      |> reset_budget()
      |> reset_location()
      |> reset_location_search()
+     |> reset_target_window()
      |> assign_form()
      |> reload_ideas()
      |> put_flash(:info, "Idea aggiunta")
@@ -1015,6 +1147,41 @@ defmodule IdeajarWeb.IdeaLive.Index do
   end
 
   defp reset_categories(socket), do: assign(socket, :selected_category_ids, MapSet.new())
+
+  # Slice 15 step 6: `@target_window` is a value-object-shaped map kept on
+  # the socket assigns instead of inside `@form` because the date/month
+  # inputs aren't form-bound (the assign is the source of truth at save
+  # time, parallel to slice-5 `@selected_duration` and slice-7a
+  # `@selected_location_*`). Reset on mount, toggle_form open, close_form,
+  # cancel_edit, save success.
+  defp reset_target_window(socket), do: assign(socket, :target_window, empty_target_window())
+
+  defp empty_target_window do
+    %{granularity: nil, start: nil, end: nil, weekend_only: false, preview: nil}
+  end
+
+  defp recompute_target_preview(%{start: %Date{} = s, end: %Date{} = e, granularity: g} = w)
+       when g in [:day, :month] do
+    case validate_window_for_preview(w) do
+      :ok -> %{w | preview: TargetWindow.format(%{start: s, end: e, granularity: g, weekend_only: w.weekend_only}, Date.utc_today())}
+      :error -> %{w | preview: nil}
+    end
+  end
+
+  defp recompute_target_preview(w), do: %{w | preview: nil}
+
+  # Same gating as TargetWindow.validate_changeset/1 but just for the
+  # preview: don't show a misleading label if end<start or month
+  # boundaries are off.
+  defp validate_window_for_preview(%{start: s, end: e, granularity: :day}) do
+    if Date.compare(e, s) == :lt, do: :error, else: :ok
+  end
+
+  defp validate_window_for_preview(%{start: %Date{day: 1} = _s, end: e, granularity: :month}) do
+    if e == Date.end_of_month(e), do: :ok, else: :error
+  end
+
+  defp validate_window_for_preview(_), do: :error
 
   # Slice 5 (AA5): `@selected_duration :: atom | nil`. Reset on mount, on form
   # open, on close_form, and on save success — symmetrical with `reset_categories/1`.
@@ -1441,6 +1608,49 @@ defmodule IdeajarWeb.IdeaLive.Index do
       {message, _opts} -> message
       _ -> nil
     end
+  end
+
+  @doc """
+  Slice 15 step 6 — surface the target-window error under the Quando
+  fieldset. The validator can attach an error to either `:target` (the
+  generic "Periodo non valido" for partial state / month-boundary
+  violations) or `:target_end` (the specific "La data di fine deve essere
+  uguale o successiva alla data di inizio"). The template renders one
+  region; this helper picks the more specific message first.
+  """
+  def has_target_error?(form) do
+    Keyword.has_key?(form.source.errors, :target_end) or
+      Keyword.has_key?(form.source.errors, :target)
+  end
+
+  def target_error_message(form) do
+    cond do
+      msg = lookup_error(form, :target_end) -> msg
+      msg = lookup_error(form, :target) -> msg
+      true -> nil
+    end
+  end
+
+  defp lookup_error(form, field) do
+    case Keyword.get(form.source.errors, field) do
+      {message, _opts} -> message
+      _ -> nil
+    end
+  end
+
+  @doc """
+  Slice 15 step 6 — format helpers for `<input type="date">` /
+  `<input type="month">`. Both produce ISO strings; nil renders as empty
+  string (input shows blank).
+  """
+  def target_iso_date(nil), do: ""
+  def target_iso_date(%Date{} = d), do: Date.to_iso8601(d)
+
+  def target_iso_month(nil), do: ""
+
+  def target_iso_month(%Date{year: y, month: m}) do
+    # YYYY-MM padded
+    "#{y}-#{String.pad_leading(Integer.to_string(m), 2, "0")}"
   end
 
   @doc """
