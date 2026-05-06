@@ -235,6 +235,23 @@ Stringhe aggiunte in slice 12 (eliminare un'idea):
 | Flash race (role="status")                     | `Idea già eliminata`                                                         |
 | Flash errore DB (role="alert")                 | `Eliminazione non riuscita, riprova`                                         |
 
+Stringhe aggiunte in slice 15 (target window — Quando):
+
+| Elemento                                       | Testo IT                                                                     |
+|------------------------------------------------|------------------------------------------------------------------------------|
+| Legend del fieldset                            | `Quando` (no asterisco — opzionale)                                          |
+| Helper text                                    | `Quando pensi di farlo?`                                                     |
+| Radio granularità — opzione 1                  | `Giorni`                                                                     |
+| Radio granularità — opzione 2                  | `Mesi`                                                                       |
+| Checkbox weekend (visible iff Mesi)            | `Solo nei weekend`                                                           |
+| Bottone reset (sempre visibile)                | `Rimuovi quando`                                                             |
+| Errore data                                    | `La data di fine deve essere uguale o successiva alla data di inizio`        |
+| Errore validation generica                     | `Periodo non valido`                                                         |
+
+Nomi mese italiani lowercase (renderizzati dalla `Ideajar.Ideas.TargetWindow.month_label/1`):
+
+`gennaio`, `febbraio`, `marzo`, `aprile`, `maggio`, `giugno`, `luglio`, `agosto`, `settembre`, `ottobre`, `novembre`, `dicembre`.
+
 Nuova copy aggiunta da slice future va appesa qui per evitare drift.
 
 ## Architettura

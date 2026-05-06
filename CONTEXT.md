@@ -38,6 +38,11 @@ ideas
   location_name      string, optional, max 200, trimmed (slice 7a)
   lat                float, optional, range [-90, 90] (slice 7a)
   lng                float, optional, range [-180, 180] (slice 7a)
+  target_start       date, optional (slice 15 — "Quando")
+  target_end         date, optional, ≥ target_start
+  target_granularity enum atom, optional, [day, month]
+  target_weekend_only boolean, NOT NULL default false
+                     (meaningful only when granularity == :month)
   inserted_at, updated_at
 
 categories            seed da codice, non CRUD

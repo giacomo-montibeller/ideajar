@@ -558,6 +558,50 @@ defmodule Ideajar.DocsTest do
     end
   end
 
+  describe "docs/conventions.md — slice 15 target window UI copy" do
+    setup do
+      {:ok, content: File.read!(Path.join(File.cwd!(), "docs/conventions.md"))}
+    end
+
+    test "lists every canonical UI copy string introduced in slice 15", %{content: content} do
+      slice_15_strings = [
+        "Quando",
+        "Quando pensi di farlo?",
+        "Giorni",
+        "Mesi",
+        "Solo nei weekend",
+        "Rimuovi quando",
+        "La data di fine deve essere uguale o successiva alla data di inizio",
+        "Periodo non valido"
+      ]
+
+      for needle <- slice_15_strings do
+        assert content =~ needle, "missing slice-15 UI copy in conventions.md: #{needle}"
+      end
+    end
+
+    test "lists every canonical Italian month label", %{content: content} do
+      months = ~w(gennaio febbraio marzo aprile maggio giugno luglio agosto settembre ottobre novembre dicembre)
+
+      for month <- months do
+        assert content =~ month, "missing canonical month name in conventions.md: #{month}"
+      end
+    end
+  end
+
+  describe "CONTEXT.md — slice 15 target window schema" do
+    setup do
+      {:ok, content: File.read!(Path.join(File.cwd!(), "CONTEXT.md"))}
+    end
+
+    test "schema block documents target_start, target_end, target_granularity, target_weekend_only",
+         %{content: content} do
+      for field <- ~w(target_start target_end target_granularity target_weekend_only) do
+        assert content =~ field, "missing target-window column in CONTEXT.md: #{field}"
+      end
+    end
+  end
+
   describe "docs/conventions.md — slice 12 UI copy (delete idea)" do
     setup do
       {:ok, content: File.read!(Path.join(File.cwd!(), "docs/conventions.md"))}
