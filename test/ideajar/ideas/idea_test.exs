@@ -71,13 +71,16 @@ defmodule Ideajar.Ideas.IdeaTest do
       mare = by_name("mare")
 
       {:ok, idea} =
-        %Idea{title: "Cinema stasera", target_start: ~D[2026-05-06], target_end: ~D[2026-05-06]}
-        |> Idea.changeset(%{title: "Cinema stasera", categories: [mare]})
-        |> Ecto.Changeset.put_change(:target_start, ~D[2026-05-06])
-        |> Ecto.Changeset.put_change(:target_end, ~D[2026-05-06])
-        |> Ecto.Changeset.put_change(:target_granularity, :day)
-        |> Ecto.Changeset.put_change(:target_weekend_only, false)
-        |> Repo.insert()
+        Repo.insert(
+          Idea.changeset(%Idea{}, %{
+            title: "Cinema stasera",
+            categories: [mare],
+            target_start: ~D[2026-05-06],
+            target_end: ~D[2026-05-06],
+            target_granularity: :day,
+            target_weekend_only: false
+          })
+        )
 
       reloaded = Repo.get!(Idea, idea.id)
       assert reloaded.target_start == ~D[2026-05-06]
@@ -90,13 +93,16 @@ defmodule Ideajar.Ideas.IdeaTest do
       mare = by_name("mare")
 
       {:ok, idea} =
-        %Idea{}
-        |> Idea.changeset(%{title: "Mare a maggio", categories: [mare]})
-        |> Ecto.Changeset.put_change(:target_start, ~D[2026-05-01])
-        |> Ecto.Changeset.put_change(:target_end, ~D[2026-05-31])
-        |> Ecto.Changeset.put_change(:target_granularity, :month)
-        |> Ecto.Changeset.put_change(:target_weekend_only, true)
-        |> Repo.insert()
+        Repo.insert(
+          Idea.changeset(%Idea{}, %{
+            title: "Mare a maggio",
+            categories: [mare],
+            target_start: ~D[2026-05-01],
+            target_end: ~D[2026-05-31],
+            target_granularity: :month,
+            target_weekend_only: true
+          })
+        )
 
       reloaded = Repo.get!(Idea, idea.id)
       assert reloaded.target_granularity == :month

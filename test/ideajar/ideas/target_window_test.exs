@@ -207,4 +207,170 @@ defmodule Ideajar.Ideas.TargetWindowTest do
       end
     end
   end
+
+  describe "validate_changeset/1 — happy path" do
+    test "all-nil target fields → cs valid (no errors added)" do
+      cs = build_cs(%{})
+      assert cs.valid?
+      refute Keyword.has_key?(cs.errors, :target)
+      refute Keyword.has_key?(cs.errors, :target_end)
+    end
+
+    test "valid day-range single → cs valid" do
+      cs =
+        build_cs(%{
+          target_start: ~D[2026-05-06],
+          target_end: ~D[2026-05-06],
+          target_granularity: :day
+        })
+
+      assert cs.valid?
+    end
+
+    test "valid day-range multi → cs valid" do
+      cs =
+        build_cs(%{
+          target_start: ~D[2026-05-05],
+          target_end: ~D[2026-05-07],
+          target_granularity: :day
+        })
+
+      assert cs.valid?
+    end
+
+    test "valid month-range single → cs valid" do
+      cs =
+        build_cs(%{
+          target_start: ~D[2026-05-01],
+          target_end: ~D[2026-05-31],
+          target_granularity: :month
+        })
+
+      assert cs.valid?
+    end
+
+    test "valid month-range multi → cs valid" do
+      cs =
+        build_cs(%{
+          target_start: ~D[2026-05-01],
+          target_end: ~D[2026-06-30],
+          target_granularity: :month
+        })
+
+      assert cs.valid?
+    end
+  end
+
+  describe "validate_changeset/1 — end >= start" do
+    test "end before start → error on :target_end with the canonical message" do
+      cs =
+        build_cs(%{
+          target_start: ~D[2026-05-10],
+          target_end: ~D[2026-05-05],
+          target_granularity: :day
+        })
+
+      refute cs.valid?
+
+      assert {message, _opts} = Keyword.fetch!(cs.errors, :target_end)
+      assert message == "La data di fine deve essere uguale o successiva alla data di inizio"
+    end
+  end
+
+  describe "validate_changeset/1 — month boundaries" do
+    test "month granularity with start.day != 1 → error :target == 'Periodo non valido'" do
+      cs =
+        build_cs(%{
+          target_start: ~D[2026-05-15],
+          target_end: ~D[2026-05-31],
+          target_granularity: :month
+        })
+
+      refute cs.valid?
+      assert error_on(cs, :target) == "Periodo non valido"
+    end
+
+    test "month granularity with end != end-of-month → error :target == 'Periodo non valido'" do
+      cs =
+        build_cs(%{
+          target_start: ~D[2026-05-01],
+          target_end: ~D[2026-05-20],
+          target_granularity: :month
+        })
+
+      refute cs.valid?
+      assert error_on(cs, :target) == "Periodo non valido"
+    end
+
+    test "month granularity end-of-month boundary uses Date.end_of_month/1 (Feb non-leap)" do
+      cs =
+        build_cs(%{
+          target_start: ~D[2027-02-01],
+          target_end: ~D[2027-02-28],
+          target_granularity: :month
+        })
+
+      assert cs.valid?
+    end
+  end
+
+  describe "validate_changeset/1 — weekend coercion on day granularity" do
+    test "weekend_only=true on day granularity is silently coerced to false" do
+      cs =
+        build_cs(%{
+          target_start: ~D[2026-05-06],
+          target_end: ~D[2026-05-06],
+          target_granularity: :day,
+          target_weekend_only: true
+        })
+
+      assert cs.valid?
+      assert Ecto.Changeset.get_field(cs, :target_weekend_only) == false
+    end
+  end
+
+  describe "validate_changeset/1 — partial set rejected" do
+    test "only target_start set → error :target" do
+      cs = build_cs(%{target_start: ~D[2026-05-06]})
+      refute cs.valid?
+      assert error_on(cs, :target) == "Periodo non valido"
+    end
+
+    test "only target_end set → error :target" do
+      cs = build_cs(%{target_end: ~D[2026-05-06]})
+      refute cs.valid?
+      assert error_on(cs, :target) == "Periodo non valido"
+    end
+
+    test "only target_granularity set → error :target" do
+      cs = build_cs(%{target_granularity: :day})
+      refute cs.valid?
+      assert error_on(cs, :target) == "Periodo non valido"
+    end
+
+    test "two of three target fields set → error :target" do
+      cs = build_cs(%{target_start: ~D[2026-05-06], target_granularity: :day})
+      refute cs.valid?
+      assert error_on(cs, :target) == "Periodo non valido"
+    end
+  end
+
+  defp build_cs(attrs) do
+    # Build via Idea.changeset/2 so the integration with the existing
+    # changeset pipeline is exercised. Pre-populates a category to satisfy
+    # the unrelated slice-3 "almeno una categoria" rule.
+    base = Map.merge(%{title: "x"}, attrs)
+
+    Idea.changeset(
+      %Idea{},
+      Map.put(base, :categories, [%Ideajar.Categories.Category{id: 1, name: "_test"}])
+    )
+  end
+
+  defp error_on(cs, field) do
+    case Keyword.fetch(cs.errors, field) do
+      {:ok, {message, _opts}} -> message
+      :error -> nil
+    end
+  end
 end

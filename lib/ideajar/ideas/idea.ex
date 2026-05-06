@@ -33,6 +33,7 @@ defmodule Ideajar.Ideas.Idea do
 
   alias Ideajar.Ideas.Budget
   alias Ideajar.Ideas.Duration
+  alias Ideajar.Ideas.TargetWindow
 
   @type t :: %__MODULE__{}
 
@@ -55,7 +56,11 @@ defmodule Ideajar.Ideas.Idea do
     :estimated_cost,
     :location_name,
     :lat,
-    :lng
+    :lng,
+    :target_start,
+    :target_end,
+    :target_granularity,
+    :target_weekend_only
   ]
 
   schema "ideas" do
@@ -130,6 +135,7 @@ defmodule Ideajar.Ideas.Idea do
     |> put_categories(attrs)
     |> validate_at_least_one_category()
     |> validate_location_consistency()
+    |> TargetWindow.validate_changeset()
   end
 
   # `Ecto.Enum` cast emits the generic `"is invalid"` message when the input

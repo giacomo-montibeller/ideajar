@@ -156,4 +156,74 @@ defmodule Ideajar.Ideas.TargetWindow do
 
   defp with_optional_year(body, year, today_year) when year == today_year, do: body
   defp with_optional_year(body, year, _today_year), do: "#{body} #{year}"
+
+  # ── Validation ─────────────────────────────────────────────────────
+
+  @end_before_start "La data di fine deve essere uguale o successiva alla data di inizio"
+  @target_invalid "Periodo non valido"
+
+  @doc """
+  Cross-field validation for the target-window tuple.
+
+  Rules:
+
+    * All-or-nothing on `(target_start, target_end, target_granularity)`.
+      Partial state surfaces a single `:target` error.
+    * `target_end >= target_start` (specific error on `:target_end`).
+    * `granularity == :month` → `start.day == 1` AND
+      `end == Date.end_of_month(end)` (otherwise `:target` error).
+    * `granularity == :day` → `target_weekend_only` is silently coerced
+      to `false` (the flag is meaningful only for month-ranges).
+
+  Reads via `get_field/2` so it sees both persisted values and pending
+  changes. Writes coercions via `put_change/3`.
+  """
+  @spec validate_changeset(Ecto.Changeset.t()) :: Ecto.Changeset.t()
+  def validate_changeset(%Ecto.Changeset{} = cs) do
+    s = Ecto.Changeset.get_field(cs, :target_start)
+    e = Ecto.Changeset.get_field(cs, :target_end)
+    g = Ecto.Changeset.get_field(cs, :target_granularity)
+
+    case {s, e, g} do
+      {nil, nil, nil} ->
+        cs
+
+      {%Date{} = s, %Date{} = e, g} when g in [:day, :month] ->
+        cs
+        |> validate_end_after_start(s, e)
+        |> validate_month_boundaries(s, e, g)
+        |> coerce_weekend_only(g)
+
+      _ ->
+        Ecto.Changeset.add_error(cs, :target, @target_invalid)
+    end
+  end
+
+  defp validate_end_after_start(cs, s, e) do
+    if Date.compare(e, s) == :lt do
+      Ecto.Changeset.add_error(cs, :target_end, @end_before_start)
+    else
+      cs
+    end
+  end
+
+  defp validate_month_boundaries(cs, _s, _e, :day), do: cs
+
+  defp validate_month_boundaries(cs, %Date{day: 1} = s, e, :month) do
+    if e == Date.end_of_month(e) do
+      cs
+    else
+      _ = s
+      Ecto.Changeset.add_error(cs, :target, @target_invalid)
+    end
+  end
+
+  defp validate_month_boundaries(cs, _s, _e, :month) do
+    Ecto.Changeset.add_error(cs, :target, @target_invalid)
+  end
+
+  defp coerce_weekend_only(cs, :day),
+    do: Ecto.Changeset.put_change(cs, :target_weekend_only, false)
+
+  defp coerce_weekend_only(cs, :month), do: cs
 end
