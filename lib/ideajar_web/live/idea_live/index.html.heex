@@ -54,6 +54,7 @@
             :for={category <- @categories}
             id={category.id}
             name={category.name}
+            emoji={category.emoji}
             selected?={MapSet.member?(@selected_category_ids, category.id)}
             aria_describedby={chip_describedby(@form)}
           />

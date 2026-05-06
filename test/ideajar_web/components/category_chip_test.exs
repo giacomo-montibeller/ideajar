@@ -1,8 +1,13 @@
 defmodule IdeajarWeb.Components.CategoryChipTest do
   @moduledoc """
-  Unit tests for the new `filter_chip/1` tri-state component (slice 4).
-  Slice-3 binary `category_chip/1` remains covered by integration tests in
-  the LiveView suite — we deliberately avoid duplicating that coverage here.
+  Unit tests for the `category_chip/1` (slice 3, binary form chip) and
+  `filter_chip/1` (slice 4, tri-state filter chip) components.
+
+  Direct unit coverage was added when slice 14b introduced the leading
+  emoji prefix on both chip families: the chip-level rendering contract
+  is the right place to pin which substring goes where (icon vs emoji
+  vs name), rather than relying on LiveView integration tests that do
+  not assert exact substring ordering.
   """
   use ExUnit.Case, async: true
 
@@ -10,8 +15,65 @@ defmodule IdeajarWeb.Components.CategoryChipTest do
 
   alias IdeajarWeb.Components.CategoryChip
 
+  defp render_category_chip(assigns) do
+    render_component(&CategoryChip.category_chip/1, assigns)
+  end
+
   defp render_filter_chip(assigns) do
     render_component(&CategoryChip.filter_chip/1, assigns)
+  end
+
+  describe "category_chip/1 — emoji + name rendering" do
+    test "renders the emoji immediately before the name (separated by a single space)" do
+      html =
+        render_category_chip(%{id: 2, name: "mare", emoji: "🏖️", selected?: false})
+
+      assert html =~ "🏖️ mare"
+    end
+
+    test "preserves aria-pressed=false when not selected" do
+      html =
+        render_category_chip(%{id: 2, name: "mare", emoji: "🏖️", selected?: false})
+
+      assert html =~ ~s(aria-pressed="false")
+      assert html =~ ~s(data-selected="false")
+      refute html =~ "hero-check"
+    end
+
+    test "preserves aria-pressed=true and renders hero-check before the emoji when selected" do
+      html =
+        render_category_chip(%{id: 2, name: "mare", emoji: "🏖️", selected?: true})
+
+      assert html =~ ~s(aria-pressed="true")
+      assert html =~ ~s(data-selected="true")
+      assert html =~ "hero-check"
+
+      # Order: icon → emoji → name. The hero-check svg comes first, then
+      # the literal "🏖️ mare". Assert positionally so future template
+      # changes that split icon/emoji/name across containers are caught.
+      [check_pos, emoji_pos, name_pos] =
+        Enum.map(["hero-check", "🏖️", "mare"], &index_of!(html, &1))
+
+      assert check_pos < emoji_pos
+      assert emoji_pos < name_pos
+    end
+
+    test "wires phx-click=toggle_category and phx-value-id from the id attr" do
+      html =
+        render_category_chip(%{id: 7, name: "cinema", emoji: "🎬", selected?: false})
+
+      assert html =~ ~s(id="category-chip-7")
+      assert html =~ ~s(phx-click="toggle_category")
+      assert html =~ ~s(phx-value-id="7")
+      assert html =~ ~s(type="button")
+    end
+  end
+
+  defp index_of!(haystack, needle) do
+    case :binary.match(haystack, needle) do
+      {pos, _} -> pos
+      :nomatch -> flunk("substring #{inspect(needle)} not found in rendered HTML")
+    end
   end
 
   describe "filter_chip/1 — :off" do

@@ -40,6 +40,7 @@ defmodule IdeajarWeb.Components.CategoryChip do
 
   attr :id, :integer, required: true
   attr :name, :string, required: true
+  attr :emoji, :string, required: true
   attr :selected?, :boolean, required: true
   attr :aria_describedby, :string, default: nil
 
@@ -62,7 +63,7 @@ defmodule IdeajarWeb.Components.CategoryChip do
       ]}
     >
       <.icon :if={@selected?} name="hero-check" class="size-4" />
-      {@name}
+      {@emoji} {@name}
     </button>
     """
   end
