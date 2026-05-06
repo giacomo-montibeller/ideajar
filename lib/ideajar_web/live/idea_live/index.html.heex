@@ -493,7 +493,7 @@
             :for={cat <- idea.categories}
             class="category-badge px-2 py-1 rounded-full border border-base-300 text-xs text-base-content/80"
           >
-            {cat.name}
+            {cat.emoji} {cat.name}
           </li>
         </ul>
         <.duration_badge :if={idea.duration} duration={idea.duration} />

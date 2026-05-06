@@ -664,6 +664,27 @@ defmodule IdeajarWeb.IdeaLive.IndexTest do
       assert form_html =~ "&lt;script&gt;alert(1)&lt;/script&gt;"
       refute form_html =~ "<script>alert(1)</script>"
     end
+
+    # Scenario: card badges render the canonical emoji prefix in display_order
+    test "idea card category badges show '<emoji> <name>' in display_order ASC",
+         %{conn: conn} do
+      insert_idea_with_categories!(
+        "Mare a Sirolo",
+        ["mare", "viaggio"],
+        ~U[2026-04-27 10:00:00Z]
+      )
+
+      view = mount_authenticated(conn)
+      html = render(view)
+      card = idea_card_badges_html(html)
+
+      emojis = CategoriesFixtures.canonical_emojis()
+
+      mare_at = :binary.match(card, "#{emojis["mare"]} mare") |> elem(0)
+      viaggio_at = :binary.match(card, "#{emojis["viaggio"]} viaggio") |> elem(0)
+
+      assert mare_at < viaggio_at, "mare badge should precede viaggio badge"
+    end
   end
 
   # ── Slice 3: chip rendering and toggle ────────────────────────────
