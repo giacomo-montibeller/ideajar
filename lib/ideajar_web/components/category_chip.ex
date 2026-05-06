@@ -70,6 +70,7 @@ defmodule IdeajarWeb.Components.CategoryChip do
 
   attr :id, :integer, required: true
   attr :name, :string, required: true
+  attr :emoji, :string, required: true
   attr :state, :atom, required: true, values: [:off, :optional, :required]
   attr :aria_describedby, :string, default: nil
   attr :tabindex, :integer, default: -1
@@ -89,7 +90,7 @@ defmodule IdeajarWeb.Components.CategoryChip do
     >
       <.icon :if={@state == :optional} name="hero-check" class="size-4" />
       <.icon :if={@state == :required} name="hero-lock-closed" class="size-4" />
-      {@name}
+      {@emoji} {@name}
     </button>
     """
   end

@@ -78,7 +78,7 @@ defmodule IdeajarWeb.Components.CategoryChipTest do
 
   describe "filter_chip/1 — :off" do
     test "renders data-filter-state=off, aria-label=name, no icons" do
-      html = render_filter_chip(%{id: 2, name: "mare", state: :off})
+      html = render_filter_chip(%{id: 2, name: "mare", emoji: "🏖️", state: :off})
 
       assert html =~ ~s(id="filter-chip-2")
       assert html =~ ~s(data-filter-state="off")
@@ -89,46 +89,88 @@ defmodule IdeajarWeb.Components.CategoryChipTest do
       refute html =~ "hero-check"
       refute html =~ "hero-lock-closed"
     end
+
+    test "renders the emoji immediately before the name" do
+      html = render_filter_chip(%{id: 2, name: "mare", emoji: "🏖️", state: :off})
+
+      assert html =~ "🏖️ mare"
+    end
   end
 
   describe "filter_chip/1 — :optional" do
     test "renders data-filter-state=optional, aria-label='<name> opzionale', hero-check icon" do
-      html = render_filter_chip(%{id: 2, name: "mare", state: :optional})
+      html = render_filter_chip(%{id: 2, name: "mare", emoji: "🏖️", state: :optional})
 
       assert html =~ ~s(data-filter-state="optional")
       assert html =~ ~s(aria-label="mare opzionale")
       assert html =~ "hero-check"
       refute html =~ "hero-lock-closed"
     end
+
+    test "renders icon followed by '<emoji> <name>'" do
+      html = render_filter_chip(%{id: 2, name: "mare", emoji: "🏖️", state: :optional})
+
+      # Look for the contiguous "🏖️ mare" substring rather than the
+      # standalone "mare" — the latter also appears in aria-label
+      # ("mare opzionale") which is rendered before the visible label.
+      assert index_of!(html, "hero-check") < index_of!(html, "🏖️ mare")
+    end
   end
 
   describe "filter_chip/1 — :required" do
     test "renders data-filter-state=required, aria-label='<name> obbligatoria', hero-lock-closed icon" do
-      html = render_filter_chip(%{id: 2, name: "mare", state: :required})
+      html = render_filter_chip(%{id: 2, name: "mare", emoji: "🏖️", state: :required})
 
       assert html =~ ~s(data-filter-state="required")
       assert html =~ ~s(aria-label="mare obbligatoria")
       assert html =~ "hero-lock-closed"
       refute html =~ "hero-check"
     end
+
+    test "renders icon followed by '<emoji> <name>'" do
+      html = render_filter_chip(%{id: 2, name: "mare", emoji: "🏖️", state: :required})
+
+      assert index_of!(html, "hero-lock-closed") < index_of!(html, "🏖️ mare")
+    end
+  end
+
+  describe "filter_chip/1 — aria-label is emoji-free across all states" do
+    # The screen-reader contract is name + state suffix only — never the
+    # emoji. Reading "🏖️ mare opzionale" out loud creates noise; the
+    # emoji is purely a visual prefix on the visible label.
+    for state <- [:off, :optional, :required] do
+      test "state=#{inspect(state)} aria-label does not contain the emoji" do
+        html =
+          render_filter_chip(%{
+            id: 2,
+            name: "mare",
+            emoji: "🏖️",
+            state: unquote(state)
+          })
+
+        [_full, aria] = Regex.run(~r/aria-label="([^"]*)"/, html)
+        refute aria =~ "🏖️", "aria-label leaked the emoji: #{inspect(aria)}"
+      end
+    end
   end
 
   describe "filter_chip/1 — hit area + a11y" do
     test "carries min-h-11 min-w-11 (≥44 CSS px target size)" do
-      html = render_filter_chip(%{id: 1, name: "passeggiata", state: :off})
+      html =
+        render_filter_chip(%{id: 1, name: "passeggiata", emoji: "🚶", state: :off})
 
       assert html =~ "min-h-11"
       assert html =~ "min-w-11"
     end
 
     test "DOM id is exactly 'filter-chip-<id>' (A8.1 pin)" do
-      html = render_filter_chip(%{id: 7, name: "cinema", state: :off})
+      html = render_filter_chip(%{id: 7, name: "cinema", emoji: "🎬", state: :off})
 
       assert html =~ ~s(id="filter-chip-7")
     end
 
     test "type='button' (no implicit form submit)" do
-      html = render_filter_chip(%{id: 2, name: "mare", state: :off})
+      html = render_filter_chip(%{id: 2, name: "mare", emoji: "🏖️", state: :off})
 
       assert html =~ ~s(type="button")
     end

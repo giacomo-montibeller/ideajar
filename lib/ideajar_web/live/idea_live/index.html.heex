@@ -204,6 +204,7 @@
             :for={{category, idx} <- Enum.with_index(@categories)}
             id={category.id}
             name={category.name}
+            emoji={category.emoji}
             state={Map.get(@filter_state, category.id, :off)}
             aria_describedby="filter-helper"
             tabindex={if idx == 0, do: 0, else: -1}
