@@ -67,6 +67,10 @@ defmodule Ideajar.Ideas.Idea do
     field :location_name, :string
     field :lat, :float
     field :lng, :float
+    field :target_start, :date
+    field :target_end, :date
+    field :target_granularity, Ecto.Enum, values: [:day, :month]
+    field :target_weekend_only, :boolean, default: false
 
     many_to_many :categories, Ideajar.Categories.Category,
       join_through: "idea_categories",

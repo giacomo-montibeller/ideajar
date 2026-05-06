@@ -32,6 +32,9 @@ defmodule Ideajar.MigrationsTest do
   @add_emoji_module Ideajar.Repo.Migrations.AddEmojiToCategories
   @add_emoji_version 20_260_506_133_631
 
+  @add_target_window_module Ideajar.Repo.Migrations.AddTargetWindowToIdeas
+  @add_target_window_version 20_260_506_210_539
+
   @migrations_dir Path.expand("../../priv/repo/migrations", __DIR__)
 
   setup do
@@ -56,7 +59,7 @@ defmodule Ideajar.MigrationsTest do
   end
 
   describe "priv/repo/migrations directory" do
-    test "contains the 3 expected migration files" do
+    test "contains the 4 expected migration files" do
       files =
         @migrations_dir
         |> File.ls!()
@@ -66,7 +69,8 @@ defmodule Ideajar.MigrationsTest do
       assert files == [
                "20260503000001_initial_schema.exs",
                "20260503000002_seed_categories.exs",
-               "20260506133631_add_emoji_to_categories.exs"
+               "20260506133631_add_emoji_to_categories.exs",
+               "20260506210539_add_target_window_to_ideas.exs"
              ]
     end
   end
@@ -79,6 +83,7 @@ defmodule Ideajar.MigrationsTest do
       # subsequent up(initial_schema) would not re-apply it — leaving
       # `categories` without the `emoji` column for every test that
       # follows in the suite.
+      Ecto.Migrator.down(Repo, @add_target_window_version, @add_target_window_module)
       Ecto.Migrator.down(Repo, @add_emoji_version, @add_emoji_module)
       Ecto.Migrator.down(Repo, @seed_categories_version, @seed_categories_module)
       Ecto.Migrator.down(Repo, @initial_schema_version, @initial_schema_module)
@@ -91,6 +96,7 @@ defmodule Ideajar.MigrationsTest do
       Ecto.Migrator.up(Repo, @initial_schema_version, @initial_schema_module)
       Ecto.Migrator.up(Repo, @seed_categories_version, @seed_categories_module)
       Ecto.Migrator.up(Repo, @add_emoji_version, @add_emoji_module)
+      Ecto.Migrator.up(Repo, @add_target_window_version, @add_target_window_module)
 
       assert table_exists?("ideas")
       assert table_exists?("categories")
@@ -186,6 +192,45 @@ defmodule Ideajar.MigrationsTest do
         assert emoji == Map.fetch!(expected, name),
                "migration emoji for #{name} = #{inspect(emoji)} does not match fixture #{inspect(expected[name])}"
       end
+    end
+  end
+
+  describe "AddTargetWindowToIdeas migration round-trip" do
+    test "down removes the 4 columns and up restores them with the right defaults" do
+      Ecto.Migrator.down(Repo, @add_target_window_version, @add_target_window_module)
+      refute "target_start" in column_names("ideas")
+      refute "target_end" in column_names("ideas")
+      refute "target_granularity" in column_names("ideas")
+      refute "target_weekend_only" in column_names("ideas")
+
+      Ecto.Migrator.up(Repo, @add_target_window_version, @add_target_window_module)
+      assert "target_start" in column_names("ideas")
+      assert "target_end" in column_names("ideas")
+      assert "target_granularity" in column_names("ideas")
+      assert "target_weekend_only" in column_names("ideas")
+
+      # Insert a bare idea (no target_window fields set) and verify defaults
+      # match the spec: 3 columns NULL, weekend_only false.
+      now = DateTime.utc_now() |> DateTime.truncate(:second)
+
+      {1, [%{id: id}]} =
+        Repo.insert_all(
+          "ideas",
+          [%{title: "smoke", inserted_at: now, updated_at: now}],
+          returning: [:id]
+        )
+
+      {:ok, %Postgrex.Result{rows: [[ts, te, tg, two]]}} =
+        SQL.query(
+          Repo,
+          "SELECT target_start, target_end, target_granularity, target_weekend_only FROM ideas WHERE id = $1",
+          [id]
+        )
+
+      assert is_nil(ts)
+      assert is_nil(te)
+      assert is_nil(tg)
+      assert two == false
     end
   end
 

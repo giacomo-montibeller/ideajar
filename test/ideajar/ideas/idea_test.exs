@@ -48,9 +48,71 @@ defmodule Ideajar.Ideas.IdeaTest do
                  :location_name,
                  :lat,
                  :lng,
+                 :target_start,
+                 :target_end,
+                 :target_granularity,
+                 :target_weekend_only,
                  :inserted_at,
                  :updated_at
                ]
+    end
+
+    test "target_granularity is an Ecto.Enum with [:day, :month] values" do
+      type = Idea.__schema__(:type, :target_granularity)
+      # Ecto stores parameterized type as a tuple {:parameterized, ...}.
+      # Use Ecto.Enum.values/2 to assert the whitelist.
+      assert Ecto.Enum.values(Idea, :target_granularity) == [:day, :month]
+      refute is_nil(type)
+    end
+  end
+
+  describe "schema — target window round-trip (slice 15 step 1)" do
+    test "round-trips a fully populated day-range target window" do
+      mare = by_name("mare")
+
+      {:ok, idea} =
+        %Idea{title: "Cinema stasera", target_start: ~D[2026-05-06], target_end: ~D[2026-05-06]}
+        |> Idea.changeset(%{title: "Cinema stasera", categories: [mare]})
+        |> Ecto.Changeset.put_change(:target_start, ~D[2026-05-06])
+        |> Ecto.Changeset.put_change(:target_end, ~D[2026-05-06])
+        |> Ecto.Changeset.put_change(:target_granularity, :day)
+        |> Ecto.Changeset.put_change(:target_weekend_only, false)
+        |> Repo.insert()
+
+      reloaded = Repo.get!(Idea, idea.id)
+      assert reloaded.target_start == ~D[2026-05-06]
+      assert reloaded.target_end == ~D[2026-05-06]
+      assert reloaded.target_granularity == :day
+      assert reloaded.target_weekend_only == false
+    end
+
+    test "round-trips a month-range with weekend-only=true" do
+      mare = by_name("mare")
+
+      {:ok, idea} =
+        %Idea{}
+        |> Idea.changeset(%{title: "Mare a maggio", categories: [mare]})
+        |> Ecto.Changeset.put_change(:target_start, ~D[2026-05-01])
+        |> Ecto.Changeset.put_change(:target_end, ~D[2026-05-31])
+        |> Ecto.Changeset.put_change(:target_granularity, :month)
+        |> Ecto.Changeset.put_change(:target_weekend_only, true)
+        |> Repo.insert()
+
+      reloaded = Repo.get!(Idea, idea.id)
+      assert reloaded.target_granularity == :month
+      assert reloaded.target_weekend_only == true
+    end
+
+    test "an idea without target window has all 4 fields nil/false" do
+      mare = by_name("mare")
+
+      {:ok, idea} = Repo.insert(Idea.changeset(%Idea{}, %{title: "x", categories: [mare]}))
+      reloaded = Repo.get!(Idea, idea.id)
+
+      assert is_nil(reloaded.target_start)
+      assert is_nil(reloaded.target_end)
+      assert is_nil(reloaded.target_granularity)
+      assert reloaded.target_weekend_only == false
     end
   end
 
