@@ -205,7 +205,7 @@ Feature: Tag ideas with one or more curated categories
 | Componente | Tipo | Responsabilità |
 |---|---|---|
 | `Ideajar.Categories` | Context (`lib/ideajar/categories.ex`) | API read-only del dominio: `list_categories/0` ordinate per `display_order`; `list_by_ids/1` con cast int safe + dedupe POST cast + all-or-nothing (boundary per Ideas); `preload_query/0` Ecto query ordinata. |
-| `Ideajar.Categories.Category` | Schema (`lib/ideajar/categories/category.ex`) | `name` (string, NOT NULL UNIQUE), `display_order` (int, NOT NULL UNIQUE), timestamps. |
+| `Ideajar.Categories.Category` | Schema (`lib/ideajar/categories/category.ex`) | `name` (string, NOT NULL UNIQUE), `display_order` (int, NOT NULL UNIQUE), `emoji` (string, NOT NULL — added in slice 14b), timestamps. |
 | `Ideajar.Ideas.Idea` (esteso) | Schema esistente | `many_to_many :categories, Category, join_through: "idea_categories"` (default `on_replace: :raise`). Changeset usa `put_assoc(:categories, …)` + helper privato `validate_at_least_one_category/1` (verifica `get_field(cs, :categories)` perché `validate_length` salta silenziosamente quando il put_assoc non è stato chiamato). |
 | `Ideajar.Ideas` (esteso) | Context esistente | `create_idea/1` ora accetta `"category_ids" => [int]`: la risoluzione passa per `Categories.list_by_ids/1`, su `:not_found` costruisce un changeset minimale con `add_error(:categories, Categories.invalid_message())` evitando il doppio errore. `list_ideas/0` preloada `:categories` via `Categories.preload_query/0`. |
 | Migration `wipe_slice2_dev_ideas` | `priv/repo/migrations/<ts>_*.exs` | One-shot `execute("DELETE FROM ideas")` come `up/0`, `down/0` no-op. Separato dalla DDL del join per essere auditable in cronologia git. |
@@ -324,14 +324,32 @@ Nessuna nuova dipendenza Hex.
 | Helper text sotto legend | `Scegli almeno una categoria` |
 | Errore "almeno una" | `Seleziona almeno una categoria` |
 | Errore id invalido | `Categoria non valida` |
-| Categoria 1 | `passeggiata` |
-| Categoria 2 | `mare` |
-| Categoria 3 | `museo` |
-| Categoria 4 | `ristorante` |
-| Categoria 5 | `sport` |
-| Categoria 6 | `cultura` |
-| Categoria 7 | `cinema` |
-| Categoria 8 | `viaggio` |
+| Categoria 1 | `🚶 passeggiata` |
+| Categoria 2 | `🏖️ mare` |
+| Categoria 3 | `🏛️ museo` |
+| Categoria 4 | `🍽️ ristorante` |
+| Categoria 5 | `⚽ sport` |
+| Categoria 6 | `🎭 cultura` |
+| Categoria 7 | `🎬 cinema` |
+| Categoria 8 | `✈️ viaggio` |
+
+> **slice 14b update** — `Ideajar.Categories.Category` carries an additional `emoji` field (TEXT NOT NULL), populated by the `add_emoji_to_categories` migration with the canonical map above. Chips and badges render `<emoji> <name>`; the filter chip's `aria-label` stays emoji-free.
+
+```gherkin
+  # ── Slice 14b: emoji prefix on chips and badges ─────────────────
+  Scenario: Form chip and filter chip render '<emoji> <name>'
+    Given the workspace has the canonical 8 seeded categories with emoji
+    And I am on "/"
+    When I open the add-idea form and the filter row
+    Then each form chip shows the canonical emoji immediately before the name (e.g. "🏖️ mare")
+    And each filter chip shows the same prefix
+    And the filter chip's aria-label remains exactly the name (or "<name> opzionale" / "<name> obbligatoria")
+
+  Scenario: Idea card badges mirror the chip prefix
+    Given the workspace has an idea "Mare a Sirolo" tagged "mare" and "viaggio"
+    When I visit "/"
+    Then the rendered card shows badges in display_order: "🏖️ mare", "✈️ viaggio"
+```
 
 ## Consistency Gate
 

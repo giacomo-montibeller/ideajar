@@ -524,6 +524,40 @@ defmodule Ideajar.DocsTest do
     end
   end
 
+  describe "docs/conventions.md — slice 14b category emojis" do
+    setup do
+      {:ok, content: File.read!(Path.join(File.cwd!(), "docs/conventions.md"))}
+    end
+
+    test "lists each canonical category alongside its emoji prefix", %{content: content} do
+      for {name, emoji} <- Ideajar.CategoriesFixtures.canonical_emojis() do
+        # The chip / badge contract renders "<emoji> <name>". The
+        # conventions doc must mirror that exact substring so it is
+        # quotable for design review.
+        assert content =~ "#{emoji} #{name}",
+               "conventions.md missing canonical emoji prefix for #{name} (#{emoji})"
+      end
+    end
+  end
+
+  describe "docs/specs/categories-on-ideas.md — slice 14b emoji sync" do
+    setup do
+      {:ok, content: File.read!(Path.join(File.cwd!(), "docs/specs/categories-on-ideas.md"))}
+    end
+
+    test "documents that the Category schema carries an `emoji` field", %{content: content} do
+      assert content =~ ~r/\bemoji\b/i,
+             "spec must document the emoji field as part of the Category contract"
+    end
+
+    test "lists each canonical category alongside its emoji prefix", %{content: content} do
+      for {name, emoji} <- Ideajar.CategoriesFixtures.canonical_emojis() do
+        assert content =~ "#{emoji} #{name}",
+               "categories-on-ideas.md missing canonical emoji prefix for #{name} (#{emoji})"
+      end
+    end
+  end
+
   describe "docs/conventions.md — slice 12 UI copy (delete idea)" do
     setup do
       {:ok, content: File.read!(Path.join(File.cwd!(), "docs/conventions.md"))}

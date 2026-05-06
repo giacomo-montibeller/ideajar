@@ -55,14 +55,16 @@ Stringhe aggiunte in slice 3 (categories on ideas):
 | Helper text sotto legend          | `Scegli almeno una categoria`                         |
 | Errore "almeno una"               | `Seleziona almeno una categoria`                      |
 | Errore id invalido                | `Categoria non valida`                                |
-| Categoria 1                       | `passeggiata`                                         |
-| Categoria 2                       | `mare`                                                |
-| Categoria 3                       | `museo`                                               |
-| Categoria 4                       | `ristorante`                                          |
-| Categoria 5                       | `sport`                                               |
-| Categoria 6                       | `cultura`                                             |
-| Categoria 7                       | `cinema`                                              |
-| Categoria 8                       | `viaggio`                                             |
+| Categoria 1                       | `🚶 passeggiata`                                      |
+| Categoria 2                       | `🏖️ mare`                                             |
+| Categoria 3                       | `🏛️ museo`                                            |
+| Categoria 4                       | `🍽️ ristorante`                                       |
+| Categoria 5                       | `⚽ sport`                                            |
+| Categoria 6                       | `🎭 cultura`                                          |
+| Categoria 7                       | `🎬 cinema`                                           |
+| Categoria 8                       | `✈️ viaggio`                                          |
+
+> **slice 14b** — l'emoji è parte del contratto categoria: vive sul campo `emoji` (TEXT NOT NULL) di `Ideajar.Categories.Category`, popolata via migration `add_emoji_to_categories`. UI: i chip (`category_chip/1`, `filter_chip/1`) e i badge (`category-badge` sulle card) renderizzano `<emoji> <name>`. L'`aria-label` del filter chip resta solo nome (es. `mare opzionale`) per non rumorare gli screen reader.
 
 Stringhe aggiunte in slice 4 (filter by category):
 
