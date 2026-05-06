@@ -496,6 +496,7 @@
             {cat.emoji} {cat.name}
           </li>
         </ul>
+        <TargetWindowBadge.badge :if={not is_nil(idea.target_start)} idea={idea} />
         <.duration_badge :if={idea.duration} duration={idea.duration} />
         <BudgetBadge.badge
           :if={not is_nil(idea.estimated_cost)}

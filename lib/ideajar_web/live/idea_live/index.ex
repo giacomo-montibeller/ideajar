@@ -41,6 +41,7 @@ defmodule IdeajarWeb.IdeaLive.Index do
   alias IdeajarWeb.Components.BudgetBadge
   alias IdeajarWeb.Components.DurationChip
   alias IdeajarWeb.Components.LocationBadge
+  alias IdeajarWeb.Components.TargetWindowBadge
 
   # Slice 7b step 8 — slider step indices ↔ km mapping. Indices 0-6
   # are the only valid values; index 0 means "filter inactive" (NULL-

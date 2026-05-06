@@ -685,6 +685,56 @@ defmodule IdeajarWeb.IdeaLive.IndexTest do
 
       assert mare_at < viaggio_at, "mare badge should precede viaggio badge"
     end
+
+    # Slice 15 step 5 — F8, F12: target-window badge appears only when set,
+    # and the four optional badges follow the canonical order
+    # target-window → duration → budget → location.
+    test "idea with no target window shows no target-window badge", %{conn: conn} do
+      insert_idea_with_categories!("Niente quando", ["mare"], ~U[2026-04-27 10:00:00Z])
+
+      view = mount_authenticated(conn)
+      html = render(view)
+      refute html =~ ~s(data-testid="idea-target-window-badge")
+    end
+
+    test "idea card renders the target-window badge before duration/budget/location badges",
+         %{conn: conn} do
+      mare = CategoriesFixtures.category_by_name!("mare")
+
+      {:ok, _idea} =
+        Repo.insert(
+          Idea.changeset(%Idea{}, %{
+            title: "Tutto pieno",
+            categories: [mare],
+            duration: :weekend,
+            estimated_cost: 50,
+            location_name: "Sirolo",
+            target_start: ~D[2026-05-01],
+            target_end: ~D[2026-05-31],
+            target_granularity: :month,
+            target_weekend_only: true
+          })
+        )
+
+      view = mount_authenticated(conn)
+      html = render(view)
+
+      target_at =
+        :binary.match(html, ~s(data-testid="idea-target-window-badge")) |> elem(0)
+
+      duration_at =
+        :binary.match(html, ~s(data-testid="idea-duration-badge")) |> elem(0)
+
+      budget_at =
+        :binary.match(html, ~s(data-testid="idea-budget-badge")) |> elem(0)
+
+      location_at =
+        :binary.match(html, ~s(data-testid="idea-location-badge")) |> elem(0)
+
+      assert target_at < duration_at, "target-window badge should precede duration badge"
+      assert duration_at < budget_at, "duration badge should precede budget badge"
+      assert budget_at < location_at, "budget badge should precede location badge"
+    end
   end
 
   # ── Slice 3: chip rendering and toggle ────────────────────────────
