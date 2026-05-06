@@ -190,8 +190,14 @@ defmodule Ideajar.Ideas.TargetWindowTest do
         target_weekend_only: true
       }
 
-      assert TargetWindow.from_idea(idea).weekend_only == true
-      assert TargetWindow.from_idea(idea).granularity == :month
+      window = TargetWindow.from_idea(idea)
+
+      assert window == %{
+               start: ~D[2026-05-01],
+               end: ~D[2026-05-31],
+               granularity: :month,
+               weekend_only: true
+             }
     end
 
     test "raises on partial state (defensive — should be unreachable past changeset)" do

@@ -25,7 +25,7 @@ defmodule IdeajarWeb.Components.TargetWindowBadge do
     doc:
       "Test seam — when nil, defaults to `Date.utc_today/0`. Production callers omit this attr."
 
-  def badge(assigns) do
+  def target_window_badge(assigns) do
     today = assigns[:today] || Date.utc_today()
 
     case TargetWindow.from_idea(assigns.idea) do

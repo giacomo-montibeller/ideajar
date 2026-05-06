@@ -17,7 +17,7 @@ defmodule IdeajarWeb.Components.TargetWindowBadgeTest do
   @today ~D[2026-05-06]
 
   defp render_badge(assigns) do
-    render_component(&TargetWindowBadge.badge/1, assigns)
+    render_component(&TargetWindowBadge.target_window_badge/1, assigns)
   end
 
   describe "badge/1 — rendering contract" do

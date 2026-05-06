@@ -1199,26 +1199,15 @@ defmodule IdeajarWeb.IdeaLive.Index do
 
   defp recompute_target_preview(%{start: %Date{} = s, end: %Date{} = e, granularity: g} = w)
        when g in [:day, :month] do
-    case validate_window_for_preview(w) do
-      :ok -> %{w | preview: TargetWindow.format(%{start: s, end: e, granularity: g, weekend_only: w.weekend_only}, Date.utc_today())}
+    window = %{start: s, end: e, granularity: g, weekend_only: w.weekend_only}
+
+    case TargetWindow.valid_for_display?(window) do
+      :ok -> %{w | preview: TargetWindow.format(window, Date.utc_today())}
       :error -> %{w | preview: nil}
     end
   end
 
   defp recompute_target_preview(w), do: %{w | preview: nil}
-
-  # Same gating as TargetWindow.validate_changeset/1 but just for the
-  # preview: don't show a misleading label if end<start or month
-  # boundaries are off.
-  defp validate_window_for_preview(%{start: s, end: e, granularity: :day}) do
-    if Date.compare(e, s) == :lt, do: :error, else: :ok
-  end
-
-  defp validate_window_for_preview(%{start: %Date{day: 1} = _s, end: e, granularity: :month}) do
-    if e == Date.end_of_month(e), do: :ok, else: :error
-  end
-
-  defp validate_window_for_preview(_), do: :error
 
   # Slice 5 (AA5): `@selected_duration :: atom | nil`. Reset on mount, on form
   # open, on close_form, and on save success — symmetrical with `reset_categories/1`.

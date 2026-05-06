@@ -226,4 +226,24 @@ defmodule Ideajar.Ideas.TargetWindow do
     do: Ecto.Changeset.put_change(cs, :target_weekend_only, false)
 
   defp coerce_weekend_only(cs, :month), do: cs
+
+  @doc """
+  Lightweight guard for the form-side preview computation. Returns `:ok`
+  when a value object can produce a sensible label, `:error` otherwise.
+
+  Mirrors the structural rules of `validate_changeset/1` (end ≥ start,
+  month boundaries) without producing changeset errors — the LiveView
+  uses it to decide whether the live preview should display a label or
+  stay empty while the user is mid-edit.
+  """
+  @spec valid_for_display?(t) :: :ok | :error
+  def valid_for_display?(%{start: %Date{} = s, end: %Date{} = e, granularity: :day}) do
+    if Date.compare(e, s) == :lt, do: :error, else: :ok
+  end
+
+  def valid_for_display?(%{start: %Date{day: 1}, end: %Date{} = e, granularity: :month}) do
+    if e == Date.end_of_month(e), do: :ok, else: :error
+  end
+
+  def valid_for_display?(_), do: :error
 end

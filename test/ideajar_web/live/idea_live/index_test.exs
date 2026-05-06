@@ -940,7 +940,7 @@ defmodule IdeajarWeb.IdeaLive.IndexTest do
 
   # ── Slice 15 step 6: target-window fieldset "Quando" ──────────────
   describe "target window — form fieldset (slice 15 step 6)" do
-    test "opening the form renders the Quando fieldset with both radios unselected and no inputs",
+    test "opening the form renders the Quando fieldset with both radios unselected and inputs in the DOM",
          %{conn: conn} do
       view = mount_authenticated(conn)
       html = render_click(view, "toggle_form")
@@ -949,32 +949,47 @@ defmodule IdeajarWeb.IdeaLive.IndexTest do
       assert html =~ "Quando pensi di farlo?"
       assert html =~ ~s(value="day")
       assert html =~ ~s(value="month")
-      # No granularity selected → date/month inputs not rendered yet
-      refute html =~ ~s(name="target_start")
-      refute html =~ ~s(name="target_start_month")
-      refute html =~ "Solo nei weekend"
+      # Both granularity sub-forms exist in the DOM (so focus survives a
+      # granularity switch — WCAG 2.4.3); the hidden attribute is the
+      # mechanism but we check the assign as the contract.
+      assigns = :sys.get_state(view.pid).socket.assigns.target_window
+      assert assigns.granularity == nil
+      # The inputs themselves are present in the DOM regardless of
+      # granularity (hidden-attribute toggled in the template).
+      assert html =~ ~s(name="target_start")
+      assert html =~ ~s(name="target_start_month")
     end
 
-    test "clicking 'Giorni' radio reveals two date inputs, no weekend checkbox",
+    test "clicking 'Giorni' radio sets the assign granularity to :day",
          %{conn: conn} do
       view = mount_authenticated(conn) |> open_form()
-      html = render_click(view, "set_target_granularity", %{"granularity" => "day"})
+      render_click(view, "set_target_granularity", %{"granularity" => "day"})
 
-      assert html =~ ~s(type="date")
-      assert html =~ ~s(name="target_start")
-      assert html =~ ~s(name="target_end")
-      refute html =~ "Solo nei weekend"
+      assigns = :sys.get_state(view.pid).socket.assigns.target_window
+      assert assigns.granularity == :day
     end
 
-    test "clicking 'Mesi' radio reveals two month inputs plus the weekend checkbox",
+    test "clicking 'Mesi' radio sets the assign granularity to :month and reveals the weekend checkbox text",
          %{conn: conn} do
       view = mount_authenticated(conn) |> open_form()
       html = render_click(view, "set_target_granularity", %{"granularity" => "month"})
 
-      assert html =~ ~s(type="month")
-      assert html =~ ~s(name="target_start_month")
-      assert html =~ ~s(name="target_end_month")
+      assigns = :sys.get_state(view.pid).socket.assigns.target_window
+      assert assigns.granularity == :month
       assert html =~ "Solo nei weekend"
+    end
+
+    test "date and month inputs carry aria-label so screen readers can disambiguate start vs end",
+         %{conn: conn} do
+      view = mount_authenticated(conn) |> open_form()
+      html = render(view)
+
+      # Aria-labels are present regardless of granularity selection
+      # (the inputs live in the DOM behind hidden subtrees).
+      assert html =~ ~s(aria-label="Data inizio")
+      assert html =~ ~s(aria-label="Data fine")
+      assert html =~ ~s(aria-label="Mese inizio")
+      assert html =~ ~s(aria-label="Mese fine")
     end
 
     test "filling a day range live-updates the preview to '<emoji-free> <name>'",
@@ -1089,6 +1104,87 @@ defmodule IdeajarWeb.IdeaLive.IndexTest do
       assert assigns.end == ~D[2026-05-31]
       assert assigns.weekend_only == true
       assert html =~ "weekend di maggio"
+    end
+
+    test "edit form pre-populates a day-range single target",
+         %{conn: conn} do
+      mare = CategoriesFixtures.category_by_name!("mare")
+
+      {:ok, idea} =
+        Repo.insert(
+          Idea.changeset(%Idea{}, %{
+            title: "Cinema oggi",
+            categories: [mare],
+            target_start: ~D[2026-05-06],
+            target_end: ~D[2026-05-06],
+            target_granularity: :day,
+            target_weekend_only: false
+          })
+        )
+
+      view = mount_authenticated(conn)
+      render_click(view, "request_edit", %{"id" => "#{idea.id}"})
+
+      tw = :sys.get_state(view.pid).socket.assigns.target_window
+      assert tw.granularity == :day
+      assert tw.start == ~D[2026-05-06]
+      assert tw.end == ~D[2026-05-06]
+      assert tw.weekend_only == false
+    end
+
+    test "editing only the title preserves the existing target window",
+         %{conn: conn} do
+      mare = CategoriesFixtures.category_by_name!("mare")
+
+      {:ok, idea} =
+        Repo.insert(
+          Idea.changeset(%Idea{}, %{
+            title: "Original",
+            categories: [mare],
+            target_start: ~D[2026-05-06],
+            target_end: ~D[2026-05-06],
+            target_granularity: :day,
+            target_weekend_only: false
+          })
+        )
+
+      view = mount_authenticated(conn)
+      render_click(view, "request_edit", %{"id" => "#{idea.id}"})
+
+      view |> form("#idea-form", idea: %{title: "Renamed"}) |> render_submit()
+
+      reloaded = Repo.get!(Idea, idea.id)
+      assert reloaded.title == "Renamed"
+      assert reloaded.target_start == ~D[2026-05-06]
+      assert reloaded.target_end == ~D[2026-05-06]
+      assert reloaded.target_granularity == :day
+      assert reloaded.target_weekend_only == false
+    end
+
+    test "an idea with a past target window stays visible and renders the badge unchanged",
+         %{conn: conn} do
+      mare = CategoriesFixtures.category_by_name!("mare")
+
+      {:ok, _idea} =
+        Repo.insert(
+          Idea.changeset(%Idea{}, %{
+            title: "Era aprile",
+            categories: [mare],
+            target_start: ~D[2026-04-01],
+            target_end: ~D[2026-04-01],
+            target_granularity: :day,
+            target_weekend_only: false
+          })
+        )
+
+      view = mount_authenticated(conn)
+      html = render(view)
+
+      assert html =~ "Era aprile"
+      assert html =~ "1 aprile"
+      # No expired-style marker on the badge.
+      refute html =~ "scaduto"
+      refute html =~ "expired"
     end
 
     test "'Rimuovi quando' on edit clears all 4 target fields atomically",
