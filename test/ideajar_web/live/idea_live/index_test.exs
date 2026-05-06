@@ -1063,6 +1063,62 @@ defmodule IdeajarWeb.IdeaLive.IndexTest do
       assert html =~ "La data di fine deve essere uguale o successiva alla data di inizio"
       refute Ideas.list_ideas() |> Enum.any?(&(&1.title == "Bad range"))
     end
+
+    test "edit form pre-populates a month-range with weekend_only=true",
+         %{conn: conn} do
+      mare = CategoriesFixtures.category_by_name!("mare")
+
+      {:ok, idea} =
+        Repo.insert(
+          Idea.changeset(%Idea{}, %{
+            title: "Mare a maggio",
+            categories: [mare],
+            target_start: ~D[2026-05-01],
+            target_end: ~D[2026-05-31],
+            target_granularity: :month,
+            target_weekend_only: true
+          })
+        )
+
+      view = mount_authenticated(conn)
+      html = render_click(view, "request_edit", %{"id" => "#{idea.id}"})
+
+      assigns = :sys.get_state(view.pid).socket.assigns.target_window
+      assert assigns.granularity == :month
+      assert assigns.start == ~D[2026-05-01]
+      assert assigns.end == ~D[2026-05-31]
+      assert assigns.weekend_only == true
+      assert html =~ "weekend di maggio"
+    end
+
+    test "'Rimuovi quando' on edit clears all 4 target fields atomically",
+         %{conn: conn} do
+      mare = CategoriesFixtures.category_by_name!("mare")
+
+      {:ok, idea} =
+        Repo.insert(
+          Idea.changeset(%Idea{}, %{
+            title: "With window",
+            categories: [mare],
+            target_start: ~D[2026-05-06],
+            target_end: ~D[2026-05-06],
+            target_granularity: :day,
+            target_weekend_only: false
+          })
+        )
+
+      view = mount_authenticated(conn)
+      render_click(view, "request_edit", %{"id" => "#{idea.id}"})
+      render_click(view, "clear_target_window")
+
+      view |> form("#idea-form", idea: %{title: "With window"}) |> render_submit()
+
+      reloaded = Repo.get!(Idea, idea.id)
+      assert is_nil(reloaded.target_start)
+      assert is_nil(reloaded.target_end)
+      assert is_nil(reloaded.target_granularity)
+      assert reloaded.target_weekend_only == false
+    end
   end
 
   # ── Slice 3: out-of-scope guard + auth boundary ───────────────────

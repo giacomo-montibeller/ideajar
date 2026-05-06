@@ -796,11 +796,19 @@ defmodule IdeajarWeb.IdeaLive.Index do
         {cost_to_string(idea.estimated_cost), Map.get(attrs, "estimated_cost")},
         {idea.location_name || "", Map.get(attrs, "location_name") || ""},
         {coord_to_string(idea.lat), Map.get(attrs, "lat")},
-        {coord_to_string(idea.lng), Map.get(attrs, "lng")}
+        {coord_to_string(idea.lng), Map.get(attrs, "lng")},
+        {idea.target_start, Map.get(attrs, "target_start")},
+        {idea.target_end, Map.get(attrs, "target_end")},
+        {target_granularity_to_string(idea.target_granularity),
+         Map.get(attrs, "target_granularity")},
+        {idea.target_weekend_only, Map.get(attrs, "target_weekend_only")}
       ],
       fn {a, b} -> a == b end
     )
   end
+
+  defp target_granularity_to_string(nil), do: nil
+  defp target_granularity_to_string(atom) when is_atom(atom), do: Atom.to_string(atom)
 
   defp same_categories?(%Idea{categories: cats}, attrs) do
     persisted = cats |> Enum.map(& &1.id) |> Enum.sort()
@@ -905,11 +913,31 @@ defmodule IdeajarWeb.IdeaLive.Index do
           |> assign(:selected_location_name, idea.location_name)
           |> assign(:selected_lat, idea.lat)
           |> assign(:selected_lng, idea.lng)
+          |> assign(:target_window, target_window_from_idea(idea))
           |> reset_location_search()
           |> assign(:form, to_form(Idea.changeset(idea, %{}), as: "idea"))
           |> push_event("ideajar:focus", %{to: "#idea-title"})
 
         {:noreply, socket}
+    end
+  end
+
+  # Slice 15 step 7 — derive the form-side `@target_window` assign from a
+  # persisted idea. Mirror of `TargetWindow.from_idea/1` shape but with
+  # the additional `:preview` field expected by the form template.
+  defp target_window_from_idea(%Idea{} = idea) do
+    case TargetWindow.from_idea(idea) do
+      nil ->
+        empty_target_window()
+
+      window ->
+        %{
+          granularity: window.granularity,
+          start: window.start,
+          end: window.end,
+          weekend_only: window.weekend_only,
+          preview: TargetWindow.format(window, Date.utc_today())
+        }
     end
   end
 
@@ -1033,10 +1061,19 @@ defmodule IdeajarWeb.IdeaLive.Index do
     do: Map.put(params, "lng", lng)
 
   # Slice 15 step 6 — symmetric to maybe_inject_duration/budget/location:
-  # the `@target_window` assign is the source of truth at save time. We
-  # inject the 4 idea fields only when granularity is set; otherwise the
-  # idea is saved with no target window (all 4 columns nil/false).
-  defp maybe_inject_target_window(params, %{granularity: nil}), do: params
+  # the `@target_window` assign is the source of truth at save time.
+  # When granularity is nil the assign represents "no target" — we still
+  # inject explicit nils so an edit-form path that *cleared* an existing
+  # window actually overwrites the persisted columns to nil (without the
+  # explicit injection the cast would not see the field, and the
+  # changeset would carry the original struct values forward).
+  defp maybe_inject_target_window(params, %{granularity: nil}) do
+    params
+    |> Map.put("target_start", nil)
+    |> Map.put("target_end", nil)
+    |> Map.put("target_granularity", nil)
+    |> Map.put("target_weekend_only", false)
+  end
 
   defp maybe_inject_target_window(params, %{
          granularity: g,
