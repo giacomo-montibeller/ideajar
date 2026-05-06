@@ -50,6 +50,7 @@ defmodule IdeajarWeb.Components.CategoryChip do
       id={"category-chip-#{@id}"}
       type="button"
       aria-pressed={if @selected?, do: "true", else: "false"}
+      aria-label={@name}
       aria-describedby={@aria_describedby}
       data-selected={if @selected?, do: "true", else: "false"}
       phx-click="toggle_category"

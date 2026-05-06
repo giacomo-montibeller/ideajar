@@ -40,7 +40,7 @@ defmodule IdeajarWeb.Components.CategoryChipTest do
       refute html =~ "hero-check"
     end
 
-    test "preserves aria-pressed=true and renders hero-check before the emoji when selected" do
+    test "preserves aria-pressed=true and renders hero-check before the visible label when selected" do
       html =
         render_category_chip(%{id: 2, name: "mare", emoji: "🏖️", selected?: true})
 
@@ -48,14 +48,10 @@ defmodule IdeajarWeb.Components.CategoryChipTest do
       assert html =~ ~s(data-selected="true")
       assert html =~ "hero-check"
 
-      # Order: icon → emoji → name. The hero-check svg comes first, then
-      # the literal "🏖️ mare". Assert positionally so future template
-      # changes that split icon/emoji/name across containers are caught.
-      [check_pos, emoji_pos, name_pos] =
-        Enum.map(["hero-check", "🏖️", "mare"], &index_of!(html, &1))
-
-      assert check_pos < emoji_pos
-      assert emoji_pos < name_pos
+      # Look for the contiguous "🏖️ mare" substring rather than the
+      # standalone "mare" — the latter also appears in aria-label
+      # (rendered before the visible label).
+      assert index_of!(html, "hero-check") < index_of!(html, "🏖️ mare")
     end
 
     test "wires phx-click=toggle_category and phx-value-id from the id attr" do
@@ -66,6 +62,19 @@ defmodule IdeajarWeb.Components.CategoryChipTest do
       assert html =~ ~s(phx-click="toggle_category")
       assert html =~ ~s(phx-value-id="7")
       assert html =~ ~s(type="button")
+    end
+
+    test "aria-label is the name only — emoji is suppressed for screen readers" do
+      # Symmetric to filter_chip/1: the emoji is purely visual prefix, the
+      # spoken label stays clean ("mare", not "🏖️ mare").
+      for selected? <- [false, true] do
+        html =
+          render_category_chip(%{id: 2, name: "mare", emoji: "🏖️", selected?: selected?})
+
+        [_full, aria] = Regex.run(~r/aria-label="([^"]*)"/, html)
+        assert aria == "mare"
+        refute aria =~ "🏖️", "aria-label leaked the emoji: #{inspect(aria)}"
+      end
     end
   end
 

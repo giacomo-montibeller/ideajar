@@ -700,17 +700,15 @@ defmodule IdeajarWeb.IdeaLive.IndexTest do
       assert html =~ ~s(<span aria-hidden="true">*</span>)
       assert html =~ "Scegli almeno una categoria"
 
-      for {_ord, name} <- [
-            {1, "passeggiata"},
-            {2, "mare"},
-            {3, "museo"},
-            {4, "ristorante"},
-            {5, "sport"},
-            {6, "cultura"},
-            {7, "cinema"},
-            {8, "viaggio"}
-          ] do
-        assert html =~ name
+      emojis = CategoriesFixtures.canonical_emojis()
+
+      for name <- Map.keys(emojis) do
+        # Pin the integration contract: each form chip on the home page
+        # renders "<emoji> <name>" — not just the bare name. Reading the
+        # expected emoji from canonical_emojis/0 keeps this aligned with
+        # the migration and prevents VS16 drift.
+        assert html =~ "#{emojis[name]} #{name}",
+               "form chip missing emoji prefix for #{name}"
       end
 
       # Default state: all chips deselected.
@@ -1057,6 +1055,29 @@ defmodule IdeajarWeb.IdeaLive.IndexTest do
       # Each chip has phx-click="cycle_filter"
       cycle_count = Regex.scan(~r/phx-click="cycle_filter"/, html) |> length()
       assert cycle_count == 8
+    end
+
+    # Integration pin for U3 (filter side): the home-page render must
+    # carry the canonical "<emoji> <name>" prefix on every filter chip,
+    # while the filter chip's aria-label remains emoji-free (the spoken
+    # label is name-only — see filter_chip_aria_label/2 in
+    # IdeajarWeb.Components.CategoryChip). The component-level test
+    # covers the rendering contract in isolation; this asserts the
+    # template is wired up correctly end-to-end.
+    test "renders each filter chip as '<emoji> <name>' with emoji-free aria-label",
+         %{conn: conn} do
+      view = mount_authenticated(conn)
+      html = render(view)
+
+      emojis = CategoriesFixtures.canonical_emojis()
+
+      for name <- Map.keys(emojis) do
+        assert html =~ "#{emojis[name]} #{name}",
+               "filter chip missing emoji prefix for #{name}"
+
+        refute html =~ ~s(aria-label="#{emojis[name]} #{name}"),
+               "filter chip aria-label leaked the emoji for #{name}"
+      end
     end
 
     # A8 — DOM id distinct: form chip and filter chip don't collide

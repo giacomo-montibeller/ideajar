@@ -169,6 +169,10 @@ defmodule Ideajar.MigrationsTest do
       assert "emoji" in column_names("categories")
 
       # Verify the canonical map is populated and the column is NOT NULL.
+      # Read the expected emoji from CategoriesFixtures.canonical_emojis/0
+      # (the test single-source-of-truth). If the migration's @emoji_by_name
+      # diverges from the fixture, this assertion pins the drift on the
+      # exact name where it happens.
       {:ok, %Postgrex.Result{rows: rows}} =
         SQL.query(
           Repo,
@@ -176,18 +180,12 @@ defmodule Ideajar.MigrationsTest do
           []
         )
 
-      pairs = Enum.map(rows, fn [n, e] -> {n, e} end)
+      expected = Ideajar.CategoriesFixtures.canonical_emojis()
 
-      assert pairs == [
-               {"passeggiata", "🚶"},
-               {"mare", "🏖️"},
-               {"museo", "🏛️"},
-               {"ristorante", "🍽️"},
-               {"sport", "⚽"},
-               {"cultura", "🎭"},
-               {"cinema", "🎬"},
-               {"viaggio", "✈️"}
-             ]
+      for [name, emoji] <- rows do
+        assert emoji == Map.fetch!(expected, name),
+               "migration emoji for #{name} = #{inspect(emoji)} does not match fixture #{inspect(expected[name])}"
+      end
     end
   end
 
@@ -273,8 +271,12 @@ defmodule Ideajar.MigrationsTest do
         Code.compile_file(path)
       rescue
         # Already compiled (test run #2+) — module clash is fine, the
-        # already-loaded definition is current.
-        CompileError -> :ok
+        # already-loaded definition is current. Elixir raises
+        # ArgumentError for the redefinition path; CompileError signals
+        # an actual syntax/semantic failure in the migration file and
+        # must propagate so a broken edit surfaces immediately rather
+        # than silently using a stale in-memory module.
+        ArgumentError -> :ok
         Code.LoadError -> :ok
       end
     end)

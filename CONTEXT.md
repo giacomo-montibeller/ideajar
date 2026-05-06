@@ -44,6 +44,7 @@ categories            seed da codice, non CRUD
   id
   name               string, required, UNIQUE
   display_order      integer, required, UNIQUE (1..N)
+  emoji              string, required (canonical map populated by migration)
   inserted_at, updated_at
 
 idea_categories       many-to-many (composite PK)
@@ -57,20 +58,20 @@ Nota: `created_by` **non** presente — irrilevante per due utenti che condivido
 
 ## Categorie (fisse, gestite via release)
 
-Seed shipped in slice 3 (8 voci, ordinate per `display_order`):
+Seed shipped in slice 3 (8 voci, ordinate per `display_order`); ogni voce ha un'emoji canonica (campo `emoji`, NOT NULL) popolata dalla migration `add_emoji_to_categories`. UI (chip + badge) renderizza `<emoji> <name>`.
 
-| order | name        |
-|-------|-------------|
-| 1     | passeggiata |
-| 2     | mare        |
-| 3     | museo       |
-| 4     | ristorante  |
-| 5     | sport       |
-| 6     | cultura     |
-| 7     | cinema      |
-| 8     | viaggio     |
+| order | name        | emoji |
+|-------|-------------|-------|
+| 1     | passeggiata | 🚶    |
+| 2     | mare        | 🏖️    |
+| 3     | museo       | 🏛️    |
+| 4     | ristorante  | 🍽️    |
+| 5     | sport       | ⚽    |
+| 6     | cultura     | 🎭    |
+| 7     | cinema      | 🎬    |
+| 8     | viaggio     | ✈️    |
 
-Modificabili tramite seed/migration in fase di rilascio.
+Modificabili tramite seed/migration in fase di rilascio. Mappa di test single-source-of-truth: `Ideajar.CategoriesFixtures.canonical_emojis/0`.
 
 ## Filtri (tutti opzionali e componibili)
 
