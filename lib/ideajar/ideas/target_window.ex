@@ -246,4 +246,20 @@ defmodule Ideajar.Ideas.TargetWindow do
   end
 
   def valid_for_display?(_), do: :error
+
+  @doc """
+  Derives the granularity from a `(start, end)` date pair.
+
+  Returns `:month` when `start` is the first of a month AND `end` is the
+  last day of its month (inclusive month-range semantics). Returns
+  `:day` otherwise. Used by the form code to auto-detect month-range
+  intent from raw `<input type="date">` values, so the user does not
+  have to choose a granularity radio.
+  """
+  @spec derive_granularity(Date.t(), Date.t()) :: granularity
+  def derive_granularity(%Date{day: 1} = _s, %Date{} = e) do
+    if e == Date.end_of_month(e), do: :month, else: :day
+  end
+
+  def derive_granularity(%Date{}, %Date{}), do: :day
 end

@@ -75,35 +75,11 @@
         <p id="idea-target-help" class="text-sm text-base-content/70 mb-2">
           Quando pensi di farlo?
         </p>
-        <div class="flex gap-3 mb-2">
-          <label class="cursor-pointer flex items-center gap-1">
-            <input
-              type="radio"
-              name="target_granularity_radio"
-              value="day"
-              checked={@target_window.granularity == :day}
-              phx-click="set_target_granularity"
-              phx-value-granularity="day"
-            /> Giorni
-          </label>
-          <label class="cursor-pointer flex items-center gap-1">
-            <input
-              type="radio"
-              name="target_granularity_radio"
-              value="month"
-              checked={@target_window.granularity == :month}
-              phx-click="set_target_granularity"
-              phx-value-granularity="month"
-            /> Mesi
-          </label>
-        </div>
 
         <form
-          id="idea-target-day-form"
+          id="idea-target-form"
           phx-change="update_target_window"
           class="flex gap-2 mb-2"
-          hidden={@target_window.granularity != :day}
-          aria-hidden={@target_window.granularity != :day}
         >
           <label class="flex flex-col text-xs">
             Inizio
@@ -129,47 +105,12 @@
           </label>
         </form>
 
-        <form
-          id="idea-target-month-form"
-          phx-change="update_target_window"
-          class="flex gap-2 mb-2"
-          hidden={@target_window.granularity != :month}
-          aria-hidden={@target_window.granularity != :month}
-        >
-          <label class="flex flex-col text-xs">
-            Inizio
-            <input
-              type="month"
-              name="target_start_month"
-              aria-label="Mese inizio"
-              aria-describedby={if has_target_error?(@form), do: "idea-target-error"}
-              value={target_iso_month(@target_window.start)}
-              class="input"
-            />
-          </label>
-          <label class="flex flex-col text-xs">
-            Fine
-            <input
-              type="month"
-              name="target_end_month"
-              aria-label="Mese fine"
-              aria-describedby={if has_target_error?(@form), do: "idea-target-error"}
-              value={target_iso_month(@target_window.end)}
-              class="input"
-            />
-          </label>
-        </form>
-
-        <label
-          class="cursor-pointer flex items-center gap-1 mb-2"
-          hidden={@target_window.granularity != :month}
-          aria-hidden={@target_window.granularity != :month}
-        >
+        <label class="cursor-pointer flex items-center gap-1 mb-2">
           <input
             type="checkbox"
             checked={@target_window.weekend_only}
             phx-click="toggle_target_weekend_only"
-          /> Solo nei weekend
+          /> Solo nei weekend (per i mesi pieni)
         </label>
 
         <p

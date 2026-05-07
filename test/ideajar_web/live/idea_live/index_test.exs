@@ -939,63 +939,39 @@ defmodule IdeajarWeb.IdeaLive.IndexTest do
   end
 
   # ── Slice 15 step 6: target-window fieldset "Quando" ──────────────
+  # Refined post-build: the form has a single pair of <input type="date">
+  # plus an always-visible weekend checkbox. Granularity is auto-derived
+  # at preview/save time from (start, end). No more Giorni/Mesi radio.
   describe "target window — form fieldset (slice 15 step 6)" do
-    test "opening the form renders the Quando fieldset with both radios unselected and inputs in the DOM",
+    test "opening the form renders the Quando fieldset with empty state and date inputs in the DOM",
          %{conn: conn} do
       view = mount_authenticated(conn)
       html = render_click(view, "toggle_form")
 
       assert html =~ "Quando"
       assert html =~ "Quando pensi di farlo?"
-      assert html =~ ~s(value="day")
-      assert html =~ ~s(value="month")
-      # Both granularity sub-forms exist in the DOM (so focus survives a
-      # granularity switch — WCAG 2.4.3); the hidden attribute is the
-      # mechanism but we check the assign as the contract.
-      assigns = :sys.get_state(view.pid).socket.assigns.target_window
-      assert assigns.granularity == nil
-      # The inputs themselves are present in the DOM regardless of
-      # granularity (hidden-attribute toggled in the template).
       assert html =~ ~s(name="target_start")
-      assert html =~ ~s(name="target_start_month")
-    end
-
-    test "clicking 'Giorni' radio sets the assign granularity to :day",
-         %{conn: conn} do
-      view = mount_authenticated(conn) |> open_form()
-      render_click(view, "set_target_granularity", %{"granularity" => "day"})
-
-      assigns = :sys.get_state(view.pid).socket.assigns.target_window
-      assert assigns.granularity == :day
-    end
-
-    test "clicking 'Mesi' radio sets the assign granularity to :month and reveals the weekend checkbox text",
-         %{conn: conn} do
-      view = mount_authenticated(conn) |> open_form()
-      html = render_click(view, "set_target_granularity", %{"granularity" => "month"})
-
-      assigns = :sys.get_state(view.pid).socket.assigns.target_window
-      assert assigns.granularity == :month
+      assert html =~ ~s(name="target_end")
       assert html =~ "Solo nei weekend"
+
+      tw = :sys.get_state(view.pid).socket.assigns.target_window
+      assert tw.start == nil
+      assert tw.end == nil
+      assert tw.weekend_only == false
     end
 
-    test "date and month inputs carry aria-label so screen readers can disambiguate start vs end",
+    test "date inputs carry aria-label so screen readers can disambiguate start vs end",
          %{conn: conn} do
       view = mount_authenticated(conn) |> open_form()
       html = render(view)
 
-      # Aria-labels are present regardless of granularity selection
-      # (the inputs live in the DOM behind hidden subtrees).
       assert html =~ ~s(aria-label="Data inizio")
       assert html =~ ~s(aria-label="Data fine")
-      assert html =~ ~s(aria-label="Mese inizio")
-      assert html =~ ~s(aria-label="Mese fine")
     end
 
-    test "filling a day range live-updates the preview to '<emoji-free> <name>'",
+    test "filling a day range live-updates the preview",
          %{conn: conn} do
       view = mount_authenticated(conn) |> open_form()
-      render_click(view, "set_target_granularity", %{"granularity" => "day"})
 
       html =
         render_change(view, "update_target_window", %{
@@ -1007,24 +983,35 @@ defmodule IdeajarWeb.IdeaLive.IndexTest do
       assert html =~ "5-7 maggio"
     end
 
-    test "filling a month range with weekend flag previews 'weekend tra ... e ...'",
+    test "filling a full-month range with the weekend flag previews 'weekend di maggio'",
          %{conn: conn} do
       view = mount_authenticated(conn) |> open_form()
-      render_click(view, "set_target_granularity", %{"granularity" => "month"})
 
       render_change(view, "update_target_window", %{
-        "target_start_month" => "2026-05",
-        "target_end_month" => "2026-06"
+        "target_start" => "2026-05-01",
+        "target_end" => "2026-05-31"
+      })
+
+      html = render_click(view, "toggle_target_weekend_only")
+      assert html =~ "weekend di maggio"
+    end
+
+    test "filling a multi-month full range with weekend previews 'weekend tra ... e ...'",
+         %{conn: conn} do
+      view = mount_authenticated(conn) |> open_form()
+
+      render_change(view, "update_target_window", %{
+        "target_start" => "2026-05-01",
+        "target_end" => "2026-06-30"
       })
 
       html = render_click(view, "toggle_target_weekend_only")
       assert html =~ "weekend tra maggio e giugno"
     end
 
-    test "'Rimuovi quando' clears state to empty (preview gone, granularity null)",
+    test "'Rimuovi quando' clears state to empty (preview gone, dates nil)",
          %{conn: conn} do
       view = mount_authenticated(conn) |> open_form()
-      render_click(view, "set_target_granularity", %{"granularity" => "day"})
 
       render_change(view, "update_target_window", %{
         "target_start" => "2026-05-05",
@@ -1033,18 +1020,16 @@ defmodule IdeajarWeb.IdeaLive.IndexTest do
 
       html = render_click(view, "clear_target_window")
 
-      assigns = :sys.get_state(view.pid).socket.assigns.target_window
-      assert assigns.granularity == nil
-      assert assigns.start == nil
-      assert assigns.end == nil
-      assert assigns.weekend_only == false
+      tw = :sys.get_state(view.pid).socket.assigns.target_window
+      assert tw.start == nil
+      assert tw.end == nil
+      assert tw.weekend_only == false
       refute html =~ "5-7 maggio"
     end
 
-    test "save with a valid day range persists all 4 target fields and renders the badge",
+    test "save with a valid day range persists with auto-derived :day granularity and renders the badge",
          %{conn: conn} do
       view = mount_authenticated(conn) |> open_form()
-      render_click(view, "set_target_granularity", %{"granularity" => "day"})
 
       render_change(view, "update_target_window", %{
         "target_start" => "2026-05-06",
@@ -1063,10 +1048,43 @@ defmodule IdeajarWeb.IdeaLive.IndexTest do
       assert html =~ ~s(data-testid="idea-target-window-badge")
     end
 
+    test "save with a full-month range auto-derives granularity :month",
+         %{conn: conn} do
+      view = mount_authenticated(conn) |> open_form()
+
+      render_change(view, "update_target_window", %{
+        "target_start" => "2026-05-01",
+        "target_end" => "2026-05-31"
+      })
+
+      submit(view, %{title: "Mare a maggio"})
+
+      idea = Ideas.list_ideas() |> Enum.find(&(&1.title == "Mare a maggio"))
+      assert idea
+      assert idea.target_granularity == :month
+    end
+
+    test "weekend flag is silently coerced to false at save when the range isn't a full month",
+         %{conn: conn} do
+      view = mount_authenticated(conn) |> open_form()
+
+      render_change(view, "update_target_window", %{
+        "target_start" => "2026-05-05",
+        "target_end" => "2026-05-07"
+      })
+
+      render_click(view, "toggle_target_weekend_only")
+      submit(view, %{title: "Ponte"})
+
+      idea = Ideas.list_ideas() |> Enum.find(&(&1.title == "Ponte"))
+      assert idea
+      assert idea.target_granularity == :day
+      assert idea.target_weekend_only == false
+    end
+
     test "save with end before start surfaces the canonical error and does not create the idea",
          %{conn: conn} do
       view = mount_authenticated(conn) |> open_form()
-      render_click(view, "set_target_granularity", %{"granularity" => "day"})
 
       render_change(view, "update_target_window", %{
         "target_start" => "2026-05-10",
@@ -1099,7 +1117,6 @@ defmodule IdeajarWeb.IdeaLive.IndexTest do
       html = render_click(view, "request_edit", %{"id" => "#{idea.id}"})
 
       assigns = :sys.get_state(view.pid).socket.assigns.target_window
-      assert assigns.granularity == :month
       assert assigns.start == ~D[2026-05-01]
       assert assigns.end == ~D[2026-05-31]
       assert assigns.weekend_only == true
@@ -1126,7 +1143,6 @@ defmodule IdeajarWeb.IdeaLive.IndexTest do
       render_click(view, "request_edit", %{"id" => "#{idea.id}"})
 
       tw = :sys.get_state(view.pid).socket.assigns.target_window
-      assert tw.granularity == :day
       assert tw.start == ~D[2026-05-06]
       assert tw.end == ~D[2026-05-06]
       assert tw.weekend_only == false
