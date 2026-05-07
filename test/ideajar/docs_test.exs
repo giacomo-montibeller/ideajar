@@ -581,7 +581,8 @@ defmodule Ideajar.DocsTest do
     end
 
     test "lists every canonical Italian month label", %{content: content} do
-      months = ~w(gennaio febbraio marzo aprile maggio giugno luglio agosto settembre ottobre novembre dicembre)
+      months =
+        ~w(gennaio febbraio marzo aprile maggio giugno luglio agosto settembre ottobre novembre dicembre)
 
       for month <- months do
         assert content =~ month, "missing canonical month name in conventions.md: #{month}"
