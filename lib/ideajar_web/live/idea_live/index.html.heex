@@ -76,11 +76,7 @@
           Quando pensi di farlo?
         </p>
 
-        <form
-          id="idea-target-form"
-          phx-change="update_target_window"
-          class="flex gap-2 mb-2"
-        >
+        <div id="idea-target-form" class="flex gap-2 mb-2">
           <label class="flex flex-col text-xs">
             Inizio
             <input
@@ -89,6 +85,7 @@
               aria-label="Data inizio"
               aria-describedby={if has_target_error?(@form), do: "idea-target-error"}
               value={target_iso_date(@target_window.start)}
+              phx-change="update_target_window"
               class="input"
             />
           </label>
@@ -100,10 +97,11 @@
               aria-label="Data fine"
               aria-describedby={if has_target_error?(@form), do: "idea-target-error"}
               value={target_iso_date(@target_window.end)}
+              phx-change="update_target_window"
               class="input"
             />
           </label>
-        </form>
+        </div>
 
         <label class="cursor-pointer flex items-center gap-1 mb-2">
           <input

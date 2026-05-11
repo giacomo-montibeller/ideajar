@@ -969,6 +969,32 @@ defmodule IdeajarWeb.IdeaLive.IndexTest do
       assert html =~ ~s(aria-label="Data fine")
     end
 
+    # Regression: a nested <form> inside <.form for={@form}> makes the
+    # browser parser close the outer form at the inner </form>, dropping
+    # the budget slider, location input, and submit button out of the
+    # LiveView form scope. Asserts a single <form> within the idea form
+    # subtree so phx-change/phx-submit keep working on those fields.
+    test "the Quando picker does not break the outer idea form (no nested <form>)",
+         %{conn: conn} do
+      view = mount_authenticated(conn) |> open_form()
+      html = render(view)
+
+      [_before, after_idea_form_open] =
+        String.split(html, ~s(id="idea-form"), parts: 2)
+
+      [inside_idea_form, _after] =
+        String.split(after_idea_form_open, "</form>", parts: 2)
+
+      assert inside_idea_form =~ ~s(name="idea[budget]"),
+             "budget slider must be inside the outer idea form so phx-change works"
+
+      assert inside_idea_form =~ ~s(name="idea[location_name]"),
+             "location search input must be inside the outer idea form"
+
+      assert inside_idea_form =~ ~s(type="submit"),
+             "submit button must be inside the outer idea form"
+    end
+
     test "filling a day range live-updates the preview",
          %{conn: conn} do
       view = mount_authenticated(conn) |> open_form()
